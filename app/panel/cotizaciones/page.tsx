@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Clock, User, ExternalLink } from "lucide-react";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -64,18 +65,6 @@ const estadoLabel: Record<string, string> = {
   archivada: "Archivada",
 };
 
-function fmtFecha(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("es-MX", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 export default async function CotizacionesPage({
   searchParams,

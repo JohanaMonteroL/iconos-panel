@@ -633,6 +633,7 @@ const LABEL_ACCION: Record<string, string> = {
 function fmtFecha(iso: string): string {
   try {
     return new Date(iso).toLocaleString("es-MX", {
+      timeZone: "America/Tijuana",
       day: "2-digit",
       month: "short",
       year: "numeric",

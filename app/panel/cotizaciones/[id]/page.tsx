@@ -11,6 +11,7 @@ import CotizacionEditor, {
 } from "@/components/forms/CotizacionEditor";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
+import { formatFechaLarga as fmtFecha } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -98,17 +99,6 @@ async function getCotizacion(
   };
 }
 
-function fmtFecha(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("es-MX", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 const estadoLabel: Record<string, string> = {
   pendiente_revisar: "Por revisar",

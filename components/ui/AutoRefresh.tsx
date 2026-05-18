@@ -86,6 +86,7 @@ export default function AutoRefresh({
 
   const fmtHora = (d: Date) =>
     d.toLocaleTimeString("es-MX", {
+      timeZone: "America/Tijuana",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",

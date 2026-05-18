@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Clock, User, FileCheck } from "lucide-react";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { formatFechaCorta } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -36,18 +37,7 @@ async function getEstimaciones(archivadas: boolean): Promise<Row[]> {
   return (data ?? []) as unknown as Row[];
 }
 
-function fmtFecha(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("es-MX", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
+const fmtFecha = formatFechaCorta;
 
 function totalHoras(tareas?: Row["datos_raw"]["tareas"]): { min: number; max: number } {
   if (!tareas) return { min: 0, max: 0 };

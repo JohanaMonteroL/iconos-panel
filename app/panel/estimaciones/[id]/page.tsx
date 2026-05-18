@@ -5,6 +5,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import RevisionIA from "./RevisionIA";
 import EstimacionAcciones from "./EstimacionAcciones";
 import type { EstimacionCruda, EstimacionLimpia } from "@/lib/anthropic/process";
+import { formatFechaLarga as fmtFecha } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -46,16 +47,6 @@ async function getEstimacion(id: string): Promise<Estimacion | null> {
   return data as unknown as Estimacion;
 }
 
-function fmtFecha(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("es-MX", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 export default async function EstimacionDetallePage({
   params,
