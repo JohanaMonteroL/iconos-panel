@@ -1,27 +1,414 @@
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@100..900&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ========================================================================
+   DESIGN TOKENS — ver docs/design-reference.md
+   ======================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Backgrounds */
+  --bg-base:        #FFFFFF;
+  --bg-surface:     #F7F7F5;
+  --bg-elevated:    #FFFFFF;
+  --bg-overlay:     #F0F0EE;
+  --bg-input:       #FFFFFF;
+
+  /* Borders */
+  --border-subtle:  #E8E8E6;
+  --border-default: #D4D4D2;
+  --border-strong:  #ADADAB;
+
+  /* Text */
+  --text-primary:   #1A1A1A;
+  --text-secondary: #6B6B6B;
+  --text-tertiary:  #ADADAB;
+  --text-disabled:  #C9C9C7;
+  --text-inverse:   #FFFFFF;
+
+  /* Actions — primario */
+  --action-primary-bg:    #1A1A1A;
+  --action-primary-text:  #FFFFFF;
+  --action-primary-hover: #000000;
+
+  /* Actions — secundario */
+  --action-secondary-bg:     transparent;
+  --action-secondary-text:   #1A1A1A;
+  --action-secondary-border: #D4D4D2;
+  --action-secondary-hover:  #F0F0EE;
+
+  /* Destructivo */
+  --action-danger-bg:   #FF3B30;
+  --action-danger-text: #FFFFFF;
+
+  /* Estados */
+  --state-success: #22C55E;
+  --state-warning: #F59E0B;
+  --state-error:   #EF4444;
+  --state-info:    #3B82F6;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(0, 0, 0, 0.06);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme="dark"] {
+  --bg-base:        #191919;
+  --bg-surface:     #212121;
+  --bg-elevated:    #262626;
+  --bg-overlay:     #2E2E2E;
+  --bg-input:       #212121;
+
+  --border-subtle:  #2E2E2E;
+  --border-default: #3A3A3A;
+  --border-strong:  #525252;
+
+  --text-primary:   #EBEBEB;
+  --text-secondary: #9E9E9E;
+  --text-tertiary:  #616161;
+  --text-disabled:  #4A4A4A;
+  --text-inverse:   #1A1A1A;
+
+  --action-primary-bg:    #EBEBEB;
+  --action-primary-text:  #1A1A1A;
+  --action-primary-hover: #FFFFFF;
+
+  --action-secondary-bg:     transparent;
+  --action-secondary-text:   #EBEBEB;
+  --action-secondary-border: #3A3A3A;
+  --action-secondary-hover:  #2E2E2E;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  --focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.06);
 }
+
+/* ========================================================================
+   BASE
+   ======================================================================== */
+
+html, body { height: 100%; }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Google Sans Flex", ui-sans-serif, system-ui, -apple-system,
+               "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* ─── Cursores y selección ───────────────────────────────────
+   Look-and-feel de app, no de documento:
+   - cursor: default en TODO
+   - user-select: none en TODO (no se ve la "ilusión" de editable)
+   Solo inputs / textareas / contenteditable permiten selección
+   y muestran el cursor de texto.
+   ─────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  cursor: default;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Texto editable — cursor de texto y selección habilitada */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="range"]):not([type="color"]):not([type="file"]),
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Interactivos */
+button,
+a,
+label,
+select,
+summary,
+[role="button"],
+[role="link"],
+[role="tab"],
+[role="menuitem"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="submit"],
+input[type="button"],
+input[type="reset"],
+input[type="file"] {
+  cursor: pointer;
+}
+
+/* Deshabilitados */
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* ========================================================================
+   COMPONENTS
+   ======================================================================== */
+
+@layer components {
+
+  /* Containers — ancho máximo 960px según design ref */
+  .container-app  { @apply mx-auto w-full max-w-[960px] px-6 lg:px-10; }
+  .container-form { @apply mx-auto w-full max-w-[480px] px-6; }
+
+  /* Typography */
+  .text-display    { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+  .text-heading-1  { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+  .text-heading-2  { font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .text-body       { font-size: 14px; font-weight: 400; line-height: 1.5; }
+  .text-body-medium{ font-size: 14px; font-weight: 500; line-height: 1.5; }
+  .text-caption    { font-size: 12px; font-weight: 400; letter-spacing: 0.01em; line-height: 1.4; }
+  .text-overline   { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
+  .text-mono       { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .num-tabular     { font-variant-numeric: tabular-nums; }
+
+  /* ─── Botones ────────────────────────────────────────────────
+     Base aplicada a TODAS las variantes (radius 10px, semi-bold,
+     centrado flex). No es necesario usar "btn" + variante: cada
+     variante ya incluye la base.
+     ─────────────────────────────────────────────────────────── */
+
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.005em;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, transform 80ms ease;
+  }
+  .btn:disabled,
+  .btn-primary:disabled,
+  .btn-secondary:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn:active:not(:disabled),
+  .btn-primary:active:not(:disabled),
+  .btn-secondary:active:not(:disabled),
+  .btn-ghost:active:not(:disabled),
+  .btn-danger:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn-primary {
+    background: var(--action-primary-bg);
+    color: var(--action-primary-text);
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--action-primary-hover); }
+
+  .btn-secondary {
+    background: var(--action-secondary-bg);
+    color: var(--action-secondary-text);
+    border-color: var(--action-secondary-border);
+  }
+  .btn-secondary:hover:not(:disabled) { background: var(--action-secondary-hover); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+  }
+
+  .btn-danger {
+    background: var(--action-danger-bg);
+    color: var(--action-danger-text);
+  }
+
+  /* Modificador: tamaño compacto */
+  .btn-sm {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  /* Modificador: icon-only — perfectamente cuadrado y centrado */
+  .btn-icon {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 10px;
+    gap: 0;
+  }
+  .btn-icon.btn-sm {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  /* Iconos dentro de botones — alineación pixel-perfect */
+  .btn svg,
+  .btn-primary svg,
+  .btn-secondary svg,
+  .btn-ghost svg,
+  .btn-danger svg {
+    flex-shrink: 0;
+    display: block;
+  }
+
+  /* Botón full-width: respetar el centrado del contenido */
+  .btn.w-full,
+  .btn-primary.w-full,
+  .btn-secondary.w-full,
+  .btn-ghost.w-full,
+  .btn-danger.w-full {
+    width: 100%;
+    display: inline-flex;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full outline-none transition-colors;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 10px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-default);
+    font-size: 14px;
+    font-weight: 400;
+  }
+  .input::placeholder { color: var(--text-tertiary); }
+  .input:focus {
+    border-color: var(--border-strong);
+    box-shadow: var(--focus-ring);
+  }
+  .input:disabled {
+    color: var(--text-disabled);
+    background: var(--bg-overlay);
+  }
+  .input-sm { height: 34px; padding: 0 10px; font-size: 13px; border-radius: 8px; }
+  .textarea { @apply input; padding: 10px 12px; height: auto; line-height: 1.5; }
+  .field-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; display: block; letter-spacing: 0.005em; }
+  .field-hint  { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; display: block; }
+
+  /* Cards */
+  .card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-tight { padding: 16px 20px; }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .badge-neutral { background: var(--bg-overlay); color: var(--text-secondary); }
+  .badge-success { background: #DCFCE7; color: #16A34A; }
+  .badge-warning { background: #FEF9C3; color: #92400E; }
+  .badge-danger  { background: #FEE2E2; color: #DC2626; }
+  .badge-info    { background: #DBEAFE; color: #1D4ED8; }
+  [data-theme="dark"] .badge-success { background: rgba(34,197,94,0.16); color: #4ADE80; }
+  [data-theme="dark"] .badge-warning { background: rgba(245,158,11,0.16); color: #FBBF24; }
+  [data-theme="dark"] .badge-danger  { background: rgba(239,68,68,0.16); color: #F87171; }
+  [data-theme="dark"] .badge-info    { background: rgba(59,130,246,0.16); color: #60A5FA; }
+
+  /* Sidebar nav items */
+  .nav-item {
+    @apply flex items-center gap-2 transition-colors;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .nav-item:hover {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+  }
+  .nav-item-active {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  /* Tabla genérica */
+  .data-table { @apply w-full; }
+  .data-table thead th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 8px 0;
+    text-align: left;
+  }
+  .data-table tbody td {
+    font-size: 14px;
+    color: var(--text-primary);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .data-table tbody tr:hover { background: var(--bg-overlay); }
+  .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Divider */
+  .divider { border: none; border-top: 1px solid var(--border-subtle); margin: 0; }
+}
+
+/* ========================================================================
+   ACCESIBILIDAD — Reduce motion
+   ======================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

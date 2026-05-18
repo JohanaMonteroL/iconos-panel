@@ -1,0 +1,135 @@
+import Link from "next/link";
+import { Clock, User, FileCheck } from "lucide-react";
+import AutoRefresh from "@/components/ui/AutoRefresh";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+type Row = {
+  id: string;
+  created_at: string;
+  estado: string;
+  datos_raw: {
+    nombre_solicitud?: string;
+    notas?: string | null;
+    tareas?: Array<{ hrs_min: number; hrs_max: number }>;
+  };
+  programadores: { nombre: string } | null;
+};
+
+async function getEstimaciones(): Promise<Row[]> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+  const supa = createSupabaseServiceClient();
+  const { data, error } = await supa
+    .from("estimaciones_formulario")
+    .select("id, created_at, estado, datos_raw, programadores(nombre)")
+    // Filtrar las que YA fueron convertidas en cotización
+    // (esas viven en /panel/cotizaciones)
+    .is("cotizacion_ref", null)
+    .neq("estado", "descartada")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    console.error("[estimaciones] error:", error);
+    return [];
+  }
+  return (data ?? []) as unknown as Row[];
+}
+
+function fmtFecha(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("es-MX", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function totalHoras(tareas?: Row["datos_raw"]["tareas"]): { min: number; max: number } {
+  if (!tareas) return { min: 0, max: 0 };
+  return tareas.reduce(
+    (acc, t) => ({ min: acc.min + (t.hrs_min || 0), max: acc.max + (t.hrs_max || 0) }),
+    { min: 0, max: 0 }
+  );
+}
+
+const badgeClass: Record<string, string> = {
+  recibida: "badge-warning",
+  procesada_ia: "badge-info",
+  en_revision: "badge-info", // legacy, mismo significado
+  descartada: "badge-neutral",
+};
+
+const estadoLabel: Record<string, string> = {
+  recibida: "Recibida",
+  procesada_ia: "Procesada con IA",
+  en_revision: "Procesada con IA", // legacy
+  descartada: "Descartada",
+};
+
+export default async function EstimacionesPage() {
+  const items = await getEstimaciones();
+
+  return (
+    <>
+      <header className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <h1 className="text-display">Estimaciones recibidas</h1>
+          <p className="text-body text-text-secondary">
+            Enviadas por los programadores desde el formulario público.
+          </p>
+        </div>
+        <AutoRefresh intervalSeconds={10} />
+      </header>
+
+      {items.length === 0 ? (
+        <div className="card text-body text-text-secondary text-center py-10">
+          Todavía no hay estimaciones recibidas.
+        </div>
+      ) : (
+        <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {items.map((it) => {
+            const t = totalHoras(it.datos_raw?.tareas);
+            const cantidadTareas = it.datos_raw?.tareas?.length ?? 0;
+            return (
+              <li key={it.id}>
+                <Link
+                  href={`/panel/estimaciones/${it.id}`}
+                  className="card hover:border-border-strong transition-colors space-y-3 block"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="text-body-medium text-text-primary line-clamp-2">
+                      {it.datos_raw?.nombre_solicitud || "(sin nombre)"}
+                    </h2>
+                    <span className={`badge ${badgeClass[it.estado] ?? "badge-neutral"}`}>
+                      {estadoLabel[it.estado] ?? it.estado.replace("_", " ")}
+                    </span>
+                  </div>
+                  <div className="text-caption text-text-tertiary flex flex-wrap gap-x-4 gap-y-1">
+                    <span className="inline-flex items-center gap-1.5">
+                      <User size={12} strokeWidth={1.5} />
+                      {it.programadores?.nombre ?? "—"}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <FileCheck size={12} strokeWidth={1.5} />
+                      {cantidadTareas} tarea{cantidadTareas === 1 ? "" : "s"}
+                    </span>
+                    <span className="num-tabular inline-flex items-center gap-1.5">
+                      <Clock size={12} strokeWidth={1.5} />
+                      {t.min}–{t.max} h
+                    </span>
+                  </div>
+                  <p className="text-caption text-text-tertiary">{fmtFecha(it.created_at)}</p>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
+  );
+}
