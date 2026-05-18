@@ -21,10 +21,11 @@ type Row = {
 async function getEstimaciones(archivadas: boolean): Promise<Row[]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   const supa = createSupabaseServiceClient();
+  // Query principal SIN embedded join (más robusto), después juntamos
+  // los nombres de programadores manualmente.
   let q = supa
     .from("estimaciones_formulario")
-    .select("id, created_at, estado, datos_raw, programadores(nombre)")
-    // Filtrar las que YA fueron convertidas en cotización (viven en /panel/cotizaciones)
+    .select("id, created_at, estado, datos_raw, programador_id")
     .is("cotizacion_ref", null)
     .order("created_at", { ascending: false })
     .limit(200);
@@ -34,7 +35,27 @@ async function getEstimaciones(archivadas: boolean): Promise<Row[]> {
     console.error("[estimaciones] error:", error);
     return [];
   }
-  return (data ?? []) as unknown as Row[];
+  if (!data || data.length === 0) return [];
+
+  // Resolver nombres de programadores en una sola query
+  const ids = Array.from(
+    new Set(data.map((r: any) => r.programador_id).filter(Boolean))
+  );
+  let progMap = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: progs } = await supa
+      .from("programadores")
+      .select("id, nombre")
+      .in("id", ids);
+    progMap = new Map((progs ?? []).map((p: any) => [p.id, p.nombre]));
+  }
+
+  return data.map((r: any) => ({
+    ...r,
+    programadores: r.programador_id
+      ? { nombre: progMap.get(r.programador_id) ?? "—" }
+      : null,
+  })) as Row[];
 }
 
 const fmtFecha = formatFechaCorta;

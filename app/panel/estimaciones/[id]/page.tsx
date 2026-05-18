@@ -39,12 +39,24 @@ async function getEstimacion(id: string): Promise<Estimacion | null> {
   const { data, error } = await supa
     .from("estimaciones_formulario")
     .select(
-      "id, created_at, estado, cotizacion_ref, datos_raw, datos_limpios, programadores(nombre, precio_hora)"
+      "id, created_at, estado, cotizacion_ref, datos_raw, datos_limpios, programador_id"
     )
     .eq("id", id)
     .maybeSingle();
   if (error || !data) return null;
-  return data as unknown as Estimacion;
+
+  // Lookup del programador por separado (más robusto que el embedded join)
+  let programador: { nombre: string; precio_hora: number } | null = null;
+  if ((data as any).programador_id) {
+    const { data: p } = await supa
+      .from("programadores")
+      .select("nombre, precio_hora")
+      .eq("id", (data as any).programador_id)
+      .maybeSingle();
+    if (p) programador = p as any;
+  }
+
+  return { ...(data as any), programadores: programador } as Estimacion;
 }
 
 
