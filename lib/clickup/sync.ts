@@ -110,7 +110,7 @@ export async function syncCotizacionConClickUp(
     },
     apiKey
   );
-  let taskUpdated = putRes.ok;
+  const taskUpdated = putRes.ok;
   if (!putRes.ok) {
     warnings.push(
       `PUT /task respondió ${putRes.status}: ${putRes.text.slice(0, 200)}`

@@ -68,7 +68,8 @@ export async function createTask(input: CreateTaskInput): Promise<ClickUpTask> {
       console.warn(
         `[clickup] status "${body.status}" no aceptado, reintentando sin status`
       );
-      const { status: _drop, ...sinStatus } = body;
+      const sinStatus = { ...body };
+      delete sinStatus.status;
       return await request<ClickUpTask>(`/list/${list_id}/task`, {
         method: "POST",
         body: JSON.stringify(sinStatus),

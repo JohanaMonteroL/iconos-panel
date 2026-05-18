@@ -9,7 +9,6 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   verifySlackSignature,
-  postMessage,
   postDM,
   updateMessage,
   slackConfigured,
