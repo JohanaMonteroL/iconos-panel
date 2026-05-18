@@ -260,7 +260,14 @@ export async function findMatchingStatus(
 // Mapeo de estados internos a candidatos de nombre en ClickUp
 export const STATUS_CANDIDATES: Record<string, string[]> = {
   estimado: ["Estimado", "Estimada", "Por estimar", "Estimando", "Por revisar"],
-  aprobada: ["Aprobada", "Aprobado", "Approved", "Aceptada"],
+  aprobada: [
+    "Por cotizar", // ← Sherlyn ya puede enviar al cliente
+    "Lista para enviar",
+    "Aprobada",
+    "Aprobado",
+    "Approved",
+    "Aceptada",
+  ],
   cambios_solicitados: [
     "Cambios solicitados",
     "Pedir cambios",
