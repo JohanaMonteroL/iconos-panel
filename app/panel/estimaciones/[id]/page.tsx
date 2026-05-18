@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import RevisionIA from "./RevisionIA";
+import EstimacionAcciones from "./EstimacionAcciones";
 import type { EstimacionCruda, EstimacionLimpia } from "@/lib/anthropic/process";
 
 export const dynamic = "force-dynamic";
@@ -92,6 +93,8 @@ export default async function EstimacionDetallePage({
           {it.programadores?.nombre ?? "—"} · {fmtFecha(it.created_at)}
         </p>
       </header>
+
+      <EstimacionAcciones estimacionId={it.id} estado={it.estado} />
 
       <RevisionIA
         estimacionId={it.id}

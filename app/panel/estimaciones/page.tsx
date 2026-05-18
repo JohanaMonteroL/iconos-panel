@@ -17,18 +17,18 @@ type Row = {
   programadores: { nombre: string } | null;
 };
 
-async function getEstimaciones(): Promise<Row[]> {
+async function getEstimaciones(archivadas: boolean): Promise<Row[]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   const supa = createSupabaseServiceClient();
-  const { data, error } = await supa
+  let q = supa
     .from("estimaciones_formulario")
     .select("id, created_at, estado, datos_raw, programadores(nombre)")
-    // Filtrar las que YA fueron convertidas en cotización
-    // (esas viven en /panel/cotizaciones)
+    // Filtrar las que YA fueron convertidas en cotización (viven en /panel/cotizaciones)
     .is("cotizacion_ref", null)
-    .neq("estado", "descartada")
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
+  q = archivadas ? q.eq("estado", "descartada") : q.neq("estado", "descartada");
+  const { data, error } = await q;
   if (error) {
     console.error("[estimaciones] error:", error);
     return [];
@@ -71,8 +71,13 @@ const estadoLabel: Record<string, string> = {
   descartada: "Descartada",
 };
 
-export default async function EstimacionesPage() {
-  const items = await getEstimaciones();
+export default async function EstimacionesPage({
+  searchParams,
+}: {
+  searchParams: { archivadas?: string };
+}) {
+  const archivadas = searchParams.archivadas === "1";
+  const items = await getEstimaciones(archivadas);
 
   return (
     <>
@@ -80,11 +85,31 @@ export default async function EstimacionesPage() {
         <div className="space-y-2">
           <h1 className="text-display">Estimaciones recibidas</h1>
           <p className="text-body text-text-secondary">
-            Enviadas por los programadores desde el formulario público.
+            {archivadas
+              ? "Estimaciones archivadas."
+              : "Enviadas por los programadores desde el formulario público."}
           </p>
         </div>
         <AutoRefresh intervalSeconds={10} />
       </header>
+
+      <div
+        className="inline-flex gap-1 p-1 rounded-lg"
+        style={{ background: "var(--bg-overlay)" }}
+      >
+        <Link
+          href="/panel/estimaciones"
+          className={`btn-sm ${!archivadas ? "btn-primary" : "btn-ghost"}`}
+        >
+          Activas
+        </Link>
+        <Link
+          href="/panel/estimaciones?archivadas=1"
+          className={`btn-sm ${archivadas ? "btn-primary" : "btn-ghost"}`}
+        >
+          Archivadas
+        </Link>
+      </div>
 
       {items.length === 0 ? (
         <div className="card text-body text-text-secondary text-center py-10">

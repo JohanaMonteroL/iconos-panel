@@ -1,9 +1,11 @@
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { createHmac, timingSafeEqual } from "crypto";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
 const SESSION_COOKIE = "iconos_session";
 const SESSION_MAX_DAYS = 30;
+const SETTINGS_KEY_PASSWORD = "admin_password_hash";
 
 function getSecret(): string {
   const s = process.env.SESSION_SECRET;
@@ -54,8 +56,25 @@ function decodeHash(raw: string): string {
   return raw;
 }
 
+// Lee primero de la tabla settings; si no, cae al env var.
+async function getAdminPasswordHash(): Promise<string | null> {
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const supa = createSupabaseServiceClient();
+      const { data } = await supa
+        .from("settings")
+        .select("value")
+        .eq("key", SETTINGS_KEY_PASSWORD)
+        .maybeSingle();
+      const v = data?.value as { hash?: string } | null;
+      if (v?.hash) return v.hash;
+    }
+  } catch {}
+  return process.env.ADMIN_PASSWORD_HASH || null;
+}
+
 export async function checkAdminPassword(plain: string): Promise<boolean> {
-  const raw = process.env.ADMIN_PASSWORD_HASH;
+  const raw = await getAdminPasswordHash();
   if (!raw) return false;
   const hash = decodeHash(raw);
   try {
@@ -63,6 +82,20 @@ export async function checkAdminPassword(plain: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function saveAdminPassword(plain: string): Promise<void> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY no configurado");
+  }
+  const hash = bcrypt.hashSync(plain, 10);
+  const supa = createSupabaseServiceClient();
+  // upsert key
+  const { error } = await supa.from("settings").upsert(
+    { key: SETTINGS_KEY_PASSWORD, value: { hash } },
+    { onConflict: "key" }
+  );
+  if (error) throw new Error(error.message);
 }
 
 export function getSessionFromCookies(): { ok: boolean; label?: string } {

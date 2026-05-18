@@ -9,6 +9,7 @@ import {
   Inbox,
   Menu,
   X,
+  Settings,
 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import LogoutButton from "./LogoutButton";
@@ -17,6 +18,7 @@ const items = [
   { href: "/panel", label: "Inicio", icon: Home },
   { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText },
   { href: "/panel/estimaciones", label: "Estimaciones", icon: Inbox },
+  { href: "/panel/settings", label: "Settings", icon: Settings },
 ];
 
 function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
