@@ -22,8 +22,10 @@ export default function LoginPage() {
       >
         <div className="container-form py-12 space-y-6">
           <header className="space-y-2 text-center">
-            <h1 className="text-display">Acceso al panel</h1>
-            <p className="text-caption text-text-secondary">Solo para Johana</p>
+            <h1 className="text-display">Hola Johana</h1>
+            <p className="text-caption text-text-secondary">
+              Inicia sesión para entrar al panel
+            </p>
           </header>
           <div className="card">
             <Suspense>
