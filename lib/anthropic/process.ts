@@ -54,7 +54,7 @@ function buildUserPrompt(raw: EstimacionCruda, programador: string): string {
   return `Estimación enviada por: ${programador}
 
 ESTIMACIÓN CRUDA (texto original del programador):
-${JSON.stringify(raw, null, 2)}
+${JSON.stringify(raw)}
 
 Devuelve un JSON con esta estructura exacta:
 {
@@ -95,8 +95,14 @@ export async function procesarEstimacion(
 
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 2500,
-    system: SYSTEM_PROMPT,
+    max_tokens: 1500,
+    system: [
+      {
+        type: "text",
+        text: SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [{ role: "user", content: buildUserPrompt(raw, programador) }],
   });
 

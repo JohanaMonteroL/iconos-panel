@@ -58,7 +58,13 @@ export async function POST(req: NextRequest) {
   const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 300,
-    system: SYSTEM,
+    system: [
+      {
+        type: "text",
+        text: SYSTEM,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [
       {
         role: "user",
