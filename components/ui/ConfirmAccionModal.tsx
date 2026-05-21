@@ -6,7 +6,7 @@ import Modal from "./Modal";
 type Props = {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => Promise<void> | void;
+  onConfirm: (extras: { checkboxMarcado: boolean }) => Promise<void> | void;
   titulo: string;
   descripcion: React.ReactNode;
   /** Palabra exacta que el usuario debe escribir (case-insensitive). */
@@ -15,6 +15,12 @@ type Props = {
   textoBoton?: string;
   /** Pinta el botón en rojo (acción destructiva). */
   peligroso?: boolean;
+  /** Si se pasa, se muestra un checkbox opcional encima del input. */
+  checkbox?: {
+    label: React.ReactNode;
+    descripcion?: React.ReactNode;
+    inicial?: boolean;
+  };
 };
 
 export default function ConfirmAccionModal({
@@ -26,17 +32,23 @@ export default function ConfirmAccionModal({
   palabraClave,
   textoBoton,
   peligroso = false,
+  checkbox,
 }: Props) {
   const [valor, setValor] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkboxMarcado, setCheckboxMarcado] = useState<boolean>(
+    checkbox?.inicial ?? false
+  );
 
   useEffect(() => {
     if (open) {
       setValor("");
       setError(null);
       setWorking(false);
+      setCheckboxMarcado(checkbox?.inicial ?? false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const coincide = valor.trim().toLowerCase() === palabraClave.toLowerCase();
@@ -46,7 +58,7 @@ export default function ConfirmAccionModal({
     setWorking(true);
     setError(null);
     try {
-      await onConfirm();
+      await onConfirm({ checkboxMarcado });
     } catch (e: any) {
       setError(e?.message || "Error al ejecutar la acción");
     } finally {
@@ -83,6 +95,32 @@ export default function ConfirmAccionModal({
     >
       <div className="space-y-4">
         <div className="text-body text-text-secondary">{descripcion}</div>
+
+        {checkbox && (
+          <label
+            className="flex items-start gap-3 rounded-[10px] p-3 cursor-pointer"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={checkboxMarcado}
+              onChange={(e) => setCheckboxMarcado(e.target.checked)}
+              disabled={working}
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: "#0066FF" }}
+            />
+            <span className="flex-1 text-body">
+              <span className="text-body-medium text-text-primary">{checkbox.label}</span>
+              {checkbox.descripcion && (
+                <span className="block text-caption text-text-secondary mt-1">
+                  {checkbox.descripcion}
+                </span>
+              )}
+            </span>
+          </label>
+        )}
 
         <div>
           <label className="field-label">

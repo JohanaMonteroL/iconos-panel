@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Sparkles, Send } from "lucide-react";
 import TareasTabla, { TareaRow, filaVacia } from "@/components/forms/TareasTabla";
+import ProyectoSearch from "@/components/forms/ProyectoSearch";
 import BufferSelector from "@/components/forms/BufferSelector";
 import TotalesFlotantes from "@/components/forms/TotalesFlotantes";
 import ResumenEstimacion from "@/components/forms/ResumenEstimacion";
@@ -197,22 +198,15 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
                 <span className="text-text-tertiary font-normal">(sin ClickUp configurado)</span>
               )}
             </label>
-            <select
-              className="input"
+            <ProyectoSearch
+              proyectos={proyectos}
               value={proyectoId}
-              onChange={(e) => setProyectoId(e.target.value)}
+              onChange={setProyectoId}
               disabled={proyectos.length === 0}
-            >
-              <option value="">{proyectos.length === 0 ? "—" : "Selecciona un proyecto…"}</option>
-              {proyectos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre}
-                </option>
-              ))}
-            </select>
+            />
             <span className="field-hint">
               {proyectos.length > 0
-                ? "Lista del campo personalizado de ClickUp"
+                ? `${proyectos.length} proyectos de ClickUp — escribe para filtrar`
                 : "Cuando se configure ClickUp aparecerán los proyectos aquí"}
             </span>
           </div>

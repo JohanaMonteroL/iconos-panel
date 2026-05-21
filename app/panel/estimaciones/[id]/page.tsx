@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import RevisionIA from "./RevisionIA";
 import EstimacionAcciones from "./EstimacionAcciones";
+import MarcarRevisada from "@/components/ui/MarcarRevisada";
 import type { EstimacionCruda, EstimacionLimpia } from "@/lib/anthropic/process";
 import { formatFechaLarga as fmtFecha } from "@/lib/dates";
 
@@ -75,6 +76,7 @@ export default async function EstimacionDetallePage({
 
   return (
     <>
+      <MarcarRevisada estimacionId={it.id} />
       <Link
         href="/panel/estimaciones"
         className="inline-flex items-center gap-1.5 text-caption text-text-secondary hover:text-text-primary"
@@ -93,7 +95,11 @@ export default async function EstimacionDetallePage({
           </span>
         </div>
         <p className="text-caption text-text-secondary">
-          {it.programadores?.nombre ?? "—"} · {fmtFecha(it.created_at)}
+          {it.programadores?.nombre ?? "—"}
+          {(it.datos_raw as any)?.proyecto_nombre && (
+            <> · <span className="text-text-primary">{(it.datos_raw as any).proyecto_nombre}</span></>
+          )}
+          {" · "}{fmtFecha(it.created_at)}
         </p>
       </header>
 

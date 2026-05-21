@@ -13,12 +13,14 @@ import {
   Trash2,
 } from "lucide-react";
 import Markdown from "@/components/ui/Markdown";
+import Modal from "@/components/ui/Modal";
+import SlackText from "@/components/ui/SlackText";
 import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
 import BufferEditor from "@/components/forms/BufferEditor";
 import SlackPreview from "@/components/forms/SlackPreview";
 import type { EstimacionCruda, EstimacionLimpia } from "@/lib/anthropic/process";
 import { totalesPERT, aplicarBuffer } from "@/lib/pert";
-import { shortDescripcion, puntosFallback } from "@/lib/slack/format";
+import { buildSlackText, shortDescripcion, puntosFallback } from "@/lib/slack/format";
 
 type Props = {
   estimacionId: string;
@@ -56,6 +58,7 @@ export default function RevisionIA({
   const [warning, setWarning] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [cotId, setCotId] = useState<string | null>(cotizacionRef);
+  const [previewAbierto, setPreviewAbierto] = useState(false);
 
   // Totales del set de tareas vigente (limpio si existe, original si no)
   const totalesVigentes = useMemo(() => {
@@ -367,8 +370,6 @@ export default function RevisionIA({
 
       </section>
 
-      <BufferEditor estimacionId={estimacionId} valorInicial={bufferPct} />
-
       <AnalisisFinanciero
         savePath={`/api/estimaciones/${estimacionId}/precio-venta`}
         precioHoraInterno={precioHora}
@@ -498,7 +499,28 @@ export default function RevisionIA({
           value={limpia.borrador_correo}
           onChange={(e) => updateLimpia({ borrador_correo: e.target.value })}
         />
+        <div
+          className="mt-3 rounded-[10px] p-3 text-caption"
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <strong className="font-semibold text-text-primary">
+            Horas vigentes: {totalesConBuffer.totalMin}–{totalesConBuffer.totalMax}h
+          </strong>
+          {bufferPct > 0 && <> · buffer +{bufferPct}%</>}
+          <div className="mt-1">
+            Si el texto del correo o contexto de Sherlyn menciona horas específicas,
+            actualízalas a mano para que coincidan con el valor vigente. Las horas en
+            el ticket de ClickUp y mensaje de Slack se actualizan automáticamente.
+          </div>
+        </div>
       </section>
+
+      {/* Buffer adicional — colocado junto al mensaje de Slack para ediciones rápidas */}
+      <BufferEditor estimacionId={estimacionId} valorInicial={bufferPct} />
 
       <SlackPreview
         estimacionId={estimacionId}
@@ -550,13 +572,13 @@ export default function RevisionIA({
             </a>
           ) : (
             <button
-              onClick={crearCotizacion}
+              onClick={() => setPreviewAbierto(true)}
               disabled={creando || dirty}
               className="btn-primary"
               title={dirty ? "Guarda los cambios antes de enviar a aprobación" : ""}
             >
               <ArrowRight size={16} strokeWidth={1.75} />
-              <span>{creando ? "Enviando…" : "Enviar a aprobación"}</span>
+              <span>Enviar a aprobación</span>
             </button>
           )}
 
@@ -571,6 +593,220 @@ export default function RevisionIA({
           </button>
         </div>
       </div>
+
+      <Modal
+        open={previewAbierto}
+        onClose={() => !creando && setPreviewAbierto(false)}
+        title="Confirmar envío a aprobación"
+        size="lg"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setPreviewAbierto(false)}
+              disabled={creando}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await crearCotizacion();
+                setPreviewAbierto(false);
+              }}
+              disabled={creando}
+              className="btn-primary"
+            >
+              <ArrowRight size={16} strokeWidth={1.75} />
+              <span>{creando ? "Enviando…" : "Confirmar y enviar"}</span>
+            </button>
+          </>
+        }
+      >
+        <PreviewEnvio
+          limpia={limpia}
+          raw={raw}
+          programador={programador}
+          totalesConBuffer={totalesConBuffer}
+          bufferPct={bufferPct}
+        />
+      </Modal>
     </section>
+  );
+}
+
+/* Reparte un total entre tareas usando los puntos medios como peso.
+   Garantiza que la suma sea exactamente el total (ajuste en la última). */
+function distribuirHoras(
+  tareas: EstimacionLimpia["tareas"],
+  total: number
+): number[] {
+  if (tareas.length === 0) return [];
+  const medios = tareas.map((t) => (t.hrs_min + t.hrs_max) / 2);
+  const suma = medios.reduce((a, b) => a + b, 0);
+  if (suma <= 0) {
+    const cada = Math.round((total / tareas.length) * 10) / 10;
+    return tareas.map((_, i) =>
+      i === tareas.length - 1
+        ? Math.round((total - cada * (tareas.length - 1)) * 10) / 10
+        : cada
+    );
+  }
+  const escaladas = medios.map((m) => Math.round((m * total) / suma * 10) / 10);
+  const diff = Math.round((total - escaladas.reduce((a, b) => a + b, 0)) * 10) / 10;
+  if (diff !== 0) {
+    escaladas[escaladas.length - 1] = Math.max(
+      0,
+      Math.round((escaladas[escaladas.length - 1] + diff) * 10) / 10
+    );
+  }
+  return escaladas;
+}
+
+/* Componente interno: muestra cómo se verá el ticket en ClickUp y el mensaje
+   en Slack antes de enviar a aprobación. */
+function PreviewEnvio({
+  limpia,
+  raw,
+  programador,
+  totalesConBuffer,
+  bufferPct,
+}: {
+  limpia: EstimacionLimpia;
+  raw: Props["raw"];
+  programador: string;
+  totalesConBuffer: { totalMin: number; totalEsperado: number; totalMax: number };
+  bufferPct: number;
+}) {
+  const horasEnvio =
+    raw.envio?.horas != null
+      ? Math.round(Number(raw.envio.horas) * 10) / 10
+      : Math.round(((totalesConBuffer.totalMin + totalesConBuffer.totalMax) / 2) * 10) / 10;
+
+  const tipoEnvio = raw.envio?.tipo ?? "pert";
+  const tipoLabel: Record<string, string> = {
+    min: "Mínimo",
+    pert: "PERT (esperado)",
+    max: "Máximo",
+    custom: "Personalizado",
+  };
+
+  const horasPorTarea = distribuirHoras(limpia.tareas, horasEnvio);
+
+  const slackText =
+    raw.slack_text_override ??
+    buildSlackText({
+      nombreCotizacion: limpia.nombre_solicitud,
+      proyecto: raw.proyecto_nombre ?? null,
+      programador,
+      horasEnvio,
+      bufferPct,
+      descripcionCorta: shortDescripcion(limpia),
+      puntosClave: puntosFallback(limpia),
+      notas: raw.notas,
+      clickupUrl: null,
+    });
+
+  const usaOverride = raw.slack_text_override != null;
+
+  return (
+    <div className="space-y-5">
+      {/* Resumen de horas que se enviarán */}
+      <section
+        className="rounded-[10px] p-4 space-y-1"
+        style={{
+          background: "var(--bg-overlay)",
+          border: "1px solid var(--border-default)",
+        }}
+      >
+        <div className="text-overline text-text-tertiary">Horas a enviar</div>
+        <div className="num-tabular" style={{ fontSize: 28, fontWeight: 700 }}>
+          {horasEnvio}h
+        </div>
+        <div className="text-caption text-text-secondary">
+          Selección: {tipoLabel[tipoEnvio] ?? tipoEnvio}
+          {bufferPct > 0 && <> · buffer +{bufferPct}%</>} · rango con buffer{" "}
+          {totalesConBuffer.totalMin}–{totalesConBuffer.totalMax}h
+        </div>
+      </section>
+
+      {/* Ticket ClickUp */}
+      <section className="space-y-2">
+        <div className="text-overline text-text-tertiary">Ticket ClickUp</div>
+        <div
+          className="rounded-[10px] p-4 space-y-3"
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-default)",
+          }}
+        >
+          <div>
+            <div className="text-caption text-text-tertiary">Nombre</div>
+            <div className="text-body-medium">{limpia.nombre_solicitud}</div>
+          </div>
+          {raw.proyecto_nombre && (
+            <div>
+              <div className="text-caption text-text-tertiary">Proyecto</div>
+              <div className="text-body">{raw.proyecto_nombre}</div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-caption text-text-tertiary mb-1">
+              Tareas — horas distribuidas para sumar {horasEnvio}h
+            </div>
+            <ul className="text-body space-y-1">
+              {limpia.tareas.map((t, i) => (
+                <li
+                  key={i}
+                  className="flex justify-between gap-3 py-1 border-b last:border-b-0"
+                  style={{ borderColor: "var(--border-subtle)" }}
+                >
+                  <span className="truncate">{t.nombre || "(sin nombre)"}</span>
+                  <span className="num-tabular text-text-primary font-semibold whitespace-nowrap">
+                    {horasPorTarea[i] ?? 0}h
+                  </span>
+                </li>
+              ))}
+              <li className="flex justify-between gap-3 pt-2 text-body-medium">
+                <span>Total</span>
+                <span className="num-tabular">
+                  {horasPorTarea.reduce((a, b) => a + b, 0).toFixed(1)}h
+                </span>
+              </li>
+            </ul>
+            <p className="text-caption text-text-tertiary mt-2">
+              Cada tarea se reparte proporcionalmente según su punto medio
+              (mín+máx)/2, de forma que la suma sea exactamente el total.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Mensaje Slack */}
+      <section className="space-y-2">
+        <div className="text-overline text-text-tertiary flex items-center gap-2">
+          Mensaje a Slack
+          {usaOverride && <span className="badge badge-warning">Editado manualmente</span>}
+        </div>
+        <div
+          className="rounded-[10px] p-4"
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-default)",
+            fontFamily: "Lato, ui-sans-serif, system-ui, sans-serif",
+            lineHeight: 1.5,
+          }}
+        >
+          <SlackText text={slackText} />
+        </div>
+      </section>
+
+      <p className="text-caption text-text-tertiary">
+        Al confirmar se crea el ticket en ClickUp con estas horas distribuidas y se envía
+        el mensaje al canal del jefe.
+      </p>
+    </div>
   );
 }

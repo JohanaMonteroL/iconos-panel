@@ -341,11 +341,15 @@ select:disabled,
   .badge {
     @apply inline-flex items-center;
     height: 22px;
-    padding: 0 8px;
-    border-radius: 6px;
+    padding: 0 10px;
+    border-radius: 999px;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+    max-width: 100%;
   }
   .badge-neutral { background: var(--bg-overlay); color: var(--text-secondary); }
   .badge-success { background: #DCFCE7; color: #16A34A; }

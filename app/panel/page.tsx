@@ -10,18 +10,33 @@ async function getCounts() {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
     return { pendientes: 0, cotizacionesActivas: 0 };
   const supa = createSupabaseServiceClient();
-  const [{ count: pend }, { count: cot }] = await Promise.all([
-    supa
+
+  // Estimaciones "por revisar" = sin cotización + estados activos + no abiertas
+  // aún por la admin. Coincide con el badge del sidebar.
+  let pendCount = 0;
+  const r = await supa
+    .from("estimaciones_formulario")
+    .select("id", { count: "exact", head: true })
+    .is("cotizacion_ref", null)
+    .is("revisada_at", null)
+    .in("estado", ["recibida", "procesada_ia", "en_revision"]);
+  if (r.error && /revisada_at|column/i.test(r.error.message)) {
+    const r2 = await supa
       .from("estimaciones_formulario")
       .select("id", { count: "exact", head: true })
       .is("cotizacion_ref", null)
-      .in("estado", ["recibida", "procesada_ia"]),
-    supa
-      .from("cotizaciones")
-      .select("id", { count: "exact", head: true })
-      .neq("estado", "archivada"),
-  ]);
-  return { pendientes: pend ?? 0, cotizacionesActivas: cot ?? 0 };
+      .in("estado", ["recibida", "procesada_ia", "en_revision"]);
+    pendCount = r2.count ?? 0;
+  } else {
+    pendCount = r.count ?? 0;
+  }
+
+  const { count: cot } = await supa
+    .from("cotizaciones")
+    .select("id", { count: "exact", head: true })
+    .neq("estado", "archivada");
+
+  return { pendientes: pendCount, cotizacionesActivas: cot ?? 0 };
 }
 
 export default async function PanelHome() {

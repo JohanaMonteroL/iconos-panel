@@ -15,17 +15,28 @@ import ThemeToggle from "./ThemeToggle";
 import LogoutButton from "./LogoutButton";
 
 const items = [
-  { href: "/panel", label: "Inicio", icon: Home },
-  { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText },
-  { href: "/panel/estimaciones", label: "Estimaciones", icon: Inbox },
-  { href: "/panel/settings", label: "Settings", icon: Settings },
+  { href: "/panel", label: "Inicio", icon: Home, badgeKey: null as null | "estimaciones" },
+  { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText, badgeKey: null },
+  { href: "/panel/estimaciones", label: "Estimaciones", icon: Inbox, badgeKey: "estimaciones" as const },
+  { href: "/panel/settings", label: "Settings", icon: Settings, badgeKey: null },
 ];
 
-function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+type Badges = { estimaciones: number };
+
+function NavList({
+  pathname,
+  badges,
+  onNavigate,
+}: {
+  pathname: string;
+  badges: Badges;
+  onNavigate?: () => void;
+}) {
   return (
     <nav className="flex flex-col gap-1">
-      {items.map(({ href, label, icon: Icon }) => {
+      {items.map(({ href, label, icon: Icon, badgeKey }) => {
         const active = pathname === href || (href !== "/panel" && pathname.startsWith(href));
+        const count = badgeKey ? badges[badgeKey] : 0;
         return (
           <Link
             key={href}
@@ -34,7 +45,25 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
             className={`nav-item ${active ? "nav-item-active" : ""}`}
           >
             <Icon size={16} strokeWidth={1.5} />
-            <span>{label}</span>
+            <span className="flex-1">{label}</span>
+            {count > 0 && (
+              <span
+                className="num-tabular"
+                style={{
+                  background: "#0066FF",
+                  color: "white",
+                  padding: "1px 7px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  lineHeight: "16px",
+                  minWidth: 18,
+                  textAlign: "center",
+                }}
+              >
+                {count > 99 ? "99+" : count}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -42,7 +71,7 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ badges }: { badges: Badges }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -90,7 +119,7 @@ export default function Sidebar() {
                 <X size={18} strokeWidth={1.5} />
               </button>
             </div>
-            <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
+            <NavList pathname={pathname} badges={badges} onNavigate={() => setOpen(false)} />
             <div className="mt-auto pt-4 border-t" style={{ borderColor: "var(--border-subtle)" }}>
               <LogoutButton />
             </div>
@@ -112,7 +141,7 @@ export default function Sidebar() {
           </Link>
           <ThemeToggle />
         </div>
-        <NavList pathname={pathname} />
+        <NavList pathname={pathname} badges={badges} />
         <div
           className="mt-auto pt-4 border-t"
           style={{ borderColor: "var(--border-subtle)" }}

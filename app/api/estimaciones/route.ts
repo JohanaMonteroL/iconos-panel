@@ -62,15 +62,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No se pudo guardar la estimación." }, { status: 500 });
   }
 
-  // Push a Johana — best-effort, no bloquea respuesta al programador.
+  // Push a Johana — awaited para que la función serverless no se termine antes
+  // de mandar el push (era la causa por la que no llegaban las notificaciones
+  // de "nueva estimación" pero sí las de cotización, que viene de un flow más largo).
   const totalMin = result.data.tareas.reduce((s, t) => s + t.hrs_min, 0);
   const totalMax = result.data.tareas.reduce((s, t) => s + t.hrs_max, 0);
-  sendPushToAll({
-    title: "Nueva estimación recibida",
-    body: `${prog.nombre} envió "${result.data.nombre_solicitud}" (${totalMin}–${totalMax} hrs)`,
-    url: `/panel/estimaciones/${inserted.id}`,
-    tag: `estimacion-${inserted.id}`,
-  }).catch((e) => console.error("[push] error:", e));
+
+  // Contar estimaciones pendientes para el badge del PWA — mismo criterio
+  // que el sidebar y el dashboard: sin cotización + no archivada + no revisada.
+  let badgeCount = 0;
+  try {
+    const r = await supa
+      .from("estimaciones_formulario")
+      .select("id", { count: "exact", head: true })
+      .is("cotizacion_ref", null)
+      .is("revisada_at", null)
+      .in("estado", ["recibida", "procesada_ia", "en_revision"]);
+    if (r.error && /revisada_at|column/i.test(r.error.message)) {
+      const r2 = await supa
+        .from("estimaciones_formulario")
+        .select("id", { count: "exact", head: true })
+        .is("cotizacion_ref", null)
+        .in("estado", ["recibida", "procesada_ia", "en_revision"]);
+      badgeCount = r2.count ?? 0;
+    } else {
+      badgeCount = r.count ?? 0;
+    }
+  } catch {}
+
+  try {
+    await sendPushToAll({
+      title: "Nueva estimación recibida",
+      body: `${prog.nombre} envió "${result.data.nombre_solicitud}" (${totalMin}–${totalMax} hrs)`,
+      url: `/panel/estimaciones/${inserted.id}`,
+      tag: `estimacion-${inserted.id}`,
+      badgeCount,
+    });
+  } catch (e) {
+    console.error("[push] error:", e);
+  }
 
   return NextResponse.json({ ok: true, id: inserted.id }, { status: 201 });
 }

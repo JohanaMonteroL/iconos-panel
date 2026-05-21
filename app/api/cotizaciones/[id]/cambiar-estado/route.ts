@@ -10,6 +10,7 @@ import {
   updateTaskStatus,
   findMatchingStatus,
   resolveCotizacionesListId,
+  deleteTask,
   STATUS_CANDIDATES,
 } from "@/lib/clickup/client";
 
@@ -48,6 +49,7 @@ export async function POST(
   }
   const comentario = body?.comentario ? String(body.comentario) : null;
   const aprobadoPor = body?.aprobado_por ? String(body.aprobado_por) : null; // "johana" | "ivan"
+  const borrarClickUp = Boolean(body?.borrar_clickup_ticket);
 
   const supa = createSupabaseServiceClient();
 
@@ -73,10 +75,30 @@ export async function POST(
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  // ClickUp — actualizar el lane si tenemos ticket (matching flexible)
+  // ClickUp — actualizar el lane si tenemos ticket (matching flexible).
+  // Caso especial: si se archiva y se pidió borrar el ticket, lo eliminamos.
   let clickup_warning: string | null = null;
+
+  if (
+    nuevo === "archivada" &&
+    borrarClickUp &&
+    cot.clickup_ticket_id &&
+    process.env.CLICKUP_API_KEY
+  ) {
+    try {
+      await deleteTask(cot.clickup_ticket_id);
+      await supa
+        .from("cotizaciones")
+        .update({ clickup_ticket_id: null })
+        .eq("id", params.id);
+    } catch (e: any) {
+      clickup_warning = e?.message || "No se pudo borrar el ticket de ClickUp";
+    }
+  }
+
   const candidates = STATUS_CANDIDATES[nuevo];
   if (
+    !borrarClickUp &&
     cot.clickup_ticket_id &&
     candidates &&
     candidates.length > 0 &&

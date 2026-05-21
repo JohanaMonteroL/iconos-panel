@@ -34,7 +34,8 @@ export function buildSlackText({
     ? `<${clickupUrl}|${nombreCotizacion}>`
     : nombreCotizacion;
 
-  partes.push("@aqui");
+  // <!here> es la sintaxis de Slack para etiquetar a todos los miembros activos del canal.
+  partes.push("<!here>");
   partes.push("");
   partes.push("🧾 *Cotización lista para revisión*");
   partes.push("");

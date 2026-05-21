@@ -27,7 +27,13 @@ self.addEventListener("push", (event) => {
     requireInteraction: false,
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Si el push incluye `badgeCount`, actualizar el badge nativo del PWA
+  // (el icono de la app en escritorio/Android muestra el número como Slack/WhatsApp).
+  const tareas = [self.registration.showNotification(title, options)];
+  if (typeof data.badgeCount === "number" && self.navigator && "setAppBadge" in self.navigator) {
+    tareas.push(self.navigator.setAppBadge(data.badgeCount).catch(() => {}));
+  }
+  event.waitUntil(Promise.all(tareas));
 });
 
 self.addEventListener("notificationclick", (event) => {

@@ -16,11 +16,34 @@ function renderInline(text: string): React.ReactNode[] {
   let key = 0;
 
   while (i < text.length) {
-    // Link <url|text> o <url>
+    // Link <url|text>, <url>, o mención especial <!here> / <!channel>
     if (text[i] === "<") {
       const end = text.indexOf(">", i + 1);
       if (end > i) {
         const inside = text.slice(i + 1, end);
+
+        // Menciones especiales de Slack: <!here>, <!channel>, <!everyone>
+        if (inside === "!here" || inside === "!channel" || inside === "!everyone") {
+          const label =
+            inside === "!here" ? "@here" : inside === "!channel" ? "@channel" : "@everyone";
+          out.push(
+            <span
+              key={`m${key++}`}
+              style={{
+                background: "#fde68a",
+                color: "#92400e",
+                padding: "0 4px",
+                borderRadius: 3,
+                fontWeight: 600,
+              }}
+            >
+              {label}
+            </span>
+          );
+          i = end + 1;
+          continue;
+        }
+
         const pipe = inside.indexOf("|");
         const url = pipe >= 0 ? inside.slice(0, pipe) : inside;
         const label = pipe >= 0 ? inside.slice(pipe + 1) : inside;

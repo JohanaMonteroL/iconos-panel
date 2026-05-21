@@ -13,7 +13,9 @@ import {
   ChevronUp,
   ChevronDown,
   Upload,
+  Archive,
 } from "lucide-react";
+import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
 
 export type CotizacionTarea = {
   id?: string;
@@ -397,6 +399,35 @@ export function CotizacionAcciones({
   const [msg, setMsg] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [modal, setModal] = useState<null | "archivar" | "eliminar">(null);
+
+  const archivar = async ({ checkboxMarcado }: { checkboxMarcado: boolean }) => {
+    const res = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        estado: "archivada",
+        borrar_clickup_ticket: checkboxMarcado,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "No se pudo archivar");
+    if (json.clickup_warning) setWarning(json.clickup_warning);
+    setModal(null);
+    router.refresh();
+  };
+
+  const eliminar = async ({ checkboxMarcado }: { checkboxMarcado: boolean }) => {
+    const url = `/api/cotizaciones/${cotizacionId}${
+      checkboxMarcado ? "?borrar_clickup=1" : ""
+    }`;
+    const res = await fetch(url, { method: "DELETE" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "No se pudo eliminar");
+    if (json.clickup_warning) setWarning(json.clickup_warning);
+    setModal(null);
+    router.replace("/panel/cotizaciones");
+  };
 
   const cambiarEstado = async (
     nuevo: string,
@@ -582,12 +613,23 @@ export function CotizacionAcciones({
         {estado !== "archivada" && (
           <button
             disabled={working !== null}
-            onClick={() => cambiarEstado("archivada")}
+            onClick={() => setModal("archivar")}
             className="btn-ghost"
           >
-            Archivar
+            <Archive size={16} strokeWidth={1.75} />
+            <span>Archivar</span>
           </button>
         )}
+
+        <button
+          disabled={working !== null}
+          onClick={() => setModal("eliminar")}
+          className="btn-ghost"
+          style={{ color: "var(--state-error)" }}
+        >
+          <Trash2 size={16} strokeWidth={1.75} />
+          <span>Eliminar permanente</span>
+        </button>
       </div>
       {success && (
         <p className="text-caption" style={{ color: "var(--state-success)" }}>
@@ -604,6 +646,56 @@ export function CotizacionAcciones({
           ⚠️ {warning}
         </p>
       )}
+
+      <ConfirmAccionModal
+        open={modal === "archivar"}
+        onClose={() => setModal(null)}
+        onConfirm={archivar}
+        titulo="Archivar cotización"
+        descripcion={
+          <>
+            La cotización dejará de aparecer en el listado activo. Podrás
+            restaurarla cambiándole el estado más adelante.
+          </>
+        }
+        palabraClave="archivar"
+        textoBoton="Sí, archivar"
+        checkbox={
+          tieneTicketClickUp
+            ? {
+                label: "También borrar el ticket de ClickUp",
+                descripcion:
+                  "Se eliminará el ticket asociado en ClickUp de forma permanente. Si lo dejas desmarcado, el ticket queda en ClickUp tal cual.",
+              }
+            : undefined
+        }
+      />
+
+      <ConfirmAccionModal
+        open={modal === "eliminar"}
+        onClose={() => setModal(null)}
+        onConfirm={eliminar}
+        titulo="Eliminar cotización permanentemente"
+        descripcion={
+          <>
+            Esta acción es <strong>irreversible</strong>. Se borrará la cotización
+            de la base de datos junto con sus tareas y el historial. La estimación
+            origen quedará libre para reprocesarse.
+          </>
+        }
+        palabraClave="eliminar"
+        textoBoton="Eliminar definitivamente"
+        peligroso
+        checkbox={
+          tieneTicketClickUp
+            ? {
+                label: "También borrar el ticket de ClickUp",
+                descripcion:
+                  "Se eliminará el ticket asociado en ClickUp. Si lo dejas desmarcado, el ticket queda en ClickUp huérfano.",
+              }
+            : undefined
+        }
+      />
     </section>
   );
 }

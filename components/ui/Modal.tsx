@@ -28,22 +28,28 @@ export default function Modal({
 }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Cerrar con Escape + bloquear scroll del body mientras está abierto
+  // Mantener una ref estable al onClose para no re-ejecutar el efecto
+  // cada vez que el padre re-renderiza (causaba que el modal robara el
+  // foco del input al escribir cada letra).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Cerrar con Escape + bloquear scroll del body mientras está abierto.
+  // Foco inicial al diálogo, pero solo al abrir (no en cada render).
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Focus inicial
     requestAnimationFrame(() => dialogRef.current?.focus());
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

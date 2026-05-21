@@ -40,7 +40,7 @@ export default function EstimacionAcciones({ estimacionId, estado }: Props) {
     }
   };
 
-  const archivar = async () => {
+  const archivar = async (_: { checkboxMarcado: boolean }) => {
     const res = await fetch(`/api/estimaciones/${estimacionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -52,7 +52,7 @@ export default function EstimacionAcciones({ estimacionId, estado }: Props) {
     router.refresh();
   };
 
-  const eliminar = async () => {
+  const eliminar = async (_: { checkboxMarcado: boolean }) => {
     const res = await fetch(`/api/estimaciones/${estimacionId}`, {
       method: "DELETE",
     });

@@ -116,7 +116,9 @@ export default async function CotizacionesPage({
                 className="card hover:border-border-strong transition-colors space-y-3 block"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-body-medium text-text-primary line-clamp-2">{it.nombre}</h2>
+                  <h2 className="text-body-medium text-text-primary line-clamp-2 min-w-0 flex-1">
+                    {it.nombre}
+                  </h2>
                   <span className={`badge ${badgeFor[it.estado] ?? "badge-neutral"}`}>
                     {estadoLabel[it.estado] ?? it.estado}
                   </span>

@@ -199,6 +199,10 @@ export async function updateTaskStatus(taskId: string, status: string): Promise<
   });
 }
 
+export async function deleteTask(taskId: string): Promise<void> {
+  await request<unknown>(`/task/${taskId}`, { method: "DELETE" });
+}
+
 export type ClickUpList = {
   id: string;
   name: string;

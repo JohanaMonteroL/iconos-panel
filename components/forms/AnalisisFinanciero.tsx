@@ -42,6 +42,17 @@ export default function AnalisisFinanciero({
     precioVentaInicial ?? null
   );
 
+  // Si el prop cambia (p. ej. después de procesar con IA y router.refresh),
+  // sincronizar para que el precio guardado no se "pierda" al remountar.
+  useEffect(() => {
+    if (precioVentaInicial != null && precioVentaInicial !== lastSaved) {
+      setPrecioVenta(String(precioVentaInicial));
+      setLastSaved(precioVentaInicial);
+      setDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [precioVentaInicial]);
+
   // Persistir visibilidad en localStorage
   useEffect(() => {
     try {

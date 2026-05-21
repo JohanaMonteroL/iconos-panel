@@ -362,13 +362,17 @@ export async function POST(
       "Slack no configurado (faltan SLACK_BOT_TOKEN o SLACK_CHANNEL_ADMIN).";
   }
 
-  // 7) Push best-effort
-  sendPushToAll({
-    title: "Cotización creada",
-    body: `${limpia.nombre_solicitud} (${horasMin}–${horasMax} hrs)`,
-    url: `/panel/cotizaciones/${cot.id}`,
-    tag: `cotizacion-${cot.id}`,
-  }).catch(() => {});
+  // 7) Push — awaited (fire-and-forget no es confiable en serverless)
+  try {
+    await sendPushToAll({
+      title: "Cotización creada",
+      body: `${limpia.nombre_solicitud} (${horasMin}–${horasMax} hrs)`,
+      url: `/panel/cotizaciones/${cot.id}`,
+      tag: `cotizacion-${cot.id}`,
+    });
+  } catch (e) {
+    console.error("[push] error:", e);
+  }
 
   revalidatePath("/panel/estimaciones");
   revalidatePath(`/panel/estimaciones/${est.id}`);

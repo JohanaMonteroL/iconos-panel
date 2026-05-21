@@ -23,13 +23,16 @@ async function getEstimaciones(archivadas: boolean): Promise<Row[]> {
   const supa = createSupabaseServiceClient();
   // Query principal SIN embedded join (más robusto), después juntamos
   // los nombres de programadores manualmente.
+  // Lista explícita de estados válidos en cada pestaña — evita que un registro
+  // con estado inesperado se cuele en el lugar equivocado.
+  const estadosActivos = ["recibida", "procesada_ia", "en_revision"];
   let q = supa
     .from("estimaciones_formulario")
     .select("id, created_at, estado, datos_raw, programador_id")
     .is("cotizacion_ref", null)
     .order("created_at", { ascending: false })
     .limit(200);
-  q = archivadas ? q.eq("estado", "descartada") : q.neq("estado", "descartada");
+  q = archivadas ? q.eq("estado", "descartada") : q.in("estado", estadosActivos);
   const { data, error } = await q;
   if (error) {
     console.error("[estimaciones] error:", error);
@@ -138,7 +141,7 @@ export default async function EstimacionesPage({
                   className="card hover:border-border-strong transition-colors space-y-3 block"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-body-medium text-text-primary line-clamp-2">
+                    <h2 className="text-body-medium text-text-primary line-clamp-2 min-w-0 flex-1">
                       {it.datos_raw?.nombre_solicitud || "(sin nombre)"}
                     </h2>
                     <span className={`badge ${badgeClass[it.estado] ?? "badge-neutral"}`}>

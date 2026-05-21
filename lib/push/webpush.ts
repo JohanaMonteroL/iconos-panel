@@ -18,6 +18,8 @@ export type PushPayload = {
   body: string;
   url?: string;
   tag?: string;
+  // Si se pasa, el service worker actualiza el badge del PWA (Badging API)
+  badgeCount?: number;
 };
 
 export async function sendPushToAll(payload: PushPayload) {

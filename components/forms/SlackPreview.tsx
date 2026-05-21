@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   MessageCircle,
   ChevronDown,
@@ -8,9 +9,11 @@ import {
   Save,
   Edit3,
   RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 import { buildSlackText } from "@/lib/slack/format";
 import SlackText from "@/components/ui/SlackText";
+import Modal from "@/components/ui/Modal";
 
 type Tipo = "min" | "pert" | "max" | "custom";
 
@@ -50,6 +53,7 @@ export default function SlackPreview({
   slackTextOverride,
   clickupUrl,
 }: Props) {
+  const router = useRouter();
   const [abierto, setAbierto] = useState(true);
   const [tipo, setTipo] = useState<Tipo>(envioInicial?.tipo ?? "pert");
   const [custom, setCustom] = useState<string>(
@@ -65,6 +69,7 @@ export default function SlackPreview({
   const [modoEdit, setModoEdit] = useState(false);
   const [textoEdit, setTextoEdit] = useState<string>(slackTextOverride ?? "");
   const [savingTexto, setSavingTexto] = useState(false);
+  const [confirmandoRestaurar, setConfirmandoRestaurar] = useState(false);
 
   const horasEnvio = useMemo(() => {
     if (tipo === "min") return Math.round(totalMin * 10) / 10;
@@ -129,6 +134,7 @@ export default function SlackPreview({
         setSavedEnvio("Guardado");
         setDirtyEnvio(false);
         setTimeout(() => setSavedEnvio(null), 2000);
+        router.refresh();
       }
     } finally {
       setSavingEnvio(false);
@@ -150,6 +156,7 @@ export default function SlackPreview({
       });
       if (res.ok) {
         setModoEdit(false);
+        router.refresh();
       }
     } finally {
       setSavingTexto(false);
@@ -167,6 +174,8 @@ export default function SlackPreview({
       if (res.ok) {
         setModoEdit(false);
         setTextoEdit("");
+        setConfirmandoRestaurar(false);
+        router.refresh();
       }
     } finally {
       setSavingTexto(false);
@@ -212,15 +221,20 @@ export default function SlackPreview({
           {!modoEdit && (
             <div className="space-y-2">
               <div className="text-overline text-text-tertiary">
-                Horas a enviar en el mensaje
+                Horas que verá el jefe en el mensaje
               </div>
+              <p className="text-caption text-text-secondary">
+                Solo cambia el número de horas que aparece en este mensaje de Slack.
+                No modifica las horas de cada tarea (ésas se editan arriba) ni el rango
+                mín/máx que se manda a ClickUp.
+              </p>
               <div className="flex flex-wrap items-center gap-2">
                 {(["min", "pert", "max"] as Tipo[]).map((t) => (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setTipo(t)}
-                    className={`btn-sm ${tipo === t ? "btn-primary" : "btn-secondary"}`}
+                    className={`btn-sm whitespace-nowrap ${tipo === t ? "btn-primary" : "btn-secondary"}`}
                   >
                     {t === "min"
                       ? `Mín · ${totalMin}h`
@@ -232,7 +246,7 @@ export default function SlackPreview({
                 <button
                   type="button"
                   onClick={() => setTipo("custom")}
-                  className={`btn-sm ${tipo === "custom" ? "btn-primary" : "btn-secondary"}`}
+                  className={`btn-sm whitespace-nowrap ${tipo === "custom" ? "btn-primary" : "btn-secondary"}`}
                 >
                   Personalizado
                 </button>
@@ -250,31 +264,54 @@ export default function SlackPreview({
                     <span className="text-caption text-text-secondary">horas</span>
                   </div>
                 )}
-                <div className="ml-auto flex items-center gap-3">
-                  {savedEnvio && (
-                    <span
-                      className="text-caption"
-                      style={{ color: "var(--state-success)" }}
-                    >
-                      ✓ {savedEnvio}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={guardarEnvio}
-                    disabled={savingEnvio || !dirtyEnvio}
-                    className="btn-secondary btn-sm"
+              </div>
+              <div className="flex items-center gap-3 justify-end">
+                {savedEnvio && (
+                  <span
+                    className="text-caption"
+                    style={{ color: "var(--state-success)" }}
                   >
-                    <Save size={14} strokeWidth={1.75} />
-                    <span>{savingEnvio ? "…" : "Guardar"}</span>
-                  </button>
-                </div>
+                    ✓ {savedEnvio}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={guardarEnvio}
+                  disabled={savingEnvio || !dirtyEnvio}
+                  className="btn-secondary btn-sm whitespace-nowrap"
+                >
+                  <Save size={14} strokeWidth={1.75} />
+                  <span>{savingEnvio ? "…" : "Guardar horas"}</span>
+                </button>
               </div>
               {tieneOverride && (
-                <p className="text-caption" style={{ color: "var(--state-warning)" }}>
-                  ⚠ El texto del mensaje está editado manualmente. Cambiar las horas aquí no
-                  se reflejará a menos que restaures el texto generado.
-                </p>
+                <div
+                  className="rounded-[10px] p-3 flex items-start gap-2 flex-wrap"
+                  style={{
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--state-warning)",
+                  }}
+                >
+                  <AlertTriangle
+                    size={16}
+                    strokeWidth={1.75}
+                    style={{ color: "var(--state-warning)", flexShrink: 0, marginTop: 2 }}
+                  />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <p className="text-caption text-text-secondary">
+                      El texto del mensaje está editado manualmente. Los cambios de buffer
+                      y horas no se reflejan hasta que regeneres.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmandoRestaurar(true)}
+                      className="btn-secondary btn-sm"
+                    >
+                      <RotateCcw size={14} strokeWidth={1.75} />
+                      <span>Regenerar con valores actuales</span>
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -297,7 +334,7 @@ export default function SlackPreview({
                 )}
                 {!modoEdit && tieneOverride && (
                   <button
-                    onClick={restaurarGenerado}
+                    onClick={() => setConfirmandoRestaurar(true)}
                     disabled={savingTexto}
                     className="btn-ghost btn-sm"
                     title="Volver al mensaje auto-generado"
@@ -368,6 +405,51 @@ export default function SlackPreview({
           </div>
         </div>
       )}
+
+      <Modal
+        open={confirmandoRestaurar}
+        onClose={() => !savingTexto && setConfirmandoRestaurar(false)}
+        title="Restaurar mensaje generado"
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setConfirmandoRestaurar(false)}
+              disabled={savingTexto}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={restaurarGenerado}
+              disabled={savingTexto}
+              className="btn-primary"
+            >
+              <RotateCcw size={14} strokeWidth={1.75} />
+              <span>{savingTexto ? "Restaurando…" : "Sí, restaurar"}</span>
+            </button>
+          </>
+        }
+      >
+        <div className="flex gap-3">
+          <AlertTriangle
+            size={20}
+            strokeWidth={1.75}
+            style={{ color: "var(--state-warning)", flexShrink: 0, marginTop: 2 }}
+          />
+          <div className="space-y-2">
+            <p className="text-body">
+              Tu edición manual del mensaje se va a perder y se generará uno nuevo a partir
+              de los datos actuales (buffer, horas y tareas).
+            </p>
+            <p className="text-caption text-text-secondary">
+              Esto no se puede deshacer.
+            </p>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
