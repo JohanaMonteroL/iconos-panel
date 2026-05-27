@@ -14,8 +14,12 @@ import {
   ChevronDown,
   Upload,
   Archive,
+  Ticket,
+  FileStack,
+  Layers,
 } from "lucide-react";
 import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
+import Modal from "@/components/ui/Modal";
 
 export type CotizacionTarea = {
   id?: string;
@@ -48,8 +52,6 @@ export default function CotizacionEditor({ cotizacion }: Props) {
 
   const [editing, setEditing] = useState(false);
   const [nombre, setNombre] = useState(cotizacion.nombre);
-  const [contexto, setContexto] = useState(cotizacion.contexto_sherlyn ?? "");
-  const [correo, setCorreo] = useState(cotizacion.borrador_correo ?? "");
   const [tareas, setTareas] = useState<CotizacionTarea[]>(cotizacion.tareas);
   const [comentario, setComentario] = useState("");
 
@@ -57,14 +59,15 @@ export default function CotizacionEditor({ cotizacion }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
 
+  // Las horas a cobrar (horas_min/horas_max) se manejan en una card aparte
+  // afuera del editor, así que aquí solo sumamos las tareas para mostrar
+  // referencia y para que el save mande horas consistentes con las tareas.
   const totalMin = tareas.reduce((s, t) => s + (t.hrs_min || 0), 0);
   const totalMax = tareas.reduce((s, t) => s + (t.hrs_max || 0), 0);
 
   const cancelar = () => {
     setEditing(false);
     setNombre(cotizacion.nombre);
-    setContexto(cotizacion.contexto_sherlyn ?? "");
-    setCorreo(cotizacion.borrador_correo ?? "");
     setTareas(cotizacion.tareas);
     setComentario("");
     setError(null);
@@ -81,8 +84,8 @@ export default function CotizacionEditor({ cotizacion }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nombre: nombre.trim(),
-          contexto_sherlyn: contexto,
-          borrador_correo: correo,
+          // Horas vienen de la suma de las tareas. El rango y el buffer se
+          // editan en cards aparte (HorasEnvioCotizacion).
           horas_min: totalMin,
           horas_max: totalMax,
           tareas: tareas.map((t, i) => ({
@@ -172,19 +175,8 @@ export default function CotizacionEditor({ cotizacion }: Props) {
           </ul>
         </section>
 
-        {cotizacion.contexto_sherlyn && (
-          <section className="card">
-            <div className="text-overline text-text-tertiary mb-2">Contexto para Sherlyn</div>
-            <p className="text-body whitespace-pre-wrap">{cotizacion.contexto_sherlyn}</p>
-          </section>
-        )}
-
-        {cotizacion.borrador_correo && (
-          <section className="card">
-            <div className="text-overline text-text-tertiary mb-2">Borrador de correo</div>
-            <p className="text-body whitespace-pre-wrap">{cotizacion.borrador_correo}</p>
-          </section>
-        )}
+        {/* Contexto Sherlyn y Borrador correo viven como cards editables
+            independientes en la página de detalle, no aquí. */}
       </>
     );
   }
@@ -261,7 +253,7 @@ export default function CotizacionEditor({ cotizacion }: Props) {
                   </button>
                 </div>
               </div>
-              <div className="p-5 space-y-3">
+              <div className="p-5 space-y-4">
                 <div>
                   <label className="field-label">Nombre</label>
                   <input
@@ -273,8 +265,8 @@ export default function CotizacionEditor({ cotizacion }: Props) {
                 <div>
                   <label className="field-label">Descripción</label>
                   <textarea
-                    className="textarea min-h-[80px]"
-                    rows={3}
+                    className="textarea min-h-[100px]"
+                    rows={4}
                     value={t.descripcion_limpia ?? ""}
                     onChange={(e) =>
                       updateTarea(i, { descripcion_limpia: e.target.value })
@@ -283,11 +275,12 @@ export default function CotizacionEditor({ cotizacion }: Props) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="field-label">Mín</label>
+                    <label className="field-label">Horas mín</label>
                     <input
                       className="input num-tabular"
                       type="number"
                       min={0}
+                      inputMode="numeric"
                       value={t.hrs_min}
                       onChange={(e) =>
                         updateTarea(i, { hrs_min: Number(e.target.value) || 0 })
@@ -295,11 +288,12 @@ export default function CotizacionEditor({ cotizacion }: Props) {
                     />
                   </div>
                   <div>
-                    <label className="field-label">Máx</label>
+                    <label className="field-label">Horas máx</label>
                     <input
                       className="input num-tabular"
                       type="number"
                       min={0}
+                      inputMode="numeric"
                       value={t.hrs_max}
                       onChange={(e) =>
                         updateTarea(i, { hrs_max: Number(e.target.value) || 0 })
@@ -317,25 +311,12 @@ export default function CotizacionEditor({ cotizacion }: Props) {
         </button>
       </section>
 
-      <section className="card">
-        <label className="field-label">Contexto para Sherlyn</label>
-        <textarea
-          className="textarea min-h-[100px] mt-2"
-          rows={4}
-          value={contexto}
-          onChange={(e) => setContexto(e.target.value)}
-        />
-      </section>
+      {/* Las secciones de horas/buffer/análisis financiero/selector de
+          horas se renderizan como cards independientes en la página de
+          detalle, fuera de este editor — para que sigan el mismo patrón
+          visual que el procesado de estimaciones. */}
 
-      <section className="card">
-        <label className="field-label">Borrador de correo</label>
-        <textarea
-          className="textarea min-h-[140px] mt-2"
-          rows={6}
-          value={correo}
-          onChange={(e) => setCorreo(e.target.value)}
-        />
-      </section>
+      {/* Contexto Sherlyn y Borrador correo se editan en cards aparte. */}
 
       <section className="card" style={{ background: "var(--bg-surface)" }}>
         <label className="field-label">Comentario sobre estos cambios (opcional)</label>
@@ -400,6 +381,9 @@ export function CotizacionAcciones({
   const [success, setSuccess] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [modal, setModal] = useState<null | "archivar" | "eliminar">(null);
+  const [generarTicketsAbierto, setGenerarTicketsAbierto] = useState(false);
+  const [notificarUpdateAbierto, setNotificarUpdateAbierto] = useState(false);
+  const [notaCambios, setNotaCambios] = useState("");
 
   const archivar = async ({ checkboxMarcado }: { checkboxMarcado: boolean }) => {
     const res = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
@@ -484,22 +468,36 @@ export function CotizacionAcciones({
     }
   };
 
-  const reenviarSlack = async () => {
-    setWorking("resend-slack");
+  const reenviarSlack = async (opts?: {
+    comoActualizacion?: boolean;
+    notaCambios?: string;
+  }) => {
+    setWorking(opts?.comoActualizacion ? "notify-update" : "resend-slack");
     setMsg(null);
     setSuccess(null);
     setWarning(null);
     try {
       const res = await fetch(
         `/api/cotizaciones/${cotizacionId}/reenviar-slack`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            como_actualizacion: !!opts?.comoActualizacion,
+            nota_cambios: opts?.notaCambios ?? null,
+          }),
+        }
       );
       const json = await res.json();
       if (!res.ok) {
         setMsg(json.error || "No se pudo reenviar");
         return;
       }
-      setSuccess("✓ Mensaje reenviado al canal admin");
+      setSuccess(
+        opts?.comoActualizacion
+          ? "✓ Notificación de actualización enviada al jefe"
+          : "✓ Mensaje reenviado al canal admin"
+      );
       setTimeout(() => setSuccess(null), 3000);
       router.refresh();
     } catch {
@@ -603,12 +601,40 @@ export function CotizacionAcciones({
 
         <button
           disabled={working !== null}
-          onClick={reenviarSlack}
+          onClick={() => reenviarSlack()}
           className="btn-secondary"
         >
           <RefreshCcw size={16} strokeWidth={1.75} />
           <span>{working === "resend-slack" ? "Reenviando…" : "Reenviar Slack"}</span>
         </button>
+
+        <button
+          disabled={working !== null}
+          onClick={() => {
+            setNotaCambios("");
+            setNotificarUpdateAbierto(true);
+          }}
+          className="btn-primary"
+          title="Avisa al jefe que la cotización tuvo cambios y debe revisarla otra vez"
+        >
+          <RefreshCcw size={16} strokeWidth={1.75} />
+          <span>
+            {working === "notify-update"
+              ? "Enviando…"
+              : "Notificar actualización al jefe"}
+          </span>
+        </button>
+
+        {(estado === "aprobada" || estado === "enviada_cliente") && (
+          <button
+            disabled={working !== null}
+            onClick={() => setGenerarTicketsAbierto(true)}
+            className="btn-secondary"
+          >
+            <Ticket size={16} strokeWidth={1.75} />
+            <span>Generar tickets en JIRA</span>
+          </button>
+        )}
 
         {estado !== "archivada" && (
           <button
@@ -646,6 +672,134 @@ export function CotizacionAcciones({
           ⚠️ {warning}
         </p>
       )}
+
+      <Modal
+        open={notificarUpdateAbierto}
+        onClose={() => working !== "notify-update" && setNotificarUpdateAbierto(false)}
+        title="Notificar actualización al jefe"
+        size="md"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setNotificarUpdateAbierto(false)}
+              disabled={working === "notify-update"}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await reenviarSlack({
+                  comoActualizacion: true,
+                  notaCambios: notaCambios.trim() || undefined,
+                });
+                setNotificarUpdateAbierto(false);
+              }}
+              disabled={working === "notify-update"}
+              className="btn-primary"
+            >
+              <RefreshCcw size={14} strokeWidth={1.75} />
+              <span>
+                {working === "notify-update"
+                  ? "Enviando…"
+                  : "Enviar al jefe"}
+              </span>
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-body text-text-secondary">
+            Se manda un nuevo mensaje al canal del jefe con un banner que dice{" "}
+            <strong>🔄 Cotización actualizada</strong> arriba, junto con los datos
+            vigentes (horas, tareas, descripción). La cotización vuelve al estado{" "}
+            <strong>Esperando jefe</strong>.
+          </p>
+          <div>
+            <label className="field-label">
+              Nota de los cambios (opcional)
+            </label>
+            <textarea
+              className="textarea min-h-[100px]"
+              rows={4}
+              value={notaCambios}
+              onChange={(e) => setNotaCambios(e.target.value)}
+              placeholder="Ej: ajustamos horas a 60h porque el cliente pidió incluir el módulo de reportes."
+              maxLength={240}
+            />
+            <span className="field-hint">
+              Si la dejas vacía, se manda un mensaje genérico. Si pones algo,
+              aparece resaltado en el banner para que el jefe sepa qué cambió.
+            </span>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={generarTicketsAbierto}
+        onClose={() => setGenerarTicketsAbierto(false)}
+        title="Generar tickets en JIRA"
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-body text-text-secondary">
+            Elige cómo quieres trasladar esta cotización a JIRA.
+          </p>
+          <a
+            href={`/panel/tickets/nuevo?desde_cotizacion=${cotizacionId}`}
+            className="block rounded-[12px] p-4 transition-colors"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-default)",
+            }}
+            onClick={() => setGenerarTicketsAbierto(false)}
+          >
+            <div className="flex items-start gap-3">
+              <FileStack
+                size={22}
+                strokeWidth={1.75}
+                className="text-text-secondary shrink-0 mt-1"
+              />
+              <div>
+                <div className="text-body-medium">Un ticket completo</div>
+                <div className="text-caption text-text-secondary mt-1">
+                  Crea un solo ticket en JIRA que abarca toda la cotización,
+                  con todas las tareas listadas en la descripción y las horas
+                  totales. Ideal cuando un solo programador hace todo.
+                </div>
+              </div>
+            </div>
+          </a>
+          <a
+            href={`/panel/tickets/desde-cotizacion/${cotizacionId}`}
+            className="block rounded-[12px] p-4 transition-colors"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-default)",
+            }}
+            onClick={() => setGenerarTicketsAbierto(false)}
+          >
+            <div className="flex items-start gap-3">
+              <Layers
+                size={22}
+                strokeWidth={1.75}
+                className="text-text-secondary shrink-0 mt-1"
+              />
+              <div>
+                <div className="text-body-medium">Un ticket por cada tarea</div>
+                <div className="text-caption text-text-secondary mt-1">
+                  Un ticket independiente en JIRA por cada tarea de la
+                  cotización (con sus horas distribuidas). Útil cuando puedes
+                  asignar a programadores distintos o trackear avance por
+                  tarea.
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+      </Modal>
 
       <ConfirmAccionModal
         open={modal === "archivar"}
@@ -720,6 +874,8 @@ const LABEL_ACCION: Record<string, string> = {
   estado_enviada_cliente: "📤 Enviada al cliente",
   estado_en_desarrollo: "🚧 En desarrollo",
   estado_archivada: "📦 Archivada",
+  slack_reenviado: "↻ Mensaje reenviado en Slack",
+  slack_notificada_actualizacion: "🔄 Actualización notificada al jefe",
 };
 
 function fmtFecha(iso: string): string {

@@ -8,15 +8,31 @@ export type Programador = {
   id: string;
   nombre: string;
   slack_id: string | null;
+  correo: string | null;
+  jira_account_id: string | null;
   precio_hora: number;
   activo: boolean;
 };
 
-export default function ProgramadorRow({ p }: { p: Programador }) {
+export type JiraUserSimple = {
+  accountId: string;
+  displayName: string;
+  emailAddress: string | null;
+};
+
+export default function ProgramadorRow({
+  p,
+  jiraUsers = [],
+}: {
+  p: Programador;
+  jiraUsers?: JiraUserSimple[];
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [nombre, setNombre] = useState(p.nombre);
   const [slackId, setSlackId] = useState(p.slack_id ?? "");
+  const [correo, setCorreo] = useState(p.correo ?? "");
+  const [jiraAccountId, setJiraAccountId] = useState(p.jira_account_id ?? "");
   const [precio, setPrecio] = useState(String(p.precio_hora));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +47,8 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
         body: JSON.stringify({
           nombre: nombre.trim(),
           slack_id: slackId.trim() || null,
+          correo: correo.trim() || null,
+          jira_account_id: jiraAccountId.trim() || null,
           precio_hora: Number(precio),
         }),
       });
@@ -73,7 +91,7 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
   if (editing) {
     return (
       <li className="card space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="field-label">Nombre</label>
             <input
@@ -81,6 +99,49 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
             />
+          </div>
+          <div>
+            <label className="field-label">Correo (Slack DM)</label>
+            <input
+              className="input"
+              type="email"
+              value={correo}
+              onChange={(e) => setCorreo(e.target.value)}
+              placeholder="programador@iconos.mx"
+            />
+            <span className="field-hint">
+              Mismo correo que usa en Slack. Se busca por nombre en los DMs
+              de tickets cuando JIRA oculta su email.
+            </span>
+          </div>
+          <div>
+            <label className="field-label">Usuario en JIRA (opcional)</label>
+            {jiraUsers.length === 0 ? (
+              <input
+                className="input"
+                value={jiraAccountId}
+                onChange={(e) => setJiraAccountId(e.target.value)}
+                placeholder="accountId de JIRA"
+              />
+            ) : (
+              <select
+                className="input"
+                value={jiraAccountId}
+                onChange={(e) => setJiraAccountId(e.target.value)}
+              >
+                <option value="">— sin vincular —</option>
+                {jiraUsers.map((u) => (
+                  <option key={u.accountId} value={u.accountId}>
+                    {u.displayName}
+                    {u.emailAddress ? ` · ${u.emailAddress}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            <span className="field-hint">
+              Vincula este programador con su usuario en JIRA por accountId.
+              Útil cuando el displayName de JIRA difiere del nombre interno.
+            </span>
           </div>
           <div>
             <label className="field-label">Slack ID (opcional)</label>
@@ -118,6 +179,8 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
               setEditing(false);
               setNombre(p.nombre);
               setSlackId(p.slack_id ?? "");
+              setCorreo(p.correo ?? "");
+              setJiraAccountId(p.jira_account_id ?? "");
               setPrecio(String(p.precio_hora));
               setError(null);
             }}
@@ -147,6 +210,8 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
           <span className="num-tabular">
             ${p.precio_hora.toLocaleString("es-MX")} / hr
           </span>
+          {p.correo && <span>📧 {p.correo}</span>}
+          {p.jira_account_id && <span>🔗 JIRA vinculado</span>}
           {p.slack_id && <span>Slack: {p.slack_id}</span>}
         </div>
         {error && (

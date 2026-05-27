@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Clock, User, ExternalLink } from "lucide-react";
+import { Clock, User, ExternalLink, Plus, DollarSign } from "lucide-react";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
@@ -15,6 +15,8 @@ type Row = {
   created_at: string;
   clickup_ticket_id: string | null;
   programadores: { nombre: string } | null;
+  tipo_precio?: string | null;
+  monto_fijo?: number | null;
 };
 
 const estadosVisibles = [
@@ -29,15 +31,33 @@ const estadosVisibles = [
 async function getCotizaciones(incluirArchivadas: boolean): Promise<Row[]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   const supa = createSupabaseServiceClient();
+
+  const baseSel =
+    "id, nombre, estado, horas_min, horas_max, created_at, clickup_ticket_id, programadores(nombre)";
+  const withFijo =
+    "id, nombre, estado, horas_min, horas_max, created_at, clickup_ticket_id, tipo_precio, monto_fijo, programadores(nombre)";
+
   let q = supa
     .from("cotizaciones")
-    .select(
-      "id, nombre, estado, horas_min, horas_max, created_at, clickup_ticket_id, programadores(nombre)"
-    )
+    .select(withFijo)
     .order("created_at", { ascending: false })
     .limit(200);
   if (!incluirArchivadas) q = q.in("estado", estadosVisibles);
-  const { data, error } = await q;
+  let { data, error } = await q;
+
+  if (error && /(tipo_precio|monto_fijo)/i.test(error.message)) {
+    // Migración 0008 no aplicada — caer al select base.
+    let qb = supa
+      .from("cotizaciones")
+      .select(baseSel)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (!incluirArchivadas) qb = qb.in("estado", estadosVisibles);
+    const r = await qb;
+    data = r.data as any;
+    error = r.error;
+  }
+
   if (error) {
     console.error("[cotizaciones] error:", error);
     return [];
@@ -76,14 +96,20 @@ export default async function CotizacionesPage({
 
   return (
     <>
-      <header className="flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-2">
           <h1 className="text-display">Cotizaciones</h1>
           <p className="text-body text-text-secondary">
             {incluirArchivadas ? "Mostrando todas (incluye archivadas)" : "Activas únicamente"}
           </p>
         </div>
-        <AutoRefresh intervalSeconds={15} />
+        <div className="flex items-center gap-3 flex-wrap">
+          <AutoRefresh intervalSeconds={15} />
+          <Link href="/panel/cotizaciones/nueva" className="btn-primary">
+            <Plus size={16} strokeWidth={1.75} />
+            <span>Cotización rápida</span>
+          </Link>
+        </div>
       </header>
 
       <div className="inline-flex gap-1 p-1 rounded-lg" style={{ background: "var(--bg-overlay)" }}>
@@ -116,9 +142,14 @@ export default async function CotizacionesPage({
                 className="card hover:border-border-strong transition-colors space-y-3 block"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-body-medium text-text-primary line-clamp-2 min-w-0 flex-1">
-                    {it.nombre}
-                  </h2>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <h2 className="text-body-medium text-text-primary line-clamp-2">
+                      {it.nombre}
+                    </h2>
+                    {it.tipo_precio === "fijo" && (
+                      <span className="badge badge-info">Monto fijo</span>
+                    )}
+                  </div>
                   <span className={`badge ${badgeFor[it.estado] ?? "badge-neutral"}`}>
                     {estadoLabel[it.estado] ?? it.estado}
                   </span>
@@ -128,10 +159,22 @@ export default async function CotizacionesPage({
                     <User size={12} strokeWidth={1.5} />
                     {it.programadores?.nombre ?? "—"}
                   </span>
-                  <span className="num-tabular inline-flex items-center gap-1.5">
-                    <Clock size={12} strokeWidth={1.5} />
-                    {it.horas_min}–{it.horas_max} h
-                  </span>
+                  {it.tipo_precio === "fijo" && it.monto_fijo != null ? (
+                    <span className="num-tabular inline-flex items-center gap-1.5">
+                      <DollarSign size={12} strokeWidth={1.5} />
+                      {Number(it.monto_fijo).toLocaleString("es-MX", {
+                        style: "currency",
+                        currency: "MXN",
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      })}
+                    </span>
+                  ) : (
+                    <span className="num-tabular inline-flex items-center gap-1.5">
+                      <Clock size={12} strokeWidth={1.5} />
+                      {it.horas_min}–{it.horas_max} h
+                    </span>
+                  )}
                   {it.clickup_ticket_id && (
                     <span className="inline-flex items-center gap-1.5">
                       <ExternalLink size={12} strokeWidth={1.5} />

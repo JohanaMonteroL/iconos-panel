@@ -9,6 +9,7 @@ export default function NuevoProgramadorForm() {
   const [open, setOpen] = useState(false);
   const [nombre, setNombre] = useState("");
   const [slackId, setSlackId] = useState("");
+  const [correo, setCorreo] = useState("");
   const [precio, setPrecio] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +17,7 @@ export default function NuevoProgramadorForm() {
   const reset = () => {
     setNombre("");
     setSlackId("");
+    setCorreo("");
     setPrecio("");
     setError(null);
   };
@@ -30,6 +32,7 @@ export default function NuevoProgramadorForm() {
         body: JSON.stringify({
           nombre: nombre.trim(),
           slack_id: slackId.trim() || null,
+          correo: correo.trim() || null,
           precio_hora: Number(precio),
         }),
       });
@@ -72,7 +75,7 @@ export default function NuevoProgramadorForm() {
           <X size={16} strokeWidth={1.75} />
         </button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="field-label">Nombre *</label>
           <input
@@ -84,6 +87,19 @@ export default function NuevoProgramadorForm() {
           />
         </div>
         <div>
+          <label className="field-label">Correo (Slack DM)</label>
+          <input
+            className="input"
+            type="email"
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
+            placeholder="programador@iconos.mx"
+          />
+          <span className="field-hint">
+            Para los DMs de tickets cuando JIRA oculta el email.
+          </span>
+        </div>
+        <div>
           <label className="field-label">Slack ID (opcional)</label>
           <input
             className="input"
@@ -91,7 +107,6 @@ export default function NuevoProgramadorForm() {
             onChange={(e) => setSlackId(e.target.value)}
             placeholder="U0123ABCDE"
           />
-          <span className="field-hint">Si lo pones, podrá recibir mensajes directos</span>
         </div>
         <div>
           <label className="field-label">Precio por hora (MXN) *</label>

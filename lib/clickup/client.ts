@@ -203,6 +203,20 @@ export async function deleteTask(taskId: string): Promise<void> {
   await request<unknown>(`/task/${taskId}`, { method: "DELETE" });
 }
 
+/**
+ * Actualiza la descripción de un ticket existente. ClickUp usa
+ * `markdown_content` en updates (no `markdown_description`).
+ */
+export async function updateTaskDescription(
+  taskId: string,
+  markdown: string
+): Promise<void> {
+  await request<unknown>(`/task/${taskId}`, {
+    method: "PUT",
+    body: JSON.stringify({ markdown_content: markdown }),
+  });
+}
+
 export type ClickUpList = {
   id: string;
   name: string;

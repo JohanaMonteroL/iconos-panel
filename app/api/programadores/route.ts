@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
 
   const nombre = String(body?.nombre ?? "").trim();
   const slack_id = body?.slack_id ? String(body.slack_id).trim() : null;
+  const correo = body?.correo ? String(body.correo).trim() : null;
   const precio_hora = Number(body?.precio_hora);
 
   if (!nombre) {
@@ -33,11 +34,22 @@ export async function POST(req: NextRequest) {
   }
 
   const supa = createSupabaseServiceClient();
-  const { data, error } = await supa
+  let resp: { data: any; error: any } = await supa
     .from("programadores")
-    .insert({ nombre, slack_id, precio_hora, activo: true })
-    .select("id, nombre, slack_id, precio_hora, activo")
+    .insert({ nombre, slack_id, correo, precio_hora, activo: true })
+    .select("id, nombre, slack_id, correo, precio_hora, activo")
     .single();
+
+  // Fallback si la migración 0011 no se aplicó
+  if (resp.error && /correo/i.test(resp.error.message)) {
+    resp = await supa
+      .from("programadores")
+      .insert({ nombre, slack_id, precio_hora, activo: true })
+      .select("id, nombre, slack_id, precio_hora, activo")
+      .single();
+  }
+  const data = resp.data;
+  const error = resp.error;
 
   if (error) {
     if (/duplicate|unique/i.test(error.message)) {

@@ -13,11 +13,28 @@ import type { EstimacionLimpia } from "@/lib/anthropic/process";
 export const runtime = "nodejs";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   if (!getSessionFromCookies().ok) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  // Opcional: leer del body { como_actualizacion: boolean, nota_cambios: string }
+  let comoActualizacion = false;
+  let notaCambios: string | null = null;
+  try {
+    const body = (await req.json()) as {
+      como_actualizacion?: boolean;
+      nota_cambios?: string | null;
+    };
+    comoActualizacion = !!body?.como_actualizacion;
+    notaCambios =
+      typeof body?.nota_cambios === "string" && body.nota_cambios.trim()
+        ? body.nota_cambios.trim().slice(0, 240)
+        : null;
+  } catch {
+    // body opcional — sin body, comportamiento "reenvío normal".
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Server sin Supabase" }, { status: 503 });
@@ -97,21 +114,39 @@ export async function POST(
   }
 
   try {
+    const fallbackText = comoActualizacion
+      ? `🔄 Cotización actualizada — ${texto}`
+      : texto;
+
     const r = await postMessage({
       channel: process.env.SLACK_CHANNEL_ADMIN!,
-      text: texto,
-      blocks: blocksAprobacionCotizacion(texto, cot.id, clickupUrl),
+      text: fallbackText,
+      blocks: blocksAprobacionCotizacion(texto, cot.id, clickupUrl, {
+        comoActualizacion,
+        notaCambios,
+      }),
     });
 
     if (r.ts) {
-      await supa
-        .from("cotizaciones")
-        .update({ slack_message_ts: r.ts })
-        .eq("id", params.id);
+      // Si es actualización, mover el estado a 'esperando_aprobacion' para
+      // que el dashboard refleje que el jefe debe revisar de nuevo.
+      const update: Record<string, any> = { slack_message_ts: r.ts };
+      if (comoActualizacion) {
+        update.estado = "esperando_aprobacion";
+        update.jefe_aprobacion_solicitada_at = new Date().toISOString();
+      }
+      await supa.from("cotizaciones").update(update).eq("id", params.id);
+
       await supa.from("acciones_cotizacion").insert({
         cotizacion_id: params.id,
-        tipo_accion: "slack_reenviado",
-        metadata: { ts: r.ts, channel: r.channel },
+        tipo_accion: comoActualizacion
+          ? "slack_notificada_actualizacion"
+          : "slack_reenviado",
+        metadata: {
+          ts: r.ts,
+          channel: r.channel,
+          ...(comoActualizacion ? { nota_cambios: notaCambios } : {}),
+        },
       });
     }
 

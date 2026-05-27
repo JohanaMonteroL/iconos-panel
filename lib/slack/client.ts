@@ -24,15 +24,28 @@ function getToken(): string | null {
   return process.env.SLACK_BOT_TOKEN || null;
 }
 
+// User token de Johana — opcional. Si está configurado, los DMs a programadores
+// se envían "como Johana" en lugar de venir del bot. Se obtiene en
+// api.slack.com/apps → tu app → OAuth & Permissions → reinstalar con user
+// scopes (chat:write, im:write, users:read.email).
+function getUserToken(): string | null {
+  return process.env.SLACK_USER_TOKEN || null;
+}
+
+export function userTokenAvailable(): boolean {
+  return !!process.env.SLACK_USER_TOKEN;
+}
+
 export function slackConfigured(): boolean {
   return !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ADMIN);
 }
 
 async function call<T extends { ok: boolean; error?: string }>(
   method: string,
-  body: Record<string, any>
+  body: Record<string, any>,
+  opts: { useUserToken?: boolean } = {}
 ): Promise<T> {
-  const token = getToken();
+  const token = opts.useUserToken ? getUserToken() || getToken() : getToken();
   if (!token) throw new Error("SLACK_BOT_TOKEN no configurado");
   const res = await fetch(`${SLACK_API}/${method}`, {
     method: "POST",
@@ -89,22 +102,87 @@ export async function getPermalink(input: {
  * Para mandar un DM, primero hay que abrir el "conversación" (canal IM).
  * Slack devuelve el channel_id que luego se usa con chat.postMessage.
  */
-async function openIm(userId: string): Promise<string> {
+async function openIm(
+  userId: string,
+  opts: { useUserToken?: boolean } = {}
+): Promise<string> {
   const r = await call<{ ok: boolean; channel?: { id: string }; error?: string }>(
     "conversations.open",
-    { users: userId }
+    { users: userId },
+    opts
   );
   if (!r.channel?.id) throw new Error("No se pudo abrir IM con " + userId);
   return r.channel.id;
 }
 
+/**
+ * Manda un DM al user_id. Si `asUser=true` y hay SLACK_USER_TOKEN, el mensaje
+ * sale desde la cuenta del dueño del token (ej. Johana) en lugar del bot.
+ */
 export async function postDM(input: {
   userId: string;
   text: string;
   blocks?: SlackBlock[];
+  asUser?: boolean;
 }): Promise<PostMessageResponse> {
-  const channel = await openIm(input.userId);
-  return postMessage({ channel, text: input.text, blocks: input.blocks });
+  const useUserToken = !!input.asUser && userTokenAvailable();
+  const channel = await openIm(input.userId, { useUserToken });
+  return call<PostMessageResponse>(
+    "chat.postMessage",
+    { channel, text: input.text, blocks: input.blocks },
+    { useUserToken }
+  );
+}
+
+/**
+ * Busca el user_id de Slack a partir de un correo. Necesita el scope
+ * `users:read.email` en la app (puede ser del bot o del user token).
+ * Devuelve null si no se encuentra.
+ */
+export async function lookupUserIdByEmail(
+  email: string,
+  opts: { useUserToken?: boolean } = {}
+): Promise<string | null> {
+  const useUserToken = !!opts.useUserToken && userTokenAvailable();
+  const token = useUserToken ? getUserToken() : getToken();
+  if (!token) return null;
+  const url = new URL(`${SLACK_API}/users.lookupByEmail`);
+  url.searchParams.set("email", email);
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const json = (await res.json()) as {
+    ok: boolean;
+    user?: { id: string };
+    error?: string;
+  };
+  if (!json.ok || !json.user?.id) return null;
+  return json.user.id;
+}
+
+/**
+ * Atajo: manda un DM resolviendo el correo a user_id internamente.
+ * Si `asUser` está activo y SLACK_USER_TOKEN existe, lo manda como ese usuario
+ * (típicamente Johana). Si no, fallback al bot.
+ * Si el correo no matchea ningún usuario en Slack devuelve null.
+ */
+export async function postDMByEmail(input: {
+  email: string;
+  text: string;
+  blocks?: SlackBlock[];
+  asUser?: boolean;
+}): Promise<PostMessageResponse | null> {
+  const userId = await lookupUserIdByEmail(input.email, {
+    useUserToken: input.asUser,
+  });
+  if (!userId) return null;
+  return postDM({
+    userId,
+    text: input.text,
+    blocks: input.blocks,
+    asUser: input.asUser,
+  });
 }
 
 // ── Verificación de firma para webhooks de Slack ──────────────────────────

@@ -130,3 +130,86 @@ export function buildClickUpDescription({
 
   return bloques.join("\n");
 }
+
+// ── Descripción para cotización de monto fijo (no horas) ────────────────
+
+export type ConceptoFijo = {
+  concepto: string;
+  cantidad: number;
+  precio_unitario: number;
+};
+
+export function buildClickUpDescriptionFijo({
+  montoFijoMxn,
+  programadorNombre,
+  descripcion,
+  conceptos,
+  borradorCorreo,
+  notas,
+}: {
+  nombre?: string; // disponible si se quiere agregar arriba; hoy no se usa
+  montoFijoMxn: number;
+  programadorNombre?: string | null;
+  descripcion: string;
+  conceptos?: ConceptoFijo[];
+  borradorCorreo?: string | null;
+  notas?: string | null;
+}): string {
+  const fmt = (n: number) =>
+    n.toLocaleString("es-MX", {
+      style: "currency",
+      currency: "MXN",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+
+  const bloques: string[] = [];
+  bloques.push("### 📝 Descripción");
+  bloques.push("");
+  bloques.push(descripcion || "—");
+
+  if (conceptos && conceptos.length > 0) {
+    bloques.push("");
+    bloques.push("### 📋 Conceptos");
+    bloques.push("");
+    bloques.push("| Concepto | Cantidad | Precio unitario | Subtotal |");
+    bloques.push("| --- | :---: | :---: | :---: |");
+    for (const c of conceptos) {
+      const subtotal = (c.cantidad || 0) * (c.precio_unitario || 0);
+      const nombre = c.concepto.replace(/\|/g, " ");
+      bloques.push(
+        `| ${nombre} | ${c.cantidad} | ${fmt(c.precio_unitario)} | ${fmt(subtotal)} |`
+      );
+    }
+    bloques.push(`| **TOTAL** | | | **${fmt(montoFijoMxn)}** |`);
+  } else {
+    bloques.push("");
+    bloques.push("### 💰 Monto fijo");
+    bloques.push("");
+    bloques.push(`- **Total:** ${fmt(montoFijoMxn)} MXN`);
+  }
+
+  bloques.push("");
+  bloques.push("### ℹ️ Datos");
+  bloques.push("");
+  bloques.push(`- **Tipo:** Cotización extraordinaria (no horas)`);
+  if (programadorNombre && programadorNombre !== "—") {
+    bloques.push(`- **Atendido por:** ${programadorNombre}`);
+  }
+
+  if (borradorCorreo && borradorCorreo.trim()) {
+    bloques.push("");
+    bloques.push("### ✉️ Correo propuesto al cliente");
+    bloques.push("");
+    bloques.push(borradorCorreo.trim());
+  }
+
+  if (notas && notas.trim()) {
+    bloques.push("");
+    bloques.push("### 🗒️ Notas");
+    bloques.push("");
+    bloques.push(notas.trim());
+  }
+
+  return bloques.join("\n");
+}

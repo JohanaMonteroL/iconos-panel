@@ -7,18 +7,34 @@ import type { SlackBlock } from "./client";
  * Mensaje al jefe para revisar una cotización.
  * Body: el texto mrkdwn que ya generamos.
  * Buttons: Aprobar / Pedir cambios.
+ *
+ * Si `opts.comoActualizacion` es true, añade un banner arriba indicando que
+ * la cotización tuvo cambios y se está reenviando para revisión.
  */
 export function blocksAprobacionCotizacion(
   textoMrkdwn: string,
   cotizacionId: string,
-  clickupUrl?: string | null
+  clickupUrl?: string | null,
+  opts?: { comoActualizacion?: boolean; notaCambios?: string | null }
 ): SlackBlock[] {
-  const blocks: SlackBlock[] = [
-    {
+  const blocks: SlackBlock[] = [];
+
+  if (opts?.comoActualizacion) {
+    const nota = opts.notaCambios?.trim();
+    const textoBanner = nota
+      ? `🔄 *Cotización actualizada* — ${nota}`
+      : "🔄 *Cotización actualizada* — se hicieron cambios, revísala de nuevo.";
+    blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: textoMrkdwn },
-    },
-  ];
+      text: { type: "mrkdwn", text: textoBanner },
+    });
+    blocks.push({ type: "divider" });
+  }
+
+  blocks.push({
+    type: "section",
+    text: { type: "mrkdwn", text: textoMrkdwn },
+  });
 
   if (clickupUrl) {
     blocks.push({
@@ -51,6 +67,109 @@ export function blocksAprobacionCotizacion(
       },
     ],
   });
+
+  return blocks;
+}
+
+/**
+ * Bloques para el DM al programador cuando se le asigna un ticket.
+ * Si es un reasignación (no creación nueva), pasa `actualizacion: true` para
+ * que muestre un banner distinto.
+ */
+const PRIORIDAD_EMOJI: Record<string, string> = {
+  highest: "🔥",
+  high: "🔺",
+  medium: "🔷",
+  low: "🔻",
+  lowest: "⬇️",
+};
+
+const TIPO_EMOJI: Record<string, string> = {
+  estimacion: "🧮",
+  desarrollo: "💻",
+  soporte: "🛠️",
+  investigacion: "🔍",
+};
+
+export function blocksTicketAsignado(input: {
+  titulo: string;
+  jiraKey: string;
+  jiraUrl: string;
+  tipo: string; // estimacion|desarrollo|soporte|investigacion
+  prioridad: string; // highest|high|medium|low|lowest
+  horasEstimadas?: number | null;
+  proyectoNombre?: string | null;
+  descripcionMd?: string | null;
+  enviadoPor?: string | null; // Johana
+  actualizacion?: boolean;
+}): SlackBlock[] {
+  const headerEmoji = input.actualizacion ? "🔄" : "📋";
+  const headerTexto = input.actualizacion
+    ? `Ticket reasignado a ti — ${input.jiraKey}`
+    : `Nuevo ticket asignado — ${input.jiraKey}`;
+
+  const detalles: string[] = [];
+  detalles.push(
+    `${TIPO_EMOJI[input.tipo] ?? "📝"} *Tipo:* ${input.tipo.charAt(0).toUpperCase() + input.tipo.slice(1)}`
+  );
+  detalles.push(
+    `${PRIORIDAD_EMOJI[input.prioridad] ?? "•"} *Prioridad:* ${input.prioridad}`
+  );
+  if (input.horasEstimadas != null && input.horasEstimadas > 0) {
+    detalles.push(`⏱️ *Horas estimadas:* ${input.horasEstimadas}h`);
+  }
+  if (input.proyectoNombre) {
+    detalles.push(`📁 *Proyecto:* ${input.proyectoNombre}`);
+  }
+
+  const blocks: SlackBlock[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: `${headerEmoji} ${headerTexto}` },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*${input.titulo}*` },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: detalles.join("\n") },
+    },
+  ];
+
+  if (input.descripcionMd && input.descripcionMd.trim()) {
+    // Slack tiene un límite de 3000 caracteres por bloque section.
+    const desc = input.descripcionMd.trim().slice(0, 2800);
+    blocks.push({ type: "divider" });
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: desc },
+    });
+  }
+
+  blocks.push({
+    type: "actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "🔗 Abrir en JIRA" },
+        url: input.jiraUrl,
+        style: "primary",
+      },
+    ],
+  });
+
+  if (input.enviadoPor) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Asignado por ${input.enviadoPor}`,
+        },
+      ],
+    });
+  }
 
   return blocks;
 }

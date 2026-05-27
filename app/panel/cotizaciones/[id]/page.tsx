@@ -2,13 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import Markdown from "@/components/ui/Markdown";
-import SlackText from "@/components/ui/SlackText";
 import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
 import CotizacionEditor, {
   CotizacionAcciones,
   CotizacionLog,
   type CotizacionData,
 } from "@/components/forms/CotizacionEditor";
+import HorasEnvioCotizacion from "@/components/forms/HorasEnvioCotizacion";
+import InlineTextEditor from "@/components/forms/InlineTextEditor";
+import MontoFijoEditor from "@/components/forms/MontoFijoEditor";
+import SlackMessageEditor from "@/components/forms/SlackMessageEditor";
+import ConceptosCotizacionCard from "@/components/forms/ConceptosCotizacionCard";
+import ProyectoEditor from "@/components/forms/ProyectoEditor";
+import { getProyectoOptions } from "@/lib/clickup/client";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
 import { formatFechaLarga as fmtFecha } from "@/lib/dates";
@@ -41,6 +47,10 @@ type Cotizacion = {
   contexto_sherlyn: string | null;
   jefe_aprobacion_solicitada_at: string | null;
   jefe_aprobacion_recibida_at: string | null;
+  tipo_precio: string | null;
+  monto_fijo: number | null;
+  proyecto_clickup_id: string | null;
+  proyecto_nombre: string | null;
   programadores: { nombre: string; precio_hora: number } | null;
   tareas_estimacion: Tarea[];
 };
@@ -52,9 +62,21 @@ type Accion = {
   created_at: string;
 };
 
+type Concepto = {
+  id: string;
+  orden: number;
+  concepto: string;
+  cantidad: number;
+  precio_unitario: number;
+};
+
 async function getCotizacion(
   id: string
-): Promise<{ cotizacion: Cotizacion; acciones: Accion[] } | null> {
+): Promise<{
+  cotizacion: Cotizacion;
+  acciones: Accion[];
+  conceptos: Concepto[];
+} | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
 
@@ -63,12 +85,21 @@ async function getCotizacion(
   const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at, clickup_ticket_id,
      ia_recomendacion, borrador_correo, contexto_sherlyn,
      jefe_aprobacion_solicitada_at, jefe_aprobacion_recibida_at,
+     tipo_precio, monto_fijo, proyecto_clickup_id, proyecto_nombre,
      programadores(nombre, precio_hora),
      tareas_estimacion(id, orden, nombre_limpio, nombre_original, descripcion_limpia, hrs_min, hrs_max)`;
-  const selectNo0005 = selectFull.replace("precio_venta_hora, slack_text, ", "");
+  const selectNoProyectoNombre = selectFull.replace(", proyecto_nombre", "");
+  const selectNoFijo = selectNoProyectoNombre.replace("tipo_precio, monto_fijo, proyecto_clickup_id,\n     ", "");
+  const selectNo0005 = selectNoFijo.replace("precio_venta_hora, slack_text, ", "");
   const selectNoExtras = selectNo0005.replace("horas_envio, ", "");
 
   let cotResp = await supa.from("cotizaciones").select(selectFull).eq("id", id).maybeSingle();
+  if (cotResp.error && /proyecto_nombre/i.test(cotResp.error.message)) {
+    cotResp = await supa.from("cotizaciones").select(selectNoProyectoNombre).eq("id", id).maybeSingle();
+  }
+  if (cotResp.error && /(tipo_precio|monto_fijo)/i.test(cotResp.error.message)) {
+    cotResp = await supa.from("cotizaciones").select(selectNoFijo).eq("id", id).maybeSingle();
+  }
   if (cotResp.error && /(precio_venta_hora|slack_text)/.test(cotResp.error.message)) {
     cotResp = await supa
       .from("cotizaciones")
@@ -93,9 +124,22 @@ async function getCotizacion(
   if (cotResp.error || !cotResp.data) return null;
   const data = cotResp.data as any;
   data.tareas_estimacion?.sort((a: Tarea, b: Tarea) => a.orden - b.orden);
+
+  // Conceptos de la cotización fija (si la tabla existe)
+  let conceptos: Concepto[] = [];
+  try {
+    const { data: c } = await supa
+      .from("conceptos_cotizacion")
+      .select("id, orden, concepto, cantidad, precio_unitario")
+      .eq("cotizacion_id", id)
+      .order("orden", { ascending: true });
+    if (c) conceptos = c as Concepto[];
+  } catch {}
+
   return {
     cotizacion: data as Cotizacion,
     acciones: (log as unknown as Accion[]) ?? [],
+    conceptos,
   };
 }
 
@@ -125,9 +169,13 @@ export default async function CotizacionDetallePage({
 }: {
   params: { id: string };
 }) {
-  const result = await getCotizacion(params.id);
+  const [result, proyectosRaw] = await Promise.all([
+    getCotizacion(params.id),
+    getProyectoOptions().catch(() => []),
+  ]);
   if (!result) notFound();
-  const { cotizacion: it, acciones } = result;
+  const { cotizacion: it, acciones, conceptos } = result;
+  const proyectos = proyectosRaw.map((p) => ({ id: p.id, nombre: p.name }));
 
   const precio = it.programadores?.precio_hora ?? 0;
   const costoMin = it.horas_min * precio;
@@ -172,7 +220,11 @@ export default async function CotizacionDetallePage({
           </span>
         </div>
         <p className="text-caption text-text-secondary">
-          {it.programadores?.nombre ?? "—"} · creada {fmtFecha(it.created_at)}
+          {it.programadores?.nombre ?? "—"}
+          {it.proyecto_nombre && (
+            <> · <span className="text-text-primary">{it.proyecto_nombre}</span></>
+          )}
+          {" · creada "}{fmtFecha(it.created_at)}
           {it.jefe_aprobacion_recibida_at && (
             <> · aprobada {fmtFecha(it.jefe_aprobacion_recibida_at)}</>
           )}
@@ -209,31 +261,74 @@ export default async function CotizacionDetallePage({
         tieneTicketClickUp={!!it.clickup_ticket_id}
       />
 
-      <section className="card space-y-4">
-        <h2 className="text-heading-2">Resumen</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-          <div>
-            <div className="text-overline text-text-tertiary">Horas enviadas</div>
-            <div className="mt-1 text-heading-1 num-tabular">{horasEnvio}h</div>
-            <div className="text-caption text-text-tertiary">
-              rango: {it.horas_min}–{it.horas_max}h
+      {/* 1. Resumen — varía según tipo (horas vs monto fijo) */}
+      {it.tipo_precio === "fijo" ? (
+        <section className="card space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-heading-2">Resumen</h2>
+            <span className="badge badge-info">Monto fijo</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <div className="text-overline text-text-tertiary">Monto total</div>
+              <div className="mt-1 text-heading-1 num-tabular">
+                {(it.monto_fijo ?? 0).toLocaleString("es-MX", {
+                  style: "currency",
+                  currency: "MXN",
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}{" "}
+                MXN
+              </div>
+              <div className="text-caption text-text-tertiary">
+                Cotización extraordinaria, no se factura por horas.
+              </div>
+            </div>
+            <div>
+              <div className="text-overline text-text-tertiary">Atendido por</div>
+              <div className="mt-1 text-heading-1">
+                {it.programadores?.nombre ?? "—"}
+              </div>
             </div>
           </div>
-          <div>
-            <div className="text-overline text-text-tertiary">Precio interno / hr</div>
-            <div className="mt-1 text-heading-1 num-tabular">
-              ${precio.toLocaleString("es-MX")}
+        </section>
+      ) : (
+        <section className="card space-y-4">
+          <h2 className="text-heading-2">Resumen</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+            <div>
+              <div className="text-overline text-text-tertiary">Horas enviadas</div>
+              <div className="mt-1 text-heading-1 num-tabular">{horasEnvio}h</div>
+              <div className="text-caption text-text-tertiary">
+                rango: {it.horas_min}–{it.horas_max}h
+              </div>
+            </div>
+            <div>
+              <div className="text-overline text-text-tertiary">Precio interno / hr</div>
+              <div className="mt-1 text-heading-1 num-tabular">
+                ${precio.toLocaleString("es-MX")}
+              </div>
+            </div>
+            <div>
+              <div className="text-overline text-text-tertiary">Costo (horas enviadas)</div>
+              <div className="mt-1 text-heading-1 num-tabular">
+                ${(horasEnvio * precio).toLocaleString("es-MX")}
+              </div>
+              <div className="text-caption text-text-tertiary">
+                {horasEnvio}h × ${precio.toLocaleString("es-MX")}/h
+              </div>
+            </div>
+            <div>
+              <div className="text-overline text-text-tertiary">Costo rango</div>
+              <div className="mt-1 text-heading-1 num-tabular">
+                ${costoMin.toLocaleString("es-MX")}–${costoMax.toLocaleString("es-MX")}
+              </div>
             </div>
           </div>
-          <div>
-            <div className="text-overline text-text-tertiary">Costo interno</div>
-            <div className="mt-1 text-heading-1 num-tabular">
-              ${costoMin.toLocaleString("es-MX")}–${costoMax.toLocaleString("es-MX")}
-            </div>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
+      {/* 2. Recomendación IA */}
       {it.ia_recomendacion && (
         <section
           className="card"
@@ -247,76 +342,115 @@ export default async function CotizacionDetallePage({
         </section>
       )}
 
-      {/* Análisis financiero — para ver ganancia con el precio de venta */}
-      <AnalisisFinanciero
-        savePath={`/api/cotizaciones/${it.id}/precio-venta`}
-        precioHoraInterno={precio}
-        precioVentaInicial={it.precio_venta_hora ?? null}
-        horasMin={it.horas_min}
-        horasMax={it.horas_max}
+      {/* Proyecto — editable, siempre visible */}
+      <ProyectoEditor
+        cotizacionId={it.id}
+        proyectos={proyectos}
+        proyectoIdInicial={it.proyecto_clickup_id ?? null}
+        proyectoNombreInicial={it.proyecto_nombre ?? null}
       />
 
-      {/* Mensaje al jefe — usa el slack_text guardado al crear la cotización */}
-      <section
-        className="rounded-[12px] border overflow-hidden"
-        style={{
-          background: "var(--bg-elevated)",
-          borderColor: "var(--border-subtle)",
-        }}
-      >
-        <div
-          className="px-5 py-3 border-b"
-          style={{
-            background: "var(--bg-surface)",
-            borderColor: "var(--border-subtle)",
-          }}
-        >
-          <h2 className="text-heading-2">Mensaje al jefe</h2>
-        </div>
-        <div className="p-5 space-y-2">
-          <div
-            className="rounded-[10px] p-4"
-            style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
-              fontFamily: "Lato, ui-sans-serif, system-ui, sans-serif",
-              lineHeight: 1.5,
-            }}
-          >
-            <SlackText
-              text={
-                it.slack_text ??
-                buildSlackText({
-                  nombreCotizacion: it.nombre,
-                  proyecto: null,
-                  programador: it.programadores?.nombre ?? "—",
-                  horasEnvio: horasEnvio,
-                  bufferPct: 0,
-                  descripcionCorta:
-                    it.contexto_sherlyn?.split(/[.\n]/)[0] ?? it.nombre,
-                  puntosClave: it.tareas_estimacion
-                    .slice(0, 4)
-                    .map((t) => t.nombre_limpio || t.nombre_original),
-                  notas: null,
-                  clickupUrl: it.clickup_ticket_id
-                    ? `https://app.clickup.com/t/${it.clickup_ticket_id}`
-                    : null,
-                })
-              }
-            />
-          </div>
-          <p className="text-caption text-text-tertiary">
-            {it.slack_text
-              ? "Este es el texto que se guardó al enviar a aprobación."
-              : it.clickup_ticket_id
-              ? "Texto generado al momento; falta migración 0005 para fijarlo."
-              : "Sin ticket aún en ClickUp — usa “Reintentar ClickUp”."}
-          </p>
-        </div>
-      </section>
+      {/* 3. Análisis financiero — solo para tipo horas */}
+      {it.tipo_precio !== "fijo" && (
+        <AnalisisFinanciero
+          savePath={`/api/cotizaciones/${it.id}/precio-venta`}
+          precioHoraInterno={precio}
+          precioVentaInicial={it.precio_venta_hora ?? null}
+          horasMin={it.horas_min}
+          horasMax={it.horas_max}
+        />
+      )}
 
-      <CotizacionEditor cotizacion={editorData} />
+      {/* Editor de la cotización (nombre + tareas) — para tipo horas */}
+      {it.tipo_precio !== "fijo" && <CotizacionEditor cotizacion={editorData} />}
 
+      {/* 4. Horas a enviar — solo para tipo horas */}
+      {it.tipo_precio !== "fijo" && (
+        <HorasEnvioCotizacion
+          cotizacionId={it.id}
+          horasMin={it.horas_min}
+          horasMax={it.horas_max}
+          horasEnvioActual={it.horas_envio ?? null}
+        />
+      )}
+
+      {/* Conceptos / monto — solo para cotizaciones fijas */}
+      {it.tipo_precio === "fijo" &&
+        (conceptos.length > 0 ? (
+          <ConceptosCotizacionCard
+            cotizacionId={it.id}
+            conceptosIniciales={conceptos}
+            montoTotal={it.monto_fijo ?? 0}
+          />
+        ) : (
+          <MontoFijoEditor
+            cotizacionId={it.id}
+            montoActual={it.monto_fijo ?? null}
+          />
+        ))}
+
+      {/* 5. Contexto Sherlyn */}
+      <InlineTextEditor
+        cotizacionId={it.id}
+        field="contexto_sherlyn"
+        label="Contexto para Sherlyn"
+        initialValue={it.contexto_sherlyn}
+        rows={4}
+        placeholder="1-2 párrafos explicando el alcance a Sherlyn para que mande al cliente."
+        iaTipo="sherlyn"
+        iaContexto={
+          it.tipo_precio === "fijo"
+            ? `Cotización: ${it.nombre} · Monto: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN`
+            : `Cotización: ${it.nombre} · Horas: ${it.horas_min}–${it.horas_max}h · Programador: ${it.programadores?.nombre ?? "—"}`
+        }
+      />
+
+      {/* 6. Borrador correo */}
+      <InlineTextEditor
+        cotizacionId={it.id}
+        field="borrador_correo"
+        label="Borrador de correo al cliente"
+        initialValue={it.borrador_correo}
+        rows={8}
+        placeholder="Cuerpo del correo que Sherlyn mandará al cliente."
+        iaTipo="correo"
+        iaContexto={
+          it.tipo_precio === "fijo"
+            ? `Cotización: ${it.nombre} · Monto total: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN`
+            : `Cotización: ${it.nombre} · Horas: ${it.horas_min}–${it.horas_max}h`
+        }
+      />
+
+      {/* 7. Mensaje al jefe (Slack) — editable + IA */}
+      <SlackMessageEditor
+        cotizacionId={it.id}
+        slackText={
+          it.slack_text ??
+          buildSlackText({
+            nombreCotizacion: it.nombre,
+            proyecto: null,
+            programador: it.programadores?.nombre ?? "—",
+            horasEnvio: horasEnvio,
+            bufferPct: 0,
+            descripcionCorta:
+              it.contexto_sherlyn?.split(/[.\n]/)[0] ?? it.nombre,
+            puntosClave: it.tareas_estimacion
+              .slice(0, 4)
+              .map((t) => t.nombre_limpio || t.nombre_original),
+            notas: null,
+            clickupUrl: it.clickup_ticket_id
+              ? `https://app.clickup.com/t/${it.clickup_ticket_id}`
+              : null,
+          })
+        }
+        iaContexto={
+          it.tipo_precio === "fijo"
+            ? `Cotización: ${it.nombre} · Monto: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN · Atendido por: ${it.programadores?.nombre ?? "—"}`
+            : `Cotización: ${it.nombre} · Horas enviadas: ${horasEnvio}h · Programador: ${it.programadores?.nombre ?? "—"}`
+        }
+      />
+
+      {/* 8 / 9. Historial */}
       <CotizacionLog acciones={acciones} />
     </>
   );

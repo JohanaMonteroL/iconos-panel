@@ -32,6 +32,11 @@ export async function PATCH(
     patch.nombre = n;
   }
   if ("slack_id" in body) patch.slack_id = body.slack_id ? String(body.slack_id).trim() : null;
+  if ("correo" in body) patch.correo = body.correo ? String(body.correo).trim() : null;
+  if ("jira_account_id" in body)
+    patch.jira_account_id = body.jira_account_id
+      ? String(body.jira_account_id).trim()
+      : null;
   if (body.precio_hora !== undefined) {
     const p = Number(body.precio_hora);
     if (!Number.isFinite(p) || p < 0) {
@@ -46,7 +51,23 @@ export async function PATCH(
   }
 
   const supa = createSupabaseServiceClient();
-  const { error } = await supa.from("programadores").update(patch).eq("id", params.id);
+  let { error } = await supa.from("programadores").update(patch).eq("id", params.id);
+  // Si la migración 0012 no se aplicó, reintentar sin jira_account_id
+  if (error && /jira_account_id/i.test(error.message)) {
+    const { jira_account_id: _d, ...resto } = patch;
+    void _d;
+    error = (
+      await supa.from("programadores").update(resto).eq("id", params.id)
+    ).error;
+  }
+  // Si la migración 0011 no se aplicó, reintentar sin correo
+  if (error && /correo/i.test(error.message)) {
+    const { correo: _drop, ...resto } = patch;
+    void _drop;
+    error = (
+      await supa.from("programadores").update(resto).eq("id", params.id)
+    ).error;
+  }
   if (error) {
     if (/duplicate|unique/i.test(error.message)) {
       return NextResponse.json(

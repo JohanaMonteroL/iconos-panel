@@ -3,25 +3,72 @@ import { ChevronLeft } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import ProgramadorRow, { type Programador } from "./ProgramadorRow";
 import NuevoProgramadorForm from "./NuevoProgramadorForm";
+import {
+  jiraConfigured,
+  listAllAssignableUsers,
+  type JiraUser,
+} from "@/lib/jira/client";
 
 export const dynamic = "force-dynamic";
 
 async function getProgramadores(): Promise<Programador[]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   const supa = createSupabaseServiceClient();
-  const { data, error } = await supa
+  const sel =
+    "id, nombre, slack_id, correo, jira_account_id, precio_hora, activo";
+  const selSinJira = "id, nombre, slack_id, correo, precio_hora, activo";
+  const selSinCorreo = "id, nombre, slack_id, precio_hora, activo";
+  let resp: { data: any; error: any } = await supa
     .from("programadores")
-    .select("id, nombre, slack_id, precio_hora, activo")
+    .select(sel)
     .order("activo", { ascending: false })
     .order("nombre", { ascending: true });
-  if (error) return [];
-  return data ?? [];
+  // Fallback si la migración 0012 no se aplicó.
+  if (resp.error && /jira_account_id/i.test(resp.error.message)) {
+    resp = await supa
+      .from("programadores")
+      .select(selSinJira)
+      .order("activo", { ascending: false })
+      .order("nombre", { ascending: true });
+  }
+  // Fallback si la migración 0011 no se aplicó.
+  if (resp.error && /correo/i.test(resp.error.message)) {
+    resp = await supa
+      .from("programadores")
+      .select(selSinCorreo)
+      .order("activo", { ascending: false })
+      .order("nombre", { ascending: true });
+  }
+  if (resp.error) return [];
+  return ((resp.data ?? []) as any[]).map((p) => ({
+    ...p,
+    correo: p.correo ?? null,
+    jira_account_id: p.jira_account_id ?? null,
+  })) as Programador[];
+}
+
+async function getJiraUsers(): Promise<JiraUser[]> {
+  if (!jiraConfigured()) return [];
+  try {
+    return await listAllAssignableUsers();
+  } catch {
+    return [];
+  }
 }
 
 export default async function ProgramadoresPage() {
-  const items = await getProgramadores();
+  const [items, jiraUsers] = await Promise.all([
+    getProgramadores(),
+    getJiraUsers(),
+  ]);
   const activos = items.filter((p) => p.activo);
   const inactivos = items.filter((p) => !p.activo);
+
+  const jiraUsersSimple = jiraUsers.map((u) => ({
+    accountId: u.accountId,
+    displayName: u.displayName,
+    emailAddress: u.emailAddress ?? null,
+  }));
 
   return (
     <>
@@ -50,7 +97,7 @@ export default async function ProgramadoresPage() {
         ) : (
           <ul className="space-y-2">
             {activos.map((p) => (
-              <ProgramadorRow key={p.id} p={p} />
+              <ProgramadorRow key={p.id} p={p} jiraUsers={jiraUsersSimple} />
             ))}
           </ul>
         )}
@@ -61,7 +108,7 @@ export default async function ProgramadoresPage() {
           <h2 className="text-heading-2">Inactivos ({inactivos.length})</h2>
           <ul className="space-y-2">
             {inactivos.map((p) => (
-              <ProgramadorRow key={p.id} p={p} />
+              <ProgramadorRow key={p.id} p={p} jiraUsers={jiraUsersSimple} />
             ))}
           </ul>
         </section>

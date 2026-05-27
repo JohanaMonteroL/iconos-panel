@@ -66,6 +66,93 @@ export function buildSlackText({
   return partes.join("\n");
 }
 
+// ── Variante para cotizaciones de monto fijo (no horas) ───────────────
+
+export type ConceptoFijo = {
+  concepto: string;
+  cantidad: number;
+  precio_unitario: number;
+};
+
+type SlackFijoInput = {
+  nombreCotizacion: string;
+  proyecto?: string | null;
+  programador?: string | null; // opcional — quien la atiende
+  montoFijoMxn: number;
+  descripcionCorta: string;
+  conceptos?: ConceptoFijo[];
+  notas?: string | null;
+  clickupUrl?: string | null;
+};
+
+function fmtMxn(n: number): string {
+  return n.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}
+
+export function buildSlackTextFijo({
+  nombreCotizacion,
+  proyecto,
+  programador,
+  montoFijoMxn,
+  descripcionCorta,
+  conceptos,
+  notas,
+  clickupUrl,
+}: SlackFijoInput): string {
+  const nombreLink = clickupUrl
+    ? `<${clickupUrl}|${nombreCotizacion}>`
+    : nombreCotizacion;
+
+  const montoFmt = fmtMxn(montoFijoMxn);
+
+  const partes: string[] = [];
+  partes.push("<!here>");
+  partes.push("");
+  partes.push("🧾 *Cotización lista para revisión* _(monto fijo)_");
+  partes.push("");
+  partes.push(`*Nombre:* ${nombreLink}${proyecto ? ` — ${proyecto}` : ""}`);
+  partes.push(`*Monto total:* ${montoFmt} MXN`);
+  if (programador && programador !== "—") {
+    partes.push(`*Atendido por:* ${programador}`);
+  }
+
+  if (conceptos && conceptos.length > 0) {
+    partes.push("");
+    partes.push("📋 *Conceptos*");
+    for (const c of conceptos) {
+      const subtotal = (c.cantidad || 0) * (c.precio_unitario || 0);
+      const cantidad = Number.isInteger(c.cantidad)
+        ? String(c.cantidad)
+        : String(c.cantidad);
+      partes.push(
+        `• ${cantidad}× ${c.concepto} — ${fmtMxn(subtotal)} _(${fmtMxn(
+          c.precio_unitario
+        )} c/u)_`
+      );
+    }
+  }
+
+  if (descripcionCorta && descripcionCorta.trim()) {
+    partes.push("");
+    partes.push("📝 *Detalle*");
+    partes.push(`> ${descripcionCorta.trim()}`);
+  }
+
+  if (notas && notas.trim()) {
+    partes.push("");
+    partes.push(`📝 *Notas:* ${notas.trim()}`);
+  }
+
+  partes.push("");
+  partes.push("_Responde:_  ✅ *Aprobar*   ✏️ *Pedir cambios*");
+  return partes.join("\n");
+}
+
 // Fallback inteligente cuando la IA no devolvió descripcion_corta
 export function shortDescripcion(limpia: EstimacionLimpia | null): string {
   if (!limpia) return "Estimación pendiente de procesar.";
