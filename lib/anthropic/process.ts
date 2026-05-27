@@ -95,7 +95,7 @@ export async function procesarEstimacion(
 
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 1500,
+    max_tokens: 4096,
     system: [
       {
         type: "text",
@@ -105,6 +105,12 @@ export async function procesarEstimacion(
     ],
     messages: [{ role: "user", content: buildUserPrompt(raw, programador) }],
   });
+
+  if (resp.stop_reason === "max_tokens") {
+    throw new Error(
+      "La IA no terminó de generar la respuesta (límite de tokens alcanzado). Intenta con una estimación más corta."
+    );
+  }
 
   const block = resp.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") {
