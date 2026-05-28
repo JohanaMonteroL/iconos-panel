@@ -1,44 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   Home,
-  FileText,
-  Inbox,
+  ClipboardList,
+  Plus,
+  LogOut,
   Menu,
   X,
-  Settings,
-  Ticket,
+  KeyRound,
 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
-import LogoutButton from "./LogoutButton";
 
 const items = [
-  { href: "/panel", label: "Inicio", icon: Home, badgeKey: null as null | "estimaciones" },
-  { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText, badgeKey: null },
-  { href: "/panel/estimaciones", label: "Estimaciones", icon: Inbox, badgeKey: "estimaciones" as const },
-  { href: "/panel/tickets", label: "Tickets", icon: Ticket, badgeKey: null },
-  { href: "/panel/settings", label: "Settings", icon: Settings, badgeKey: null },
+  { href: "/programador", label: "Inicio", icon: Home, exact: true },
+  { href: "/programador/estimaciones", label: "Mis estimaciones", icon: ClipboardList },
+  { href: "/programador/estimaciones/nueva", label: "Nueva estimación", icon: Plus },
 ];
-
-type Badges = { estimaciones: number };
 
 function NavList({
   pathname,
-  badges,
   onNavigate,
 }: {
   pathname: string;
-  badges: Badges;
   onNavigate?: () => void;
 }) {
   return (
     <nav className="flex flex-col gap-1">
-      {items.map(({ href, label, icon: Icon, badgeKey }) => {
-        const active = pathname === href || (href !== "/panel" && pathname.startsWith(href));
-        const count = badgeKey ? badges[badgeKey] : 0;
+      {items.map(({ href, label, icon: Icon, exact }) => {
+        const active = exact
+          ? pathname === href
+          : pathname === href || pathname.startsWith(href + "/");
         return (
           <Link
             key={href}
@@ -47,25 +41,7 @@ function NavList({
             className={`nav-item ${active ? "nav-item-active" : ""}`}
           >
             <Icon size={16} strokeWidth={1.5} />
-            <span className="flex-1">{label}</span>
-            {count > 0 && (
-              <span
-                className="num-tabular"
-                style={{
-                  background: "#0066FF",
-                  color: "white",
-                  padding: "1px 7px",
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  lineHeight: "16px",
-                  minWidth: 18,
-                  textAlign: "center",
-                }}
-              >
-                {count > 99 ? "99+" : count}
-              </span>
-            )}
+            <span>{label}</span>
           </Link>
         );
       })}
@@ -73,7 +49,49 @@ function NavList({
   );
 }
 
-export default function Sidebar({ badges }: { badges: Badges }) {
+function AccountActions() {
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const logout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/programador/logout", { method: "POST" });
+      router.push("/programador/login");
+      router.refresh();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <Link
+        href="/programador/cambiar-password"
+        className="nav-item"
+        title="Cambiar contraseña"
+      >
+        <KeyRound size={16} strokeWidth={1.5} />
+        <span>Cambiar contraseña</span>
+      </Link>
+      <button
+        onClick={logout}
+        disabled={loggingOut}
+        className="nav-item text-left w-full"
+        style={{ color: "var(--state-error)" }}
+      >
+        <LogOut size={16} strokeWidth={1.5} />
+        <span>{loggingOut ? "Saliendo…" : "Cerrar sesión"}</span>
+      </button>
+    </div>
+  );
+}
+
+export default function SidebarProgramador({
+  nombre,
+}: {
+  nombre: string;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -91,13 +109,13 @@ export default function Sidebar({ badges }: { badges: Badges }) {
         >
           <Menu size={18} strokeWidth={1.5} />
         </button>
-        <Link href="/panel" className="text-body-medium font-semibold">
-          ICONOS Panel
+        <Link href="/programador" className="text-body-medium font-semibold">
+          ICONOS
         </Link>
         <ThemeToggle />
       </header>
 
-      {/* Drawer top-down (mobile) — estilo "card" desde arriba */}
+      {/* Drawer top-down (mobile) */}
       {open && (
         <div
           className="md:hidden fixed inset-0 z-40 bg-black/50"
@@ -112,7 +130,7 @@ export default function Sidebar({ badges }: { badges: Badges }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <span className="text-heading-2 font-semibold">ICONOS Panel</span>
+              <span className="text-heading-2 font-semibold">ICONOS</span>
               <button
                 onClick={() => setOpen(false)}
                 className="btn-icon btn-ghost"
@@ -121,9 +139,15 @@ export default function Sidebar({ badges }: { badges: Badges }) {
                 <X size={18} strokeWidth={1.5} />
               </button>
             </div>
-            <NavList pathname={pathname} badges={badges} onNavigate={() => setOpen(false)} />
-            <div className="pt-4 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-              <LogoutButton />
+            <div className="text-caption text-text-tertiary">
+              Hola, <strong className="text-text-primary">{nombre}</strong>
+            </div>
+            <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
+            <div
+              className="pt-4 border-t"
+              style={{ borderColor: "var(--border-subtle)" }}
+            >
+              <AccountActions />
             </div>
           </aside>
           <style jsx>{`
@@ -143,18 +167,21 @@ export default function Sidebar({ badges }: { badges: Badges }) {
           borderColor: "var(--border-subtle)",
         }}
       >
-        <div className="flex items-center justify-between mb-6 px-2">
-          <Link href="/panel" className="text-heading-2 font-semibold">
+        <div className="flex items-center justify-between mb-4 px-2">
+          <Link href="/programador" className="text-heading-2 font-semibold">
             ICONOS
           </Link>
           <ThemeToggle />
         </div>
-        <NavList pathname={pathname} badges={badges} />
+        <div className="px-2 mb-4 text-caption text-text-tertiary">
+          Hola, <strong className="text-text-primary">{nombre}</strong>
+        </div>
+        <NavList pathname={pathname} />
         <div
           className="mt-auto pt-4 border-t"
           style={{ borderColor: "var(--border-subtle)" }}
         >
-          <LogoutButton />
+          <AccountActions />
         </div>
       </aside>
     </>

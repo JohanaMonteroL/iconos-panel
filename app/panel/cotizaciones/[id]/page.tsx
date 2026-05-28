@@ -85,7 +85,7 @@ async function getCotizacion(
   const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at, clickup_ticket_id,
      ia_recomendacion, borrador_correo, contexto_sherlyn,
      jefe_aprobacion_solicitada_at, jefe_aprobacion_recibida_at,
-     tipo_precio, monto_fijo, proyecto_clickup_id, proyecto_nombre,
+     tipo_precio, monto_fijo, proyecto_clickup_id, proyecto_nombre, estimacion_formulario_id,
      programadores(nombre, precio_hora),
      tareas_estimacion(id, orden, nombre_limpio, nombre_original, descripcion_limpia, hrs_min, hrs_max)`;
   const selectNoProyectoNombre = selectFull.replace(", proyecto_nombre", "");
@@ -125,6 +125,18 @@ async function getCotizacion(
   const data = cotResp.data as any;
   data.tareas_estimacion?.sort((a: Tarea, b: Tarea) => a.orden - b.orden);
 
+  // Backfill: si la cotización no tiene proyecto_nombre pero viene de una
+  // estimación, leerlo del datos_raw de la estimación (cotizaciones viejas).
+  if (!data.proyecto_nombre && data.estimacion_formulario_id) {
+    const { data: est } = await supa
+      .from("estimaciones_formulario")
+      .select("datos_raw")
+      .eq("id", data.estimacion_formulario_id)
+      .maybeSingle();
+    const p = (est as any)?.datos_raw?.proyecto_nombre;
+    if (p) data.proyecto_nombre = p;
+  }
+
   // Conceptos de la cotización fija (si la tabla existe)
   let conceptos: Concepto[] = [];
   try {
@@ -144,25 +156,7 @@ async function getCotizacion(
 }
 
 
-const estadoLabel: Record<string, string> = {
-  pendiente_revisar: "Por revisar",
-  esperando_aprobacion: "Esperando jefe",
-  aprobada: "Aprobada",
-  cambios_solicitados: "Pidieron cambios",
-  en_desarrollo: "En desarrollo",
-  enviada_cliente: "Enviada al cliente",
-  archivada: "Archivada",
-};
-
-const estadoBadge: Record<string, string> = {
-  pendiente_revisar: "badge-warning",
-  esperando_aprobacion: "badge-info",
-  aprobada: "badge-success",
-  cambios_solicitados: "badge-danger",
-  en_desarrollo: "badge-info",
-  enviada_cliente: "badge-success",
-  archivada: "badge-neutral",
-};
+import { labelEstado, badgeEstado } from "@/lib/estados";
 
 export default async function CotizacionDetallePage({
   params,
@@ -215,8 +209,8 @@ export default async function CotizacionDetallePage({
       <header className="space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <h1 className="text-display">{it.nombre}</h1>
-          <span className={`badge ${estadoBadge[it.estado] ?? "badge-neutral"}`}>
-            {estadoLabel[it.estado] ?? it.estado}
+          <span className={`badge ${badgeEstado(it.estado)}`}>
+            {labelEstado(it.estado)}
           </span>
         </div>
         <p className="text-caption text-text-secondary">

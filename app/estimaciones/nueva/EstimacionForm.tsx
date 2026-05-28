@@ -20,7 +20,11 @@ type Props = {
 };
 
 export default function EstimacionForm({ programadores, proyectos = [] }: Props) {
-  const [programadorId, setProgramadorId] = useState("");
+  // Si la lista trae un solo programador (caso portal interno donde solo
+  // está el logueado), pre-seleccionarlo para evitar paso innecesario.
+  const [programadorId, setProgramadorId] = useState(
+    programadores.length === 1 ? programadores[0].id : ""
+  );
   const [proyectoId, setProyectoId] = useState("");
   const [nombre, setNombre] = useState("");
   const [notas, setNotas] = useState("");

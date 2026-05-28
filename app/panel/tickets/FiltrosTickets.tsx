@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { X } from "lucide-react";
+import { X, SlidersHorizontal } from "lucide-react";
 
 type Props = {
   proyectos: { key: string; nombre: string }[];
@@ -27,6 +28,7 @@ export default function FiltrosTickets({
 }: Props) {
   const router = useRouter();
   const params = useSearchParams();
+  const [abierto, setAbierto] = useState(false);
 
   const aplicar = (campo: "tipo" | "proyecto" | "asignado", valor: string) => {
     const next = new URLSearchParams(params.toString());
@@ -43,19 +45,29 @@ export default function FiltrosTickets({
     <section className="card card-tight space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-overline text-text-tertiary">Filtros</div>
-        {tieneFiltros && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => router.push("/panel/tickets")}
-            className="btn-ghost btn-sm"
+            onClick={() => setAbierto((v) => !v)}
+            className={`md:hidden btn-sm ${abierto || tieneFiltros ? "btn-primary" : "btn-ghost"} whitespace-nowrap`}
+            aria-pressed={abierto}
           >
-            <X size={14} strokeWidth={1.75} />
-            <span>Limpiar</span>
+            <SlidersHorizontal size={14} strokeWidth={1.75} />
           </button>
-        )}
+          {tieneFiltros && (
+            <button
+              type="button"
+              onClick={() => router.push("/panel/tickets")}
+              className="btn-ghost btn-sm"
+            >
+              <X size={14} strokeWidth={1.75} />
+              <span>Limpiar</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className={`${abierto ? "grid" : "hidden"} md:grid grid-cols-1 sm:grid-cols-3 gap-3`}>
         <Select
           label="Tipo"
           value={actuales.tipo ?? ""}

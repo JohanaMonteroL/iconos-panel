@@ -20,6 +20,11 @@ import {
 } from "lucide-react";
 import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
 import Modal from "@/components/ui/Modal";
+import {
+  ORDEN_FLUJO_COTIZACION,
+  labelEstado,
+  badgeEstado,
+} from "@/lib/estados";
 
 export type CotizacionTarea = {
   id?: string;
@@ -384,6 +389,9 @@ export function CotizacionAcciones({
   const [generarTicketsAbierto, setGenerarTicketsAbierto] = useState(false);
   const [notificarUpdateAbierto, setNotificarUpdateAbierto] = useState(false);
   const [notaCambios, setNotaCambios] = useState("");
+  const [cambioEstadoAbierto, setCambioEstadoAbierto] = useState(false);
+  const [nuevoEstado, setNuevoEstado] = useState<string>("");
+  const [comentarioEstado, setComentarioEstado] = useState("");
 
   const archivar = async ({ checkboxMarcado }: { checkboxMarcado: boolean }) => {
     const res = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
@@ -544,32 +552,19 @@ export function CotizacionAcciones({
     <section className="card space-y-3">
       <h2 className="text-heading-2">Acciones</h2>
       <div className="flex flex-wrap gap-3">
-        {estado === "esperando_aprobacion" && (
-          <button
-            disabled={working !== null}
-            onClick={() =>
-              cambiarEstado("aprobada", { aprobadoPor: "johana" })
-            }
-            className="btn-primary"
-          >
-            <CheckCircle2 size={16} strokeWidth={1.75} />
-            <span>
-              {working === "aprobada" ? "Aprobando…" : "Aprobar yo misma"}
-            </span>
-          </button>
-        )}
-
-        {estado === "aprobada" && (
-          <button
-            disabled={working !== null}
-            onClick={() => cambiarEstado("enviada_cliente")}
-            className="btn-secondary"
-          >
-            <span>
-              {working === "enviada_cliente" ? "Marcando…" : "Marcar como enviada al cliente"}
-            </span>
-          </button>
-        )}
+        <button
+          disabled={working !== null}
+          onClick={() => {
+            setNuevoEstado("");
+            setComentarioEstado("");
+            setCambioEstadoAbierto(true);
+          }}
+          className="btn-primary"
+          title="Mover esta cotización a cualquier otro estado del flujo"
+        >
+          <CheckCircle2 size={16} strokeWidth={1.75} />
+          <span>Cambiar estado</span>
+        </button>
 
         {!tieneTicketClickUp && (
           <button
@@ -625,7 +620,10 @@ export function CotizacionAcciones({
           </span>
         </button>
 
-        {(estado === "aprobada" || estado === "enviada_cliente") && (
+        {(estado === "aprobada" ||
+          estado === "enviada_cliente" ||
+          estado === "aprobado_cliente" ||
+          estado === "en_desarrollo") && (
           <button
             disabled={working !== null}
             onClick={() => setGenerarTicketsAbierto(true)}
@@ -672,6 +670,108 @@ export function CotizacionAcciones({
           ⚠️ {warning}
         </p>
       )}
+
+      {/* Modal cambio de estado libre con confirmación */}
+      <Modal
+        open={cambioEstadoAbierto}
+        onClose={() => !working && setCambioEstadoAbierto(false)}
+        title="Cambiar estado de la cotización"
+        size="md"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setCambioEstadoAbierto(false)}
+              disabled={!!working}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={!nuevoEstado || nuevoEstado === estado || !!working}
+              onClick={async () => {
+                await cambiarEstado(nuevoEstado, {
+                  comentario: comentarioEstado.trim() || undefined,
+                });
+                setCambioEstadoAbierto(false);
+              }}
+              className="btn-primary"
+            >
+              <CheckCircle2 size={14} strokeWidth={1.75} />
+              <span>
+                {working
+                  ? "Aplicando…"
+                  : `Cambiar a "${labelEstado(nuevoEstado || estado)}"`}
+              </span>
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <div className="text-overline text-text-tertiary mb-1">
+              Estado actual
+            </div>
+            <span className={`badge ${badgeEstado(estado)}`}>
+              {labelEstado(estado)}
+            </span>
+          </div>
+
+          <div>
+            <label className="field-label">Nuevo estado *</label>
+            <select
+              className="input"
+              value={nuevoEstado}
+              onChange={(e) => setNuevoEstado(e.target.value)}
+            >
+              <option value="">— Elige uno —</option>
+              {ORDEN_FLUJO_COTIZACION.map((e) => (
+                <option key={e} value={e} disabled={e === estado}>
+                  {labelEstado(e)}
+                  {e === estado ? "  (actual)" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="field-hint">
+              Puedes moverla a cualquier estado del flujo. Al guardar también
+              se actualiza el carril en ClickUp si tiene ticket.
+            </span>
+          </div>
+
+          <div>
+            <label className="field-label">
+              Comentario (opcional, queda en el historial)
+            </label>
+            <input
+              className="input"
+              value={comentarioEstado}
+              onChange={(e) => setComentarioEstado(e.target.value)}
+              placeholder="Ej: Cliente confirmó por correo el 27 may"
+            />
+          </div>
+
+          {nuevoEstado && nuevoEstado !== estado && (
+            <div
+              className="rounded-[10px] p-3 text-caption"
+              style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-default)",
+              }}
+            >
+              Vas a cambiar de{" "}
+              <span className={`badge ${badgeEstado(estado)}`}>
+                {labelEstado(estado)}
+              </span>{" "}
+              a{" "}
+              <span className={`badge ${badgeEstado(nuevoEstado)}`}>
+                {labelEstado(nuevoEstado)}
+              </span>
+              .
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         open={notificarUpdateAbierto}
@@ -869,10 +969,14 @@ const LABEL_ACCION: Record<string, string> = {
   ticket_clickup_creado_retry: "Ticket de ClickUp creado (reintento)",
   sync_clickup_manual: "↻ Sincronizado con ClickUp",
   editada: "Cotización editada",
-  estado_aprobada: "✅ Aprobada",
+  estado_pendiente_revisar: "📋 Por revisar",
+  estado_esperando_aprobacion: "⏳ Esperando jefe",
+  estado_aprobada: "✅ Aprobado por Iván",
   estado_cambios_solicitados: "✏️ Cambios solicitados",
+  estado_aprobado_cliente: "👤 Aprobado por cliente",
   estado_enviada_cliente: "📤 Enviada al cliente",
   estado_en_desarrollo: "🚧 En desarrollo",
+  estado_finalizado: "🏁 Finalizado",
   estado_archivada: "📦 Archivada",
   slack_reenviado: "↻ Mensaje reenviado en Slack",
   slack_notificada_actualizacion: "🔄 Actualización notificada al jefe",

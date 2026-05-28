@@ -138,6 +138,21 @@ export async function POST(
     );
   }
 
+  // Best-effort: si la migración 0010 ya corrió, persistir proyecto_nombre
+  // (lo necesitamos para mostrarlo en el listado sin tocar ClickUp).
+  if (raw.proyecto_nombre) {
+    const { error: proyErr } = await supa
+      .from("cotizaciones")
+      .update({ proyecto_nombre: raw.proyecto_nombre })
+      .eq("id", cot.id);
+    if (proyErr) {
+      console.warn(
+        "[crear-cotizacion] no se pudo guardar proyecto_nombre (¿falta migración 0010?):",
+        proyErr.message
+      );
+    }
+  }
+
   // Construir el mensaje de Slack DEFINITIVO (con override si Johana lo editó).
   // Se guarda en la cotización para que el preview muestre exactamente eso.
   const slackTextGenerado = buildSlackText({

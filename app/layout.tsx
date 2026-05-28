@@ -10,6 +10,9 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "ICONOS Panel",
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {

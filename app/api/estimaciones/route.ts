@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { validateEstimacion } from "@/lib/validation";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { sendPushToAll } from "@/lib/push/webpush";
@@ -101,6 +102,13 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error("[push] error:", e);
   }
+
+  // Invalidar caches para que la nueva estimación aparezca de inmediato en:
+  //   - /panel (badge del sidebar + contadores del dashboard)
+  //   - /panel/estimaciones (listado de estimaciones recibidas)
+  // El layout también re-renderea el badge porque está en revalidatePath('/panel').
+  revalidatePath("/panel");
+  revalidatePath("/panel/estimaciones");
 
   return NextResponse.json({ ok: true, id: inserted.id }, { status: 201 });
 }

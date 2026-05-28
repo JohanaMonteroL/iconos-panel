@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ShieldCheck, Code, FilePlus } from "lucide-react";
 import PublicHeader from "@/components/ui/PublicHeader";
 
 export default function Home() {
@@ -19,18 +19,34 @@ export default function Home() {
           </header>
 
           <div className="card space-y-3">
-            <Link href="/login" className="btn-primary w-full">
-              <span>Entrar al panel</span>
-              <ArrowRight size={16} strokeWidth={1.75} />
+            <Link
+              href="/login"
+              className="btn-primary w-full text-body-medium"
+              style={{ padding: "22px 20px", gap: 12 }}
+            >
+              <ShieldCheck size={20} strokeWidth={1.75} />
+              <span className="flex-1 text-left">Inicio de administrador</span>
+              <ArrowRight size={18} strokeWidth={1.75} />
             </Link>
-            <Link href="/estimaciones/nueva" className="btn-secondary w-full">
-              Enviar estimación (programadores)
+            <Link
+              href="/programador/login"
+              className="btn-secondary w-full text-body-medium"
+              style={{ padding: "22px 20px", gap: 12 }}
+            >
+              <Code size={20} strokeWidth={1.75} />
+              <span className="flex-1 text-left">Inicio de programador</span>
+              <ArrowRight size={18} strokeWidth={1.75} />
+            </Link>
+            <Link
+              href="/estimaciones/nueva"
+              className="btn-ghost w-full text-body-medium"
+              style={{ padding: "22px 20px", gap: 12 }}
+            >
+              <FilePlus size={20} strokeWidth={1.75} />
+              <span className="flex-1 text-left">Crear estimación</span>
+              <ArrowRight size={18} strokeWidth={1.75} />
             </Link>
           </div>
-
-          <p className="text-caption text-text-tertiary text-center">
-            Fase 1 — Núcleo de cotizaciones
-          </p>
         </div>
       </main>
     </>

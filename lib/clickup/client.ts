@@ -275,12 +275,16 @@ export async function findMatchingStatus(
   return { status: null, available };
 }
 
-// Mapeo de estados internos a candidatos de nombre en ClickUp
+// Mapeo de estados internos a candidatos de nombre en ClickUp.
+// Si el board tiene varios carriles que pueden corresponder, se prueba en
+// orden y el primer match flexible gana.
 export const STATUS_CANDIDATES: Record<string, string[]> = {
   estimado: ["Estimado", "Estimada", "Por estimar", "Estimando", "Por revisar"],
+  // Aprobada por Iván (jefe) — el ticket pasa a "Por cotizar" / "Lista".
   aprobada: [
-    "Por cotizar", // ← Sherlyn ya puede enviar al cliente
+    "Por cotizar",
     "Lista para enviar",
+    "Aprobada por jefe",
     "Aprobada",
     "Aprobado",
     "Approved",
@@ -293,9 +297,32 @@ export const STATUS_CANDIDATES: Record<string, string[]> = {
     "En revisión",
     "Revisión",
   ],
+  enviada_cliente: [
+    "Enviada al cliente",
+    "Enviada",
+    "Sent",
+    "Para enviar",
+  ],
+  // Aprobado por el cliente — carril "Aprobado" en ClickUp.
+  aprobado_cliente: [
+    "Aprobado",
+    "Aprobada por cliente",
+    "Aprobado por cliente",
+    "Cliente aprobó",
+    "Client approved",
+  ],
   en_desarrollo: ["En desarrollo", "Desarrollo", "In progress", "Doing"],
-  enviada_cliente: ["Enviada al cliente", "Enviada", "Sent", "Para enviar"],
-  archivada: ["Archivada", "Archivado", "Cerrada", "Closed", "Done"],
+  // Finalizado — el carril en ClickUp es "Cobrado".
+  finalizado: [
+    "Cobrado",
+    "Pagado",
+    "Finalizado",
+    "Terminado",
+    "Completado",
+    "Done",
+    "Paid",
+  ],
+  archivada: ["Archivada", "Archivado", "Cerrada", "Closed", "Cancelada"],
 };
 
 export async function listSpaces(

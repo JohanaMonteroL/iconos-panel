@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Edit3, Save, X, ToggleLeft, ToggleRight } from "lucide-react";
+import { Edit3, Save, X, ToggleLeft, ToggleRight, KeyRound, Copy } from "lucide-react";
 
 export type Programador = {
   id: string;
@@ -34,6 +34,57 @@ export default function ProgramadorRow({
   const [correo, setCorreo] = useState(p.correo ?? "");
   const [jiraAccountId, setJiraAccountId] = useState(p.jira_account_id ?? "");
   const [precio, setPrecio] = useState(String(p.precio_hora));
+  const [reseteando, setReseteando] = useState(false);
+  const [passwordTemporal, setPasswordTemporal] = useState<string | null>(null);
+  const [passwordCopiada, setPasswordCopiada] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const resetearPassword = async () => {
+    if (!p.correo) {
+      setResetError(
+        "Primero agrega un correo al programador (es el usuario para login)."
+      );
+      return;
+    }
+    if (
+      !confirm(
+        `Generar nueva contraseña temporal para ${p.nombre}? Si ya tenía contraseña la pierde.`
+      )
+    ) {
+      return;
+    }
+    setReseteando(true);
+    setResetError(null);
+    setPasswordTemporal(null);
+    setPasswordCopiada(false);
+    try {
+      const res = await fetch(`/api/programadores/${p.id}/set-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setResetError(json.error || "No se pudo resetear");
+        return;
+      }
+      setPasswordTemporal(json.password);
+      router.refresh();
+    } catch {
+      setResetError("Error de red");
+    } finally {
+      setReseteando(false);
+    }
+  };
+
+  const copiarPassword = async () => {
+    if (!passwordTemporal) return;
+    try {
+      await navigator.clipboard.writeText(passwordTemporal);
+      setPasswordCopiada(true);
+      setTimeout(() => setPasswordCopiada(false), 2000);
+    } catch {}
+  };
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,7 +248,7 @@ export default function ProgramadorRow({
 
   return (
     <li
-      className={`card-tight card flex items-center justify-between gap-3 ${
+      className={`card-tight card flex items-center justify-between gap-3 relative ${
         p.activo ? "" : "opacity-60"
       }`}
     >
@@ -222,6 +273,15 @@ export default function ProgramadorRow({
       </div>
       <div className="flex items-center gap-2">
         <button
+          onClick={resetearPassword}
+          disabled={saving || reseteando}
+          className="btn-icon btn-ghost"
+          title="Generar contraseña temporal"
+          aria-label="Generar contraseña temporal"
+        >
+          <KeyRound size={16} strokeWidth={1.75} />
+        </button>
+        <button
           onClick={toggleActivo}
           disabled={saving}
           className="btn-icon btn-ghost"
@@ -242,6 +302,63 @@ export default function ProgramadorRow({
           <Edit3 size={16} strokeWidth={1.75} />
         </button>
       </div>
+
+      {/* Banner con la contraseña temporal generada (solo se ve una vez) */}
+      {(passwordTemporal || resetError) && (
+        <div
+          className="absolute right-0 mt-2 rounded-[10px] p-3 max-w-md"
+          style={{
+            background: "var(--bg-elevated)",
+            border: `1px solid ${
+              resetError ? "var(--state-error)" : "var(--state-success)"
+            }`,
+            boxShadow: "var(--shadow-md)",
+            zIndex: 10,
+          }}
+        >
+          {resetError ? (
+            <p className="text-caption" style={{ color: "var(--state-error)" }}>
+              ⚠ {resetError}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-body-medium" style={{ color: "var(--state-success)" }}>
+                ✓ Contraseña temporal generada
+              </div>
+              <p className="text-caption text-text-secondary">
+                Cópiala AHORA — no se vuelve a mostrar. Mándala a {p.nombre} por
+                Slack. Le pedirá cambiarla en su primer login.
+              </p>
+              <div
+                className="flex items-center gap-2 p-2 rounded-[8px] num-tabular"
+                style={{
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border-default)",
+                  fontFamily: "ui-monospace, monospace",
+                  fontSize: 14,
+                }}
+              >
+                <span className="flex-1 select-all">{passwordTemporal}</span>
+                <button
+                  type="button"
+                  onClick={copiarPassword}
+                  className="btn-secondary btn-sm"
+                >
+                  <Copy size={12} strokeWidth={1.75} />
+                  <span>{passwordCopiada ? "Copiada" : "Copiar"}</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordTemporal(null)}
+                className="btn-ghost btn-sm"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </li>
   );
 }

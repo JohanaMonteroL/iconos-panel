@@ -17,11 +17,14 @@ import {
 export const runtime = "nodejs";
 
 const ESTADOS_VALIDOS = [
+  "pendiente_revisar",
   "esperando_aprobacion",
   "aprobada",
   "cambios_solicitados",
-  "en_desarrollo",
+  "aprobado_cliente",
   "enviada_cliente",
+  "en_desarrollo",
+  "finalizado",
   "archivada",
 ];
 
