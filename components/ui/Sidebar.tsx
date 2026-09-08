@@ -10,7 +10,6 @@ import {
   Menu,
   X,
   Settings,
-  Ticket,
 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import LogoutButton from "./LogoutButton";
@@ -19,7 +18,6 @@ const items = [
   { href: "/panel", label: "Inicio", icon: Home, badgeKey: null as null | "estimaciones" },
   { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText, badgeKey: null },
   { href: "/panel/estimaciones", label: "Estimaciones", icon: Inbox, badgeKey: "estimaciones" as const },
-  { href: "/panel/tickets", label: "Tickets", icon: Ticket, badgeKey: null },
   { href: "/panel/settings", label: "Settings", icon: Settings, badgeKey: null },
 ];
 

@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth";
 import { formatearTicket } from "@/lib/anthropic/format-ticket";
-import type { SubTipoTicket, TipoTicket } from "@/lib/jira/format";
+import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;

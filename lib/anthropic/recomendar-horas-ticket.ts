@@ -2,7 +2,7 @@
 // formateada y el tipo. Devuelve { horas, justificacion }.
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { SubTipoTicket, TipoTicket } from "@/lib/jira/format";
+import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
 
 const MODEL = "claude-haiku-4-5-20251001";
 

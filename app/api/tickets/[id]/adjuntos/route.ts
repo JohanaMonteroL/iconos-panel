@@ -1,5 +1,5 @@
 // POST /api/tickets/[id]/adjuntos
-// Sube archivos a JIRA como attachments del ticket. Body: multipart/form-data
+// Sube archivos a ClickUp como attachments del ticket. Body: multipart/form-data
 // con uno o varios campos "file".
 //
 // Límites: 5 archivos por request, 5 MB cada uno. Tipos permitidos
@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { addAttachment, jiraConfigured } from "@/lib/jira/client";
+import { addAttachment, clickUpConfigured } from "@/lib/clickup/client";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,18 +34,18 @@ export async function POST(
   if (!getSessionFromCookies().ok) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
-  if (!jiraConfigured()) {
-    return NextResponse.json({ error: "JIRA no configurado" }, { status: 503 });
+  if (!clickUpConfigured()) {
+    return NextResponse.json({ error: "ClickUp no configurado" }, { status: 503 });
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Server sin Supabase" }, { status: 503 });
   }
 
-  // 1) Resolver el jira_key a partir del id interno
+  // 1) Resolver el clickup_task_id a partir del id interno
   const supa = createSupabaseServiceClient();
   const { data: ticket, error: getErr } = await supa
-    .from("tickets_jira")
-    .select("jira_key")
+    .from("tickets_clickup")
+    .select("clickup_task_id")
     .eq("id", params.id)
     .maybeSingle();
   if (getErr || !ticket) {
@@ -95,17 +95,12 @@ export async function POST(
       continue;
     }
     try {
-      const bytes = await f.arrayBuffer();
-      await addAttachment(ticket.jira_key, {
-        filename: f.name,
-        contentType: f.type,
-        bytes,
-      });
+      await addAttachment(ticket.clickup_task_id, f, f.name);
       subidos.push(f.name);
     } catch (e: any) {
       rechazados.push({
         nombre: f.name,
-        razon: e?.message?.slice(0, 200) ?? "Error subiendo a JIRA",
+        razon: e?.message?.slice(0, 200) ?? "Error subiendo a ClickUp",
       });
     }
   }

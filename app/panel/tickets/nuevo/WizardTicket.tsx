@@ -19,17 +19,10 @@ import {
   Paperclip,
   Trash2,
 } from "lucide-react";
-import type { SubTipoTicket, TipoTicket } from "@/lib/jira/format";
+import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
 
-type JiraProject = { id: string; key: string; name: string; avatarUrl?: string | null };
-type JiraUser = {
-  accountId: string;
-  displayName: string;
-  emailAddress?: string;
-  avatarUrl?: string | null;
-};
-type JiraPriority = { id: string; name: string };
-type JiraStatus = { id: string; name: string; category: string };
+type ClickUpProyecto = { id: string; name: string };
+type ClickUpUsuario = { id: string; username: string; email?: string };
 
 const TIPOS: { id: TipoTicket; label: string; desc: string }[] = [
   { id: "estimacion", label: "Estimación", desc: "Cotización a estimar" },
@@ -60,8 +53,8 @@ const PRIORIDADES_UI = [
 ];
 
 type Form = {
-  asignado: JiraUser | null;
-  proyecto: JiraProject | null;
+  asignado: ClickUpUsuario | null;
+  proyecto: string; // nombre de la Lista (existente o nueva)
   tipo: TipoTicket | null;
   subTipo: SubTipoTicket | null;
   carril: string | null;
@@ -73,15 +66,7 @@ type Form = {
   justificacionHoras: string | null;
 };
 
-const PASOS = [
-  "Para quién",
-  "Proyecto",
-  "Tipo",
-  "Descripción",
-  "Prioridad",
-  "Horas",
-  "Resumen",
-];
+const PASOS = ["Para quién", "Proyecto", "Tipo", "Descripción", "Prioridad", "Horas", "Resumen"];
 
 export default function WizardTicket() {
   const router = useRouter();
@@ -89,15 +74,11 @@ export default function WizardTicket() {
   const desdeCotizacion = params.get("desde_cotizacion");
   const [paso, setPaso] = useState(0);
   const [meta, setMeta] = useState<{
-    proyectos: JiraProject[];
-    usuarios: JiraUser[];
-    prioridades: JiraPriority[];
+    proyectos: ClickUpProyecto[];
+    usuarios: ClickUpUsuario[];
   } | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
-  const [carriles, setCarriles] = useState<JiraStatus[] | null>(null);
-  const [sprintActivo, setSprintActivo] = useState<{ id: number; name: string } | null>(
-    null
-  );
+  const [carriles, setCarriles] = useState<string[] | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cotizacionData, setCotizacionData] = useState<{
@@ -106,7 +87,7 @@ export default function WizardTicket() {
 
   const [form, setForm] = useState<Form>({
     asignado: null,
-    proyecto: null,
+    proyecto: "",
     tipo: null,
     subTipo: null,
     carril: null,
@@ -144,44 +125,39 @@ export default function WizardTicket() {
       .catch(() => {});
   }, [desdeCotizacion]);
 
-  // Cargar meta de JIRA al montar
+  // Cargar meta de ClickUp al montar
   useEffect(() => {
-    fetch("/api/tickets/jira-meta")
+    fetch("/api/tickets/clickup-meta")
       .then(async (r) => {
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
-          setMetaError(j.error || "No se pudo cargar JIRA");
+          setMetaError(j.error || "No se pudo cargar ClickUp");
           return null;
         }
         return r.json();
       })
       .then((j) => j && setMeta(j))
-      .catch(() => setMetaError("Error de red consultando JIRA"));
+      .catch(() => setMetaError("Error de red consultando ClickUp"));
   }, []);
 
-  // Cargar carriles + sprint activo cuando cambia el proyecto
-  useEffect(() => {
-    if (!form.proyecto) return;
-    setCarriles(null);
-    setSprintActivo(null);
-    fetch(`/api/tickets/jira-carriles?proyecto=${form.proyecto.key}`)
-      .then((r) => r.json())
-      .then((j) => {
-        setCarriles(j.carriles ?? []);
-        if (j.sprintActivo && typeof j.sprintActivo.id === "number") {
-          setSprintActivo({ id: j.sprintActivo.id, name: j.sprintActivo.name });
-        } else {
-          setSprintActivo(null);
-        }
-      })
-      .catch(() => {
-        setCarriles([]);
-        setSprintActivo(null);
-      });
-  }, [form.proyecto]);
+  const listaSeleccionada = useMemo(() => {
+    if (!meta || !form.proyecto.trim()) return null;
+    const term = form.proyecto.trim().toLowerCase();
+    return meta.proyectos.find((p) => p.name.trim().toLowerCase() === term) ?? null;
+  }, [meta, form.proyecto]);
 
-  // (Removido el auto-relleno con templates rígidos — Johana escribe libre
-  // y la IA mejora la redacción para que el programador entienda qué hacer.)
+  // Cargar carriles cuando el proyecto elegido ya existe en ClickUp.
+  useEffect(() => {
+    if (!listaSeleccionada) {
+      setCarriles(null);
+      return;
+    }
+    setCarriles(null);
+    fetch(`/api/tickets/clickup-carriles?lista=${listaSeleccionada.id}`)
+      .then((r) => r.json())
+      .then((j) => setCarriles(j.carriles ?? []))
+      .catch(() => setCarriles([]));
+  }, [listaSeleccionada]);
 
   const subTiposDisponibles = form.tipo ? SUBTIPOS_POR_TIPO[form.tipo] : [];
 
@@ -191,9 +167,9 @@ export default function WizardTicket() {
       case 0:
         return !!form.asignado;
       case 1:
-        return !!form.proyecto;
+        return form.proyecto.trim().length > 0;
       case 2:
-        return !!form.tipo && (!subTiposDisponibles.length || !!form.subTipo) && !!form.carril;
+        return !!form.tipo && (!subTiposDisponibles.length || !!form.subTipo);
       case 3:
         return form.titulo.trim().length > 0;
       case 4:
@@ -209,7 +185,7 @@ export default function WizardTicket() {
 
   // ── Envío ─────────────────────────────────────────────────────────────
   const crear = async () => {
-    if (!form.asignado || !form.proyecto || !form.tipo || !form.prioridad) return;
+    if (!form.asignado || !form.proyecto.trim() || !form.tipo || !form.prioridad) return;
     setEnviando(true);
     setError(null);
     try {
@@ -226,11 +202,10 @@ export default function WizardTicket() {
           sub_tipo: form.subTipo,
           prioridad: form.prioridad,
           horas_estimadas: Number.isFinite(horas) && (horas as number) > 0 ? horas : null,
-          proyecto_jira_key: form.proyecto.key,
-          proyecto_jira_nombre: form.proyecto.name,
-          asignado_jira_id: form.asignado.accountId,
-          asignado_nombre: form.asignado.displayName,
-          asignado_correo: form.asignado.emailAddress ?? null,
+          proyecto_nombre: form.proyecto.trim(),
+          asignado_clickup_id: form.asignado.id,
+          asignado_nombre: form.asignado.username,
+          asignado_correo: form.asignado.email ?? null,
           carril: form.carril,
           cotizacion_ref: cotizacionData?.cotizacion.id ?? null,
         }),
@@ -259,8 +234,10 @@ export default function WizardTicket() {
         }
       }
 
-      // Éxito → redirige al listado
-      router.push("/panel/tickets");
+      // Éxito → regresa a la cotización de origen, o al inicio si fue standalone.
+      router.push(
+        cotizacionData ? `/panel/cotizaciones/${cotizacionData.cotizacion.id}` : "/panel"
+      );
       router.refresh();
     } catch {
       setError("Error de red");
@@ -271,17 +248,14 @@ export default function WizardTicket() {
 
   if (metaError) {
     return (
-      <div
-        className="card"
-        style={{ borderColor: "var(--state-warning)" }}
-      >
-        <p className="text-body-medium mb-1">JIRA no disponible</p>
+      <div className="card" style={{ borderColor: "var(--state-warning)" }}>
+        <p className="text-body-medium mb-1">ClickUp no disponible</p>
         <p className="text-caption text-text-secondary">{metaError}</p>
       </div>
     );
   }
   if (!meta) {
-    return <div className="card text-body text-text-secondary">Cargando JIRA…</div>;
+    return <div className="card text-body text-text-secondary">Cargando ClickUp…</div>;
   }
 
   return (
@@ -289,10 +263,7 @@ export default function WizardTicket() {
       {cotizacionData && (
         <div
           className="card card-tight"
-          style={{
-            background: "var(--bg-surface)",
-            borderColor: "var(--state-info)",
-          }}
+          style={{ background: "var(--bg-surface)", borderColor: "var(--state-info)" }}
         >
           <div className="text-body-medium" style={{ color: "var(--state-info)" }}>
             Pre-llenado desde cotización
@@ -317,8 +288,8 @@ export default function WizardTicket() {
       {paso === 1 && (
         <PasoProyecto
           proyectos={meta.proyectos}
-          seleccionado={form.proyecto}
-          onChange={(p) => setForm({ ...form, proyecto: p, carril: null })}
+          valor={form.proyecto}
+          onChange={(nombre) => setForm({ ...form, proyecto: nombre, carril: null })}
         />
       )}
       {paso === 2 && (
@@ -326,7 +297,7 @@ export default function WizardTicket() {
           form={form}
           subTiposDisponibles={subTiposDisponibles}
           carriles={carriles}
-          sprintActivo={sprintActivo}
+          esListaNueva={!listaSeleccionada}
           onChangeTipo={(t) => setForm({ ...form, tipo: t, subTipo: SUBTIPOS_POR_TIPO[t][0] ?? null })}
           onChangeSubTipo={(s) => setForm({ ...form, subTipo: s })}
           onChangeCarril={(c) => setForm({ ...form, carril: c })}
@@ -366,7 +337,7 @@ export default function WizardTicket() {
           }
         />
       )}
-      {paso === 6 && <PasoResumen form={form} sprintActivo={sprintActivo} />}
+      {paso === 6 && <PasoResumen form={form} esListaNueva={!listaSeleccionada} />}
 
       {/* Acciones */}
       {error && (
@@ -399,12 +370,7 @@ export default function WizardTicket() {
             <ArrowRight size={16} strokeWidth={1.75} />
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={crear}
-            disabled={enviando}
-            className="btn-primary"
-          >
+          <button type="button" onClick={crear} disabled={enviando} className="btn-primary">
             <Send size={16} strokeWidth={1.75} />
             <span>{enviando ? "Creando…" : "Crear y enviar"}</span>
           </button>
@@ -416,15 +382,7 @@ export default function WizardTicket() {
 
 // ── Progress bar + lista de pasos ───────────────────────────────────────
 
-function ProgressBar({
-  paso,
-  total,
-  pasos,
-}: {
-  paso: number;
-  total: number;
-  pasos: string[];
-}) {
+function ProgressBar({ paso, total, pasos }: { paso: number; total: number; pasos: string[] }) {
   const pct = ((paso + 1) / total) * 100;
   return (
     <div className="space-y-2">
@@ -455,9 +413,9 @@ function PasoAsignado({
   seleccionado,
   onChange,
 }: {
-  usuarios: JiraUser[];
-  seleccionado: JiraUser | null;
-  onChange: (u: JiraUser) => void;
+  usuarios: ClickUpUsuario[];
+  seleccionado: ClickUpUsuario | null;
+  onChange: (u: ClickUpUsuario) => void;
 }) {
   const [q, setQ] = useState("");
   const filtrados = useMemo(() => {
@@ -465,8 +423,8 @@ function PasoAsignado({
     if (!term) return usuarios;
     return usuarios.filter(
       (u) =>
-        u.displayName.toLowerCase().includes(term) ||
-        u.emailAddress?.toLowerCase().includes(term)
+        u.username.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term)
     );
   }, [usuarios, q]);
 
@@ -477,10 +435,7 @@ function PasoAsignado({
         <h2 className="text-heading-2">¿Para quién es el ticket?</h2>
       </div>
 
-      <div
-        className="input flex items-center gap-2"
-        style={{ padding: "0 12px" }}
-      >
+      <div className="input flex items-center gap-2" style={{ padding: "0 12px" }}>
         <Search size={14} strokeWidth={1.75} className="text-text-tertiary" />
         <input
           className="flex-1 bg-transparent outline-none border-0"
@@ -492,47 +447,33 @@ function PasoAsignado({
 
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[420px] overflow-y-auto">
         {filtrados.map((u) => {
-          const activo = seleccionado?.accountId === u.accountId;
+          const activo = seleccionado?.id === u.id;
           return (
-            <li key={u.accountId}>
+            <li key={u.id}>
               <button
                 type="button"
                 onClick={() => onChange(u)}
                 className="w-full flex items-center gap-3 text-left p-3 rounded-[10px] transition-colors"
                 style={{
                   background: activo ? "var(--bg-overlay)" : "var(--bg-surface)",
-                  border: `1px solid ${
-                    activo ? "#0066FF" : "var(--border-subtle)"
-                  }`,
+                  border: `1px solid ${activo ? "#0066FF" : "var(--border-subtle)"}`,
                 }}
               >
-                {u.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={u.avatarUrl}
-                    alt={u.displayName}
-                    className="rounded-full"
-                    style={{ width: 32, height: 32 }}
-                  />
-                ) : (
-                  <div
-                    className="rounded-full inline-flex items-center justify-center text-caption font-semibold"
-                    style={{
-                      width: 32,
-                      height: 32,
-                      background: "var(--bg-overlay)",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    {u.displayName.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
+                <div
+                  className="rounded-full inline-flex items-center justify-center text-caption font-semibold"
+                  style={{
+                    width: 32,
+                    height: 32,
+                    background: "var(--bg-overlay)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {u.username.slice(0, 1).toUpperCase()}
+                </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-body-medium truncate">{u.displayName}</div>
-                  {u.emailAddress && (
-                    <div className="text-caption text-text-tertiary truncate">
-                      {u.emailAddress}
-                    </div>
+                  <div className="text-body-medium truncate">{u.username}</div>
+                  {u.email && (
+                    <div className="text-caption text-text-tertiary truncate">{u.email}</div>
                   )}
                 </div>
                 {activo && (
@@ -552,91 +493,70 @@ function PasoAsignado({
   );
 }
 
-// ── Paso 2: Proyecto ────────────────────────────────────────────────────
+// ── Paso 2: Proyecto (Lista de ClickUp, existente o nueva) ──────────────
 
 function PasoProyecto({
   proyectos,
-  seleccionado,
+  valor,
   onChange,
 }: {
-  proyectos: JiraProject[];
-  seleccionado: JiraProject | null;
-  onChange: (p: JiraProject) => void;
+  proyectos: ClickUpProyecto[];
+  valor: string;
+  onChange: (nombre: string) => void;
 }) {
-  const [q, setQ] = useState("");
   const filtrados = useMemo(() => {
-    const term = q.trim().toLowerCase();
+    const term = valor.trim().toLowerCase();
     if (!term) return proyectos;
-    return proyectos.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) || p.key.toLowerCase().includes(term)
-    );
-  }, [proyectos, q]);
+    return proyectos.filter((p) => p.name.toLowerCase().includes(term));
+  }, [proyectos, valor]);
+
+  const matchExacto = proyectos.some(
+    (p) => p.name.trim().toLowerCase() === valor.trim().toLowerCase()
+  );
 
   return (
     <section className="card space-y-4">
       <div className="flex items-center gap-2">
         <FolderKanban size={18} strokeWidth={1.75} className="text-text-secondary" />
-        <h2 className="text-heading-2">¿En qué proyecto?</h2>
+        <h2 className="text-heading-2">¿Para qué cliente/proyecto?</h2>
       </div>
       <div className="input flex items-center gap-2" style={{ padding: "0 12px" }}>
         <Search size={14} strokeWidth={1.75} className="text-text-tertiary" />
         <input
           className="flex-1 bg-transparent outline-none border-0"
-          placeholder="Buscar proyecto…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar o escribir uno nuevo…"
+          value={valor}
+          onChange={(e) => onChange(e.target.value)}
         />
-        {q && (
-          <button
-            type="button"
-            onClick={() => setQ("")}
-            className="text-text-tertiary"
-          >
+        {valor && (
+          <button type="button" onClick={() => onChange("")} className="text-text-tertiary">
             <X size={14} strokeWidth={1.75} />
           </button>
         )}
       </div>
+      {valor.trim() && !matchExacto && (
+        <p className="text-caption" style={{ color: "var(--state-info)" }}>
+          No existe todavía — se creará una carpeta y lista nuevas “{valor.trim()}” en ClickUp.
+        </p>
+      )}
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[420px] overflow-y-auto">
         {filtrados.map((p) => {
-          const activo = seleccionado?.key === p.key;
+          const activo = valor.trim().toLowerCase() === p.name.trim().toLowerCase();
           return (
-            <li key={p.key}>
+            <li key={p.id}>
               <button
                 type="button"
-                onClick={() => onChange(p)}
+                onClick={() => onChange(p.name)}
                 className="w-full flex items-center gap-3 text-left p-3 rounded-[10px]"
                 style={{
                   background: activo ? "var(--bg-overlay)" : "var(--bg-surface)",
                   border: `1px solid ${activo ? "#0066FF" : "var(--border-subtle)"}`,
                 }}
               >
-                {p.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={p.avatarUrl}
-                    alt={p.name}
-                    style={{ width: 28, height: 28, borderRadius: 6 }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 6,
-                      background: "var(--bg-overlay)",
-                    }}
-                  />
-                )}
                 <div className="flex-1 min-w-0">
                   <div className="text-body-medium truncate">{p.name}</div>
-                  <div className="text-caption text-text-tertiary num-tabular">
-                    {p.key}
-                  </div>
                 </div>
-                {activo && (
-                  <Check size={16} strokeWidth={1.75} style={{ color: "#0066FF" }} />
-                )}
+                {activo && <Check size={16} strokeWidth={1.75} style={{ color: "#0066FF" }} />}
               </button>
             </li>
           );
@@ -652,15 +572,15 @@ function PasoTipo({
   form,
   subTiposDisponibles,
   carriles,
-  sprintActivo,
+  esListaNueva,
   onChangeTipo,
   onChangeSubTipo,
   onChangeCarril,
 }: {
   form: Form;
   subTiposDisponibles: SubTipoTicket[];
-  carriles: JiraStatus[] | null;
-  sprintActivo: { id: number; name: string } | null;
+  carriles: string[] | null;
+  esListaNueva: boolean;
   onChangeTipo: (t: TipoTicket) => void;
   onChangeSubTipo: (s: SubTipoTicket) => void;
   onChangeCarril: (c: string) => void;
@@ -717,9 +637,13 @@ function PasoTipo({
 
       <div className="space-y-2">
         <div className="text-overline text-text-tertiary">
-          Carril inicial en {form.proyecto?.name ?? "el proyecto"}
+          Carril inicial (opcional)
         </div>
-        {carriles === null ? (
+        {esListaNueva ? (
+          <p className="text-caption text-text-tertiary">
+            Es un proyecto nuevo — se creará con los carriles por defecto de ClickUp.
+          </p>
+        ) : carriles === null ? (
           <p className="text-caption text-text-tertiary">Cargando carriles…</p>
         ) : carriles.length === 0 ? (
           <p className="text-caption text-text-tertiary">
@@ -729,52 +653,16 @@ function PasoTipo({
           <div className="flex flex-wrap gap-2">
             {carriles.map((c) => (
               <button
-                key={c.id}
+                key={c}
                 type="button"
-                onClick={() => onChangeCarril(c.name)}
+                onClick={() => onChangeCarril(c)}
                 className={`btn-sm whitespace-nowrap ${
-                  form.carril === c.name ? "btn-primary" : "btn-secondary"
+                  form.carril === c ? "btn-primary" : "btn-secondary"
                 }`}
               >
-                {c.name}
+                {c}
               </button>
             ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sprint activo */}
-      <div className="space-y-2">
-        <div className="text-overline text-text-tertiary">Sprint</div>
-        {sprintActivo ? (
-          <div
-            className="rounded-[10px] p-3 text-body"
-            style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-            }}
-          >
-            <div className="text-body-medium">{sprintActivo.name}</div>
-            <div className="text-caption text-text-tertiary">
-              El ticket se va a agregar a este sprint activo automáticamente.
-            </div>
-          </div>
-        ) : (
-          <div
-            className="rounded-[10px] p-3"
-            style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--state-warning)",
-            }}
-          >
-            <div className="text-body-medium" style={{ color: "var(--state-warning)" }}>
-              ⚠ Sin sprint activo
-            </div>
-            <div className="text-caption text-text-secondary mt-1">
-              El proyecto no tiene un sprint activo (o no es un board scrum).
-              El ticket se va a crear pero quedará en el backlog. Activa un
-              sprint en JIRA si quieres que entre al tablero.
-            </div>
           </div>
         )}
       </div>
@@ -830,8 +718,6 @@ function PasoDescripcion({
     }
     setFormateando(true);
     try {
-      // Mandamos como texto el combo titulo + descripción para que la IA
-      // tenga todo el contexto que Johana escribió.
       const combinado = [form.titulo.trim(), texto].filter(Boolean).join("\n\n");
       const res = await fetch("/api/tickets/formatear", {
         method: "POST",
@@ -847,10 +733,7 @@ function PasoDescripcion({
         setErrorIA(j.error || "Error consultando la IA");
         return;
       }
-      onAplicarFormato({
-        titulo_corto: j.titulo_corto,
-        descripcion_md: j.descripcion_md,
-      });
+      onAplicarFormato({ titulo_corto: j.titulo_corto, descripcion_md: j.descripcion_md });
     } catch {
       setErrorIA("Error de red");
     } finally {
@@ -957,10 +840,7 @@ function PasoDescripcion({
         </div>
         <label
           className="block rounded-[10px] p-4 text-center cursor-pointer transition-colors"
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px dashed var(--border-default)",
-          }}
+          style={{ background: "var(--bg-surface)", border: "1px dashed var(--border-default)" }}
         >
           <input
             type="file"
@@ -972,11 +852,7 @@ function PasoDescripcion({
               e.currentTarget.value = "";
             }}
           />
-          <Paperclip
-            size={20}
-            strokeWidth={1.5}
-            className="text-text-tertiary mx-auto mb-1"
-          />
+          <Paperclip size={20} strokeWidth={1.5} className="text-text-tertiary mx-auto mb-1" />
           <div className="text-body-medium">Clic para elegir archivos</div>
           <div className="text-caption text-text-tertiary">
             Imágenes (png/jpg/gif/webp), PDF, DOCX, XLSX, TXT, ZIP
@@ -989,10 +865,7 @@ function PasoDescripcion({
               <li
                 key={`${f.name}-${i}`}
                 className="flex items-center justify-between gap-3 rounded-[10px] p-3"
-                style={{
-                  background: "var(--bg-surface)",
-                  border: "1px solid var(--border-subtle)",
-                }}
+                style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-body-medium truncate">{f.name}</div>
@@ -1052,10 +925,7 @@ function PasoPrioridad({
                 border: `2px solid ${activo ? p.color : "var(--border-subtle)"}`,
               }}
             >
-              <div
-                className="num-tabular"
-                style={{ color: p.color, fontWeight: 700, fontSize: 14 }}
-              >
+              <div className="num-tabular" style={{ color: p.color, fontWeight: 700, fontSize: 14 }}>
                 {p.label}
               </div>
             </button>
@@ -1121,7 +991,7 @@ function PasoHoras({
         <h2 className="text-heading-2">Horas estimadas</h2>
       </div>
       <p className="text-caption text-text-secondary">
-        Opcional. Si lo dejas vacío, no se manda estimación a JIRA.
+        Opcional. Si lo dejas vacío, no se manda estimación a ClickUp.
       </p>
       <div className="flex items-center gap-2 flex-wrap">
         <input
@@ -1150,14 +1020,9 @@ function PasoHoras({
       {form.justificacionHoras && (
         <div
           className="rounded-[10px] p-3 text-caption"
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border-subtle)",
-          }}
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
         >
-          <div className="text-overline text-text-tertiary mb-1">
-            Justificación IA
-          </div>
+          <div className="text-overline text-text-tertiary mb-1">Justificación IA</div>
           <p className="text-body text-text-secondary">{form.justificacionHoras}</p>
         </div>
       )}
@@ -1173,16 +1038,9 @@ function PasoHoras({
 
 // ── Paso 7: Resumen ─────────────────────────────────────────────────────
 
-function PasoResumen({
-  form,
-  sprintActivo,
-}: {
-  form: Form;
-  sprintActivo: { id: number; name: string } | null;
-}) {
+function PasoResumen({ form, esListaNueva }: { form: Form; esListaNueva: boolean }) {
   const tipoLabel = TIPOS.find((t) => t.id === form.tipo)?.label ?? "";
-  const prioridadLabel =
-    PRIORIDADES_UI.find((p) => p.id === form.prioridad)?.label ?? "";
+  const prioridadLabel = PRIORIDADES_UI.find((p) => p.id === form.prioridad)?.label ?? "";
   const prefijo =
     form.tipo === "estimacion"
       ? "Estimación: "
@@ -1197,15 +1055,13 @@ function PasoResumen({
     <section className="card space-y-4">
       <h2 className="text-heading-2">Resumen</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Linea label="Asignado" valor={form.asignado?.displayName ?? "—"} />
-        <Linea label="Correo" valor={form.asignado?.emailAddress ?? "—"} />
+        <Linea label="Asignado" valor={form.asignado?.username ?? "—"} />
+        <Linea label="Correo" valor={form.asignado?.email ?? "—"} />
         <Linea
           label="Proyecto"
-          valor={`${form.proyecto?.name ?? "—"}${
-            form.proyecto?.key ? ` (${form.proyecto.key})` : ""
-          }`}
+          valor={`${form.proyecto || "—"}${esListaNueva ? " (proyecto nuevo)" : ""}`}
         />
-        <Linea label="Carril inicial" valor={form.carril ?? "—"} />
+        <Linea label="Carril inicial" valor={form.carril ?? "— (por defecto)"} />
         <Linea
           label="Tipo"
           valor={`${tipoLabel}${form.subTipo ? ` · ${SUBTIPO_LABEL[form.subTipo]}` : ""}`}
@@ -1215,34 +1071,7 @@ function PasoResumen({
           label="Horas estimadas"
           valor={form.horasEstimadas.trim() ? `${form.horasEstimadas}h` : "—"}
         />
-        <Linea
-          label="Sprint"
-          valor={sprintActivo ? sprintActivo.name : "Sin sprint activo"}
-        />
       </div>
-
-      {!sprintActivo && (
-        <div
-          className="rounded-[10px] p-3 flex items-start gap-2"
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--state-warning)",
-          }}
-        >
-          <span style={{ color: "var(--state-warning)", fontSize: 18 }}>⚠</span>
-          <div className="flex-1">
-            <div className="text-body-medium" style={{ color: "var(--state-warning)" }}>
-              Este ticket NO se va a agregar a ningún sprint
-            </div>
-            <div className="text-caption text-text-secondary mt-1">
-              El proyecto seleccionado no tiene sprint activo (o no es board
-              scrum). El ticket se va a crear pero quedará en el backlog. Si
-              esto no es lo que quieres, cancela, activa un sprint en JIRA y
-              vuelve a crear el ticket.
-            </div>
-          </div>
-        </div>
-      )}
 
       <div>
         <div className="text-overline text-text-tertiary mb-1">Título final</div>
@@ -1270,10 +1099,7 @@ function PasoResumen({
           </div>
           <ul className="space-y-1">
             {form.adjuntos.map((f, i) => (
-              <li
-                key={`r-${f.name}-${i}`}
-                className="text-body flex items-center justify-between gap-3"
-              >
+              <li key={`r-${f.name}-${i}`} className="text-body flex items-center justify-between gap-3">
                 <span className="truncate">{f.name}</span>
                 <span className="num-tabular text-caption text-text-tertiary whitespace-nowrap">
                   {(f.size / 1024).toFixed(1)} KB

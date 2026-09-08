@@ -3,11 +3,6 @@ import { ChevronLeft } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import ProgramadorRow, { type Programador } from "./ProgramadorRow";
 import NuevoProgramadorForm from "./NuevoProgramadorForm";
-import {
-  jiraConfigured,
-  listAllAssignableUsers,
-  type JiraUser,
-} from "@/lib/jira/client";
 
 export const dynamic = "force-dynamic";
 
@@ -47,28 +42,10 @@ async function getProgramadores(): Promise<Programador[]> {
   })) as Programador[];
 }
 
-async function getJiraUsers(): Promise<JiraUser[]> {
-  if (!jiraConfigured()) return [];
-  try {
-    return await listAllAssignableUsers();
-  } catch {
-    return [];
-  }
-}
-
 export default async function ProgramadoresPage() {
-  const [items, jiraUsers] = await Promise.all([
-    getProgramadores(),
-    getJiraUsers(),
-  ]);
+  const items = await getProgramadores();
   const activos = items.filter((p) => p.activo);
   const inactivos = items.filter((p) => !p.activo);
-
-  const jiraUsersSimple = jiraUsers.map((u) => ({
-    accountId: u.accountId,
-    displayName: u.displayName,
-    emailAddress: u.emailAddress ?? null,
-  }));
 
   return (
     <>
@@ -97,7 +74,7 @@ export default async function ProgramadoresPage() {
         ) : (
           <ul className="space-y-2">
             {activos.map((p) => (
-              <ProgramadorRow key={p.id} p={p} jiraUsers={jiraUsersSimple} />
+              <ProgramadorRow key={p.id} p={p} />
             ))}
           </ul>
         )}
@@ -108,7 +85,7 @@ export default async function ProgramadoresPage() {
           <h2 className="text-heading-2">Inactivos ({inactivos.length})</h2>
           <ul className="space-y-2">
             {inactivos.map((p) => (
-              <ProgramadorRow key={p.id} p={p} jiraUsers={jiraUsersSimple} />
+              <ProgramadorRow key={p.id} p={p} />
             ))}
           </ul>
         </section>

@@ -14,25 +14,12 @@ export type Programador = {
   activo: boolean;
 };
 
-export type JiraUserSimple = {
-  accountId: string;
-  displayName: string;
-  emailAddress: string | null;
-};
-
-export default function ProgramadorRow({
-  p,
-  jiraUsers = [],
-}: {
-  p: Programador;
-  jiraUsers?: JiraUserSimple[];
-}) {
+export default function ProgramadorRow({ p }: { p: Programador }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [nombre, setNombre] = useState(p.nombre);
   const [slackId, setSlackId] = useState(p.slack_id ?? "");
   const [correo, setCorreo] = useState(p.correo ?? "");
-  const [jiraAccountId, setJiraAccountId] = useState(p.jira_account_id ?? "");
   const [precio, setPrecio] = useState(String(p.precio_hora));
   const [reseteando, setReseteando] = useState(false);
   const [passwordTemporal, setPasswordTemporal] = useState<string | null>(null);
@@ -99,7 +86,6 @@ export default function ProgramadorRow({
           nombre: nombre.trim(),
           slack_id: slackId.trim() || null,
           correo: correo.trim() || null,
-          jira_account_id: jiraAccountId.trim() || null,
           precio_hora: Number(precio),
         }),
       });
@@ -161,37 +147,8 @@ export default function ProgramadorRow({
               placeholder="programador@iconos.mx"
             />
             <span className="field-hint">
-              Mismo correo que usa en Slack. Se busca por nombre en los DMs
-              de tickets cuando JIRA oculta su email.
-            </span>
-          </div>
-          <div>
-            <label className="field-label">Usuario en JIRA (opcional)</label>
-            {jiraUsers.length === 0 ? (
-              <input
-                className="input"
-                value={jiraAccountId}
-                onChange={(e) => setJiraAccountId(e.target.value)}
-                placeholder="accountId de JIRA"
-              />
-            ) : (
-              <select
-                className="input"
-                value={jiraAccountId}
-                onChange={(e) => setJiraAccountId(e.target.value)}
-              >
-                <option value="">— sin vincular —</option>
-                {jiraUsers.map((u) => (
-                  <option key={u.accountId} value={u.accountId}>
-                    {u.displayName}
-                    {u.emailAddress ? ` · ${u.emailAddress}` : ""}
-                  </option>
-                ))}
-              </select>
-            )}
-            <span className="field-hint">
-              Vincula este programador con su usuario en JIRA por accountId.
-              Útil cuando el displayName de JIRA difiere del nombre interno.
+              Mismo correo que usa en Slack. Se usa para mandarle el DM cuando
+              se le asigna un ticket en ClickUp.
             </span>
           </div>
           <div>
@@ -231,7 +188,6 @@ export default function ProgramadorRow({
               setNombre(p.nombre);
               setSlackId(p.slack_id ?? "");
               setCorreo(p.correo ?? "");
-              setJiraAccountId(p.jira_account_id ?? "");
               setPrecio(String(p.precio_hora));
               setError(null);
             }}
@@ -262,7 +218,6 @@ export default function ProgramadorRow({
             ${p.precio_hora.toLocaleString("es-MX")} / hr
           </span>
           {p.correo && <span>📧 {p.correo}</span>}
-          {p.jira_account_id && <span>🔗 JIRA vinculado</span>}
           {p.slack_id && <span>Slack: {p.slack_id}</span>}
         </div>
         {error && (

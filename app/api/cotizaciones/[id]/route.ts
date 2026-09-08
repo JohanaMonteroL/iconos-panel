@@ -1,5 +1,4 @@
 // DELETE /api/cotizaciones/[id]
-//   ?borrar_clickup=1  → también borra el ticket de ClickUp asociado
 //
 // Permite eliminar permanentemente una cotización. La estimación origen
 // queda libre (cotizacion_ref vuelve a null) para que pueda reprocesarse
@@ -9,7 +8,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { clickUpConfigured, deleteTask } from "@/lib/clickup/client";
 
 export const runtime = "nodejs";
 
@@ -24,12 +22,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Server sin Supabase" }, { status: 503 });
   }
 
-  const borrarClickUp = req.nextUrl.searchParams.get("borrar_clickup") === "1";
-
   const supa = createSupabaseServiceClient();
   const { data: cot, error: getErr } = await supa
     .from("cotizaciones")
-    .select("id, clickup_ticket_id")
+    .select("id")
     .eq("id", params.id)
     .maybeSingle();
 
@@ -59,21 +55,7 @@ export async function DELETE(
     return NextResponse.json({ error: delErr.message }, { status: 500 });
   }
 
-  // 4) Borrar el ticket de ClickUp (si se pidió)
-  let clickup_warning: string | null = null;
-  if (borrarClickUp && cot.clickup_ticket_id) {
-    if (!clickUpConfigured()) {
-      clickup_warning = "ClickUp no configurado — no se pudo borrar el ticket.";
-    } else {
-      try {
-        await deleteTask(cot.clickup_ticket_id);
-      } catch (e: any) {
-        clickup_warning = e?.message || "No se pudo borrar el ticket de ClickUp";
-      }
-    }
-  }
-
   revalidatePath("/panel/cotizaciones");
   revalidatePath("/panel/estimaciones");
-  return NextResponse.json({ ok: true, clickup_warning });
+  return NextResponse.json({ ok: true });
 }
