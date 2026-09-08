@@ -600,3 +600,30 @@ export async function getProyectoOptions(): Promise<ClickUpFieldOption[]> {
     return [];
   }
 }
+
+/**
+ * Devuelve un "proyecto" por cada Carpeta (folder) del Space "Desarrollo"
+ * (CLICKUP_SPACE_TICKETS_DEV) — el mismo Space donde se generan los tickets
+ * de desarrollo, una carpeta por cliente/proyecto. Se usa para poblar el
+ * selector de "Proyecto" en el formulario de estimaciones.
+ */
+export async function getProyectosDesdeCarpetasDesarrollo(): Promise<
+  { id: string; name: string }[]
+> {
+  const spaceId = process.env.CLICKUP_SPACE_TICKETS_DEV;
+  if (!spaceId || !process.env.CLICKUP_API_KEY) return [];
+  try {
+    const { folders } = await listFolders(spaceId);
+    return folders
+      .filter((f) => !f.archived && !f.hidden)
+      .map((f) => ({ id: f.id, name: f.name, orderindex: f.orderindex ?? 0 }))
+      .sort((a, b) => {
+        if (a.orderindex !== b.orderindex) return a.orderindex - b.orderindex;
+        return a.name.localeCompare(b.name);
+      })
+      .map(({ id, name }) => ({ id, name }));
+  } catch (e) {
+    console.error("[clickup] getProyectosDesdeCarpetasDesarrollo error:", e);
+    return [];
+  }
+}
