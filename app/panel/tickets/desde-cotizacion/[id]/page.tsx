@@ -22,7 +22,7 @@ export default function DesdeCotizacionPage({
       <header className="space-y-2">
         <h1 className="text-display">Generar tickets por tarea</h1>
         <p className="text-body text-text-secondary">
-          Un ticket en JIRA por cada tarea de la cotización. Ajusta lo que
+          Un ticket en ClickUp por cada tarea de la cotización. Ajusta lo que
           falte (asignado, proyecto, prioridad) y se crean todos juntos.
         </p>
       </header>

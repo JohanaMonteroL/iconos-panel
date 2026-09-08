@@ -52,13 +52,12 @@ export async function POST(
   const supa = createSupabaseServiceClient();
 
   // Lee la cotización completa
-  const baseSel = `id, nombre, horas_min, horas_max, clickup_ticket_id,
-    ia_recomendacion, contexto_sherlyn, borrador_correo, proyecto_clickup_id,
+  const baseSel = `id, nombre, horas_min, horas_max,
+    ia_recomendacion, contexto_sherlyn, borrador_correo,
     programadores(nombre),
     tareas_estimacion(orden, nombre_limpio, descripcion_limpia, hrs_min, hrs_max)`;
   const withExtras = `id, nombre, horas_min, horas_max, horas_envio, slack_text,
-    clickup_ticket_id, ia_recomendacion, contexto_sherlyn, borrador_correo,
-    proyecto_clickup_id,
+    ia_recomendacion, contexto_sherlyn, borrador_correo,
     programadores(nombre),
     tareas_estimacion(orden, nombre_limpio, descripcion_limpia, hrs_min, hrs_max)`;
 
@@ -80,9 +79,6 @@ export async function POST(
     cot.horas_envio != null
       ? Number(cot.horas_envio)
       : Math.round(((cot.horas_min + cot.horas_max) / 2) * 10) / 10;
-  const clickupUrl = cot.clickup_ticket_id
-    ? `https://app.clickup.com/t/${cot.clickup_ticket_id}`
-    : null;
 
   let texto = cot.slack_text as string | null;
   if (!texto) {
@@ -109,7 +105,7 @@ export async function POST(
       descripcionCorta: shortDescripcion(limpiaSurrogate),
       puntosClave: puntosFallback(limpiaSurrogate),
       notas: null,
-      clickupUrl,
+      clickupUrl: null,
     });
   }
 
@@ -121,7 +117,7 @@ export async function POST(
     const r = await postMessage({
       channel: process.env.SLACK_CHANNEL_ADMIN!,
       text: fallbackText,
-      blocks: blocksAprobacionCotizacion(texto, cot.id, clickupUrl, {
+      blocks: blocksAprobacionCotizacion(texto, cot.id, null, {
         comoActualizacion,
         notaCambios,
       }),

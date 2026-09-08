@@ -1,13 +1,10 @@
-// Editar campos de una cotización existente.
-// Cualquier cambio se replica al ticket de ClickUp (si tiene clickup_ticket_id)
-// y se registra en acciones_cotizacion (log).
+// Editar campos de una cotización existente. Registra en acciones_cotizacion (log).
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText, buildSlackTextFijo } from "@/lib/slack/format";
-import { syncCotizacionConClickUp } from "@/lib/clickup/sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -59,7 +56,7 @@ export async function POST(
   // Hago un select resiliente a migraciones pendientes.
   // Select resiliente — si la migración 0005 (precio_venta_hora) no se corrió,
   // reintentamos sin ese campo.
-  const baseSel = `id, nombre, horas_min, horas_max, clickup_ticket_id, contexto_sherlyn,
+  const baseSel = `id, nombre, horas_min, horas_max, contexto_sherlyn,
        programadores(nombre)`;
   const withPrecio = baseSel.replace(
     "contexto_sherlyn,",
@@ -122,8 +119,8 @@ export async function POST(
     );
   }
 
-  // proyecto_clickup_id + proyecto_nombre — actualiza el ClickUp custom field
-  // del proyecto al final del flujo de edición (vía syncCotizacionConClickUp).
+  // proyecto_clickup_id + proyecto_nombre — solo categorización interna de la
+  // cotización (no crea ni actualiza ningún ticket).
   if (body.proyecto_clickup_id !== undefined) {
     setIfDiff(
       "proyecto_clickup_id",
@@ -192,15 +189,11 @@ export async function POST(
     cambios.tareas = { antes: "(set previo)", despues: `${rows.length} tareas` };
   }
 
-  // La actualización a ClickUp se hace MÁS ABAJO, después de refrescar el
-  // estado y de regenerar slack_text, para que mande la versión vigente.
-  let clickup_warning: string | null = null;
-
   // Recalcular horas_envio y regenerar slack_text con los valores VIGENTES.
   // Para esto leemos el estado actual (post-update) y reconstruimos.
   // Leemos también horas_envio para PRESERVAR la selección de Johana.
   // Si no existe la columna (migración 0004 sin correr), fallback a PERT.
-  const refreshedSel = `nombre, horas_min, horas_max, horas_envio, contexto_sherlyn, clickup_ticket_id,
+  const refreshedSel = `nombre, horas_min, horas_max, horas_envio, contexto_sherlyn,
        tipo_precio, monto_fijo,
        programadores(nombre),
        tareas_estimacion(orden, nombre_limpio, descripcion_limpia, hrs_min, hrs_max)`;
@@ -244,10 +237,6 @@ export async function POST(
     const descripcionCorta =
       (r.contexto_sherlyn ?? "").split(/[.\n]/)[0]?.trim() || r.nombre;
 
-    const clickupUrl = r.clickup_ticket_id
-      ? `https://app.clickup.com/t/${r.clickup_ticket_id}`
-      : null;
-
     const slackTextNuevo = esFijo
       ? buildSlackTextFijo({
           nombreCotizacion: r.nombre,
@@ -255,7 +244,7 @@ export async function POST(
           montoFijoMxn: Number(r.monto_fijo ?? 0),
           descripcionCorta: r.contexto_sherlyn ?? r.nombre,
           notas: null,
-          clickupUrl,
+          clickupUrl: null,
         })
       : buildSlackText({
           nombreCotizacion: r.nombre,
@@ -266,7 +255,7 @@ export async function POST(
           descripcionCorta,
           puntosClave: puntos,
           notas: null,
-          clickupUrl,
+          clickupUrl: null,
         });
 
     // Solo actualizamos slack_text — NO sobrescribimos horas_envio en /editar
@@ -282,51 +271,6 @@ export async function POST(
         refreshErr.message
       );
     }
-
-    // ── Sincronizar ClickUp (usa helper centralizado) ────────────────
-    if (r.clickup_ticket_id && process.env.CLICKUP_API_KEY) {
-      try {
-        // Obtener correo y recomendacion (no vienen en r)
-        const fullResp = await supa
-          .from("cotizaciones")
-          .select("borrador_correo, ia_recomendacion, proyecto_clickup_id")
-          .eq("id", params.id)
-          .maybeSingle();
-        const full = fullResp.data as
-          | {
-              borrador_correo: string | null;
-              ia_recomendacion: string | null;
-              proyecto_clickup_id: string | null;
-            }
-          | null;
-
-        const syncResult = await syncCotizacionConClickUp({
-          clickupTicketId: r.clickup_ticket_id,
-          nombre: r.nombre,
-          programadorNombre: r.programadores?.nombre ?? "—",
-          horasEnvio,
-          bufferPct: 0,
-          contextoSherlyn: r.contexto_sherlyn ?? "",
-          borradorCorreo: full?.borrador_correo ?? "",
-          iaRecomendacion: full?.ia_recomendacion,
-          descripcionCorta,
-          puntosClave: puntos,
-          proyectoClickupId: full?.proyecto_clickup_id ?? null,
-          tareas: tareasOrdenadas.map((t: any) => ({
-            nombre: t.nombre_limpio ?? "",
-            descripcion: t.descripcion_limpia ?? "",
-            hrs_min: t.hrs_min ?? 0,
-            hrs_max: t.hrs_max ?? 0,
-          })),
-        });
-
-        if (!syncResult.ok && syncResult.warnings.length > 0) {
-          clickup_warning = syncResult.warnings.join(" · ");
-        }
-      } catch (e: any) {
-        clickup_warning = e?.message || "No se pudo actualizar el ticket ClickUp";
-      }
-    }
   }
 
   // Log de la acción
@@ -337,7 +281,6 @@ export async function POST(
       metadata: {
         cambios,
         comentario: body.comentario || null,
-        clickup_warning,
       },
     });
   }
@@ -345,5 +288,5 @@ export async function POST(
   revalidatePath(`/panel/cotizaciones/${params.id}`);
   revalidatePath("/panel/cotizaciones");
 
-  return NextResponse.json({ ok: true, cambios, clickup_warning });
+  return NextResponse.json({ ok: true, cambios });
 }

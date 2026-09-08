@@ -6,7 +6,7 @@
 // cueste 10% del precio normal (~$0.0005 USD/clic en caliente).
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { SubTipoTicket, TipoTicket } from "@/lib/jira/format";
+import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
 
 const MODEL = "claude-haiku-4-5-20251001";
 

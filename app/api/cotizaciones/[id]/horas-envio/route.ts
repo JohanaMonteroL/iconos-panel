@@ -2,15 +2,13 @@
 //
 // Cambia el número de horas que verá el jefe en el mensaje de Slack y que
 // quedan registradas como "horas_envio" en la cotización. Permite elegir
-// entre min / pert / max / personalizado. Después regenera slack_text y
-// sincroniza el ticket de ClickUp.
+// entre min / pert / max / personalizado. Después regenera slack_text.
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
-import { syncCotizacionConClickUp } from "@/lib/clickup/sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -47,7 +45,6 @@ export async function POST(
     .from("cotizaciones")
     .select(
       `id, nombre, horas_min, horas_max, contexto_sherlyn,
-       clickup_ticket_id, borrador_correo, ia_recomendacion, proyecto_clickup_id,
        programadores(nombre),
        tareas_estimacion(orden, nombre_limpio, descripcion_limpia, hrs_min, hrs_max)`
     )
@@ -86,9 +83,6 @@ export async function POST(
     .filter(Boolean);
   const descripcionCorta =
     (cot.contexto_sherlyn ?? "").split(/[.\n]/)[0]?.trim() || cot.nombre;
-  const clickupUrl = cot.clickup_ticket_id
-    ? `https://app.clickup.com/t/${cot.clickup_ticket_id}`
-    : null;
 
   const slackTextNuevo = buildSlackText({
     nombreCotizacion: cot.nombre,
@@ -99,7 +93,7 @@ export async function POST(
     descripcionCorta,
     puntosClave: puntos,
     notas: null,
-    clickupUrl,
+    clickupUrl: null,
   });
 
   // Persistir
@@ -114,48 +108,16 @@ export async function POST(
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  // Sincronizar ClickUp (descripción + custom field "Horas enviadas")
-  let clickup_warning: string | null = null;
-  if (cot.clickup_ticket_id && process.env.CLICKUP_API_KEY) {
-    try {
-      const sync = await syncCotizacionConClickUp({
-        clickupTicketId: cot.clickup_ticket_id,
-        nombre: cot.nombre,
-        programadorNombre,
-        horasEnvio,
-        bufferPct: 0,
-        contextoSherlyn: cot.contexto_sherlyn ?? "",
-        borradorCorreo: cot.borrador_correo ?? "",
-        iaRecomendacion: cot.ia_recomendacion,
-        descripcionCorta,
-        puntosClave: puntos,
-        proyectoClickupId: (cot as any).proyecto_clickup_id ?? null,
-        tareas: tareasOrdenadas.map((t: any) => ({
-          nombre: t.nombre_limpio ?? "",
-          descripcion: t.descripcion_limpia ?? "",
-          hrs_min: t.hrs_min ?? 0,
-          hrs_max: t.hrs_max ?? 0,
-        })),
-      });
-      if (!sync.ok && sync.warnings.length > 0) {
-        clickup_warning = sync.warnings.join(" · ");
-      }
-    } catch (e: any) {
-      clickup_warning = e?.message || "No se pudo sincronizar ClickUp";
-    }
-  }
-
   // Log
   await supa.from("acciones_cotizacion").insert({
     cotizacion_id: params.id,
     tipo_accion: "horas_envio_cambiada",
-    metadata: { tipo, horas_envio: horasEnvio, clickup_warning },
+    metadata: { tipo, horas_envio: horasEnvio },
   });
 
   revalidatePath(`/panel/cotizaciones/${params.id}`);
   return NextResponse.json({
     ok: true,
     horas_envio: horasEnvio,
-    clickup_warning,
   });
 }

@@ -12,7 +12,6 @@ import {
   Trash2,
   ChevronUp,
   ChevronDown,
-  Upload,
   Archive,
   Ticket,
   FileStack,
@@ -372,13 +371,11 @@ export default function CotizacionEditor({ cotizacion }: Props) {
 type ActionsProps = {
   cotizacionId: string;
   estado: string;
-  tieneTicketClickUp: boolean;
 };
 
 export function CotizacionAcciones({
   cotizacionId,
   estado,
-  tieneTicketClickUp,
 }: ActionsProps) {
   const router = useRouter();
   const [working, setWorking] = useState<string | null>(null);
@@ -393,30 +390,22 @@ export function CotizacionAcciones({
   const [nuevoEstado, setNuevoEstado] = useState<string>("");
   const [comentarioEstado, setComentarioEstado] = useState("");
 
-  const archivar = async ({ checkboxMarcado }: { checkboxMarcado: boolean }) => {
+  const archivar = async () => {
     const res = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        estado: "archivada",
-        borrar_clickup_ticket: checkboxMarcado,
-      }),
+      body: JSON.stringify({ estado: "archivada" }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "No se pudo archivar");
-    if (json.clickup_warning) setWarning(json.clickup_warning);
     setModal(null);
     router.refresh();
   };
 
-  const eliminar = async ({ checkboxMarcado }: { checkboxMarcado: boolean }) => {
-    const url = `/api/cotizaciones/${cotizacionId}${
-      checkboxMarcado ? "?borrar_clickup=1" : ""
-    }`;
-    const res = await fetch(url, { method: "DELETE" });
+  const eliminar = async () => {
+    const res = await fetch(`/api/cotizaciones/${cotizacionId}`, { method: "DELETE" });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "No se pudo eliminar");
-    if (json.clickup_warning) setWarning(json.clickup_warning);
     setModal(null);
     router.replace("/panel/cotizaciones");
   };
@@ -445,29 +434,6 @@ export function CotizacionAcciones({
         return;
       }
       if (json.clickup_warning) setWarning(json.clickup_warning);
-      router.refresh();
-    } catch {
-      setMsg("Error de red");
-    } finally {
-      setWorking(null);
-    }
-  };
-
-  const reintentarClickUp = async () => {
-    setWorking("retry-clickup");
-    setMsg(null);
-    setSuccess(null);
-    setWarning(null);
-    try {
-      const res = await fetch(
-        `/api/cotizaciones/${cotizacionId}/reintentar-clickup`,
-        { method: "POST" }
-      );
-      const json = await res.json();
-      if (!res.ok) {
-        setMsg(json.error || "No se pudo crear el ticket");
-        return;
-      }
       router.refresh();
     } catch {
       setMsg("Error de red");
@@ -515,39 +481,6 @@ export function CotizacionAcciones({
     }
   };
 
-  const sincronizarClickUp = async () => {
-    setWorking("sync-clickup");
-    setMsg(null);
-    setSuccess(null);
-    setWarning(null);
-    try {
-      const res = await fetch(
-        `/api/cotizaciones/${cotizacionId}/sincronizar-clickup`,
-        { method: "POST" }
-      );
-      const json = await res.json();
-      if (!res.ok) {
-        setMsg(json.error || "No se pudo sincronizar");
-        return;
-      }
-      if (json.warnings && json.warnings.length > 0) {
-        setWarning(json.warnings.join(" · "));
-      } else {
-        setSuccess(
-          `✓ Sincronizado (descripción + ${
-            json.customFieldsUpdated ?? 0
-          } campos)`
-        );
-        setTimeout(() => setSuccess(null), 3000);
-      }
-      router.refresh();
-    } catch {
-      setMsg("Error de red");
-    } finally {
-      setWorking(null);
-    }
-  };
-
   return (
     <section className="card space-y-3">
       <h2 className="text-heading-2">Acciones</h2>
@@ -565,34 +498,6 @@ export function CotizacionAcciones({
           <CheckCircle2 size={16} strokeWidth={1.75} />
           <span>Cambiar estado</span>
         </button>
-
-        {!tieneTicketClickUp && (
-          <button
-            disabled={working !== null}
-            onClick={reintentarClickUp}
-            className="btn-secondary"
-          >
-            <RefreshCcw size={16} strokeWidth={1.75} />
-            <span>
-              {working === "retry-clickup" ? "Reintentando…" : "Reintentar ClickUp"}
-            </span>
-          </button>
-        )}
-
-        {tieneTicketClickUp && (
-          <button
-            disabled={working !== null}
-            onClick={sincronizarClickUp}
-            className="btn-secondary"
-          >
-            <Upload size={16} strokeWidth={1.75} />
-            <span>
-              {working === "sync-clickup"
-                ? "Sincronizando…"
-                : "Sincronizar con ClickUp"}
-            </span>
-          </button>
-        )}
 
         <button
           disabled={working !== null}
@@ -630,7 +535,7 @@ export function CotizacionAcciones({
             className="btn-secondary"
           >
             <Ticket size={16} strokeWidth={1.75} />
-            <span>Generar tickets en JIRA</span>
+            <span>Generar tickets</span>
           </button>
         )}
 
@@ -840,12 +745,12 @@ export function CotizacionAcciones({
       <Modal
         open={generarTicketsAbierto}
         onClose={() => setGenerarTicketsAbierto(false)}
-        title="Generar tickets en JIRA"
+        title="Generar tickets"
         size="md"
       >
         <div className="space-y-3">
           <p className="text-body text-text-secondary">
-            Elige cómo quieres trasladar esta cotización a JIRA.
+            Elige cómo quieres trasladar esta cotización a tickets de desarrollo.
           </p>
           <a
             href={`/panel/tickets/nuevo?desde_cotizacion=${cotizacionId}`}
@@ -865,7 +770,7 @@ export function CotizacionAcciones({
               <div>
                 <div className="text-body-medium">Un ticket completo</div>
                 <div className="text-caption text-text-secondary mt-1">
-                  Crea un solo ticket en JIRA que abarca toda la cotización,
+                  Crea un solo ticket en ClickUp que abarca toda la cotización,
                   con todas las tareas listadas en la descripción y las horas
                   totales. Ideal cuando un solo programador hace todo.
                 </div>
@@ -890,7 +795,7 @@ export function CotizacionAcciones({
               <div>
                 <div className="text-body-medium">Un ticket por cada tarea</div>
                 <div className="text-caption text-text-secondary mt-1">
-                  Un ticket independiente en JIRA por cada tarea de la
+                  Un ticket independiente en ClickUp por cada tarea de la
                   cotización (con sus horas distribuidas). Útil cuando puedes
                   asignar a programadores distintos o trackear avance por
                   tarea.
@@ -914,15 +819,6 @@ export function CotizacionAcciones({
         }
         palabraClave="archivar"
         textoBoton="Sí, archivar"
-        checkbox={
-          tieneTicketClickUp
-            ? {
-                label: "También borrar el ticket de ClickUp",
-                descripcion:
-                  "Se eliminará el ticket asociado en ClickUp de forma permanente. Si lo dejas desmarcado, el ticket queda en ClickUp tal cual.",
-              }
-            : undefined
-        }
       />
 
       <ConfirmAccionModal
@@ -940,15 +836,6 @@ export function CotizacionAcciones({
         palabraClave="eliminar"
         textoBoton="Eliminar definitivamente"
         peligroso
-        checkbox={
-          tieneTicketClickUp
-            ? {
-                label: "También borrar el ticket de ClickUp",
-                descripcion:
-                  "Se eliminará el ticket asociado en ClickUp. Si lo dejas desmarcado, el ticket queda en ClickUp huérfano.",
-              }
-            : undefined
-        }
       />
     </section>
   );

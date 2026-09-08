@@ -9,20 +9,14 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   verifySlackSignature,
-  postDM,
+  postDMByEmail,
   updateMessage,
   slackConfigured,
 } from "@/lib/slack/client";
 import {
   blocksMensajeResuelto,
-  blocksNotificacionSherlyn,
+  blocksNotificacionAprobacion,
 } from "@/lib/slack/blocks";
-import {
-  findMatchingStatus,
-  resolveCotizacionesListId,
-  STATUS_CANDIDATES,
-  updateTaskStatus,
-} from "@/lib/clickup/client";
 import { sendPushToAll } from "@/lib/push/webpush";
 
 export const runtime = "nodejs";
@@ -63,54 +57,37 @@ async function handleAprobar(cotizacionId: string, user: any) {
     metadata: { aprobado_por: aprobadoPor, via: "slack" },
   });
 
-  // 2) Cambiar carril en ClickUp
+  // 2) Notificar a Johana por DM (antes iba a Sherlyn)
   const { data: cot } = await supa
     .from("cotizaciones")
-    .select("clickup_ticket_id, nombre, horas_min, horas_max, proyecto_clickup_id, programadores(nombre)")
+    .select("nombre, horas_min, horas_max, programadores(nombre)")
     .eq("id", cotizacionId)
     .maybeSingle();
 
-  let clickupWarn: string | null = null;
-  let clickupUrl: string | null = null;
-  if (cot?.clickup_ticket_id && process.env.CLICKUP_API_KEY) {
-    try {
-      const listId = await resolveCotizacionesListId();
-      const { status: matched } = listId
-        ? await findMatchingStatus(listId, STATUS_CANDIDATES.aprobada)
-        : { status: null };
-      if (matched) {
-        await updateTaskStatus(cot.clickup_ticket_id, matched);
-      }
-      clickupUrl = `https://app.clickup.com/t/${cot.clickup_ticket_id}`;
-    } catch (e: any) {
-      clickupWarn = e?.message || null;
-    }
-  }
-
-  // 3) DM a Sherlyn
-  const sherlynId = process.env.SLACK_USER_SHERLYN_ID;
-  if (sherlynId && cot) {
+  const notifyEmail = process.env.SLACK_NOTIFICACION_APROBACION_EMAIL;
+  if (notifyEmail && cot) {
     try {
       const horas =
         cot.horas_max && cot.horas_min
           ? Math.round(((cot.horas_min + cot.horas_max) / 2) * 10) / 10
           : 0;
-      await postDM({
-        userId: sherlynId,
+      const dm = await postDMByEmail({
+        email: notifyEmail,
         text: `Cotización aprobada: ${cot.nombre}`,
-        blocks: blocksNotificacionSherlyn(
-          cot.nombre,
-          null,
-          clickupUrl,
-          horas
-        ),
+        blocks: blocksNotificacionAprobacion(cot.nombre, null, horas),
+        asUser: true,
       });
+      if (!dm) {
+        console.warn(
+          `[slack/interactivity] No se encontró usuario de Slack con el correo ${notifyEmail}`
+        );
+      }
     } catch (e: any) {
-      console.warn("[slack/interactivity] DM a Sherlyn falló:", e);
+      console.warn("[slack/interactivity] DM de aprobación falló:", e);
     }
   }
 
-  // 4) Push a Johana
+  // 3) Push a Johana
   sendPushToAll({
     title: "✅ Cotización aprobada",
     body: `${cot?.nombre ?? "Cotización"} fue aprobada por el jefe`,
@@ -121,8 +98,6 @@ async function handleAprobar(cotizacionId: string, user: any) {
   revalidatePath(`/panel/cotizaciones/${cotizacionId}`);
   revalidatePath("/panel/cotizaciones");
   revalidatePath("/panel");
-
-  return { clickupWarn };
 }
 
 async function handlePedirCambios(
@@ -144,24 +119,11 @@ async function handlePedirCambios(
     metadata: { por, comentario, via: "slack" },
   });
 
-  // ClickUp lane
   const { data: cot } = await supa
     .from("cotizaciones")
-    .select("clickup_ticket_id, nombre")
+    .select("nombre")
     .eq("id", cotizacionId)
     .maybeSingle();
-
-  if (cot?.clickup_ticket_id && process.env.CLICKUP_API_KEY) {
-    try {
-      const listId = await resolveCotizacionesListId();
-      const { status: matched } = listId
-        ? await findMatchingStatus(listId, STATUS_CANDIDATES.cambios_solicitados)
-        : { status: null };
-      if (matched) await updateTaskStatus(cot.clickup_ticket_id, matched);
-    } catch (e) {
-      console.warn("[slack/interactivity] click-up status falló:", e);
-    }
-  }
 
   // Push a Johana con el comentario
   sendPushToAll({

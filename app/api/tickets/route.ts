@@ -1,4 +1,4 @@
-// POST /api/tickets  → crea ticket en JIRA + persiste + DM al asignado
+// POST /api/tickets  → crea ticket en ClickUp (Space Desarrollo) + persiste + DM al asignado
 // GET  /api/tickets  → listado para el panel (paginado simple)
 
 import { NextRequest, NextResponse } from "next/server";
@@ -6,20 +6,18 @@ import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
-  createIssue,
-  getActiveSprint,
-  jiraConfigured,
-} from "@/lib/jira/client";
+  clickUpConfigured,
+  createTask,
+  resolveProyectoListId,
+} from "@/lib/clickup/client";
 import {
   aplicarPrefijo,
-  mapearIssueTypeName,
-  mapearPrioridadAJira,
-  markdownToAdf,
+  mapearPrioridadAClickUp,
   type SubTipoTicket,
   type TipoTicket,
-} from "@/lib/jira/format";
+} from "@/lib/tickets/format";
 import { postDMByEmail, slackConfigured } from "@/lib/slack/client";
-import { blocksTicketAsignado } from "@/lib/slack/blocks";
+import { blocksTicketAsignadoClickUp } from "@/lib/slack/blocks";
 import { resolverCorreoProgramador } from "@/lib/programadores/resolver-correo";
 
 export const runtime = "nodejs";
@@ -36,9 +34,8 @@ type CrearTicketBody = {
   sub_tipo?: SubTipoTicket | null;
   prioridad: string;
   horas_estimadas?: number | null;
-  proyecto_jira_key: string;
-  proyecto_jira_nombre: string;
-  asignado_jira_id: string;
+  proyecto_nombre: string; // nombre de la Lista de ClickUp (cliente/proyecto)
+  asignado_clickup_id: string;
   asignado_nombre: string;
   asignado_correo?: string | null;
   carril?: string | null;
@@ -55,9 +52,9 @@ export async function POST(req: NextRequest) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Server sin Supabase" }, { status: 503 });
   }
-  if (!jiraConfigured()) {
+  if (!clickUpConfigured() || !process.env.CLICKUP_SPACE_TICKETS_DEV) {
     return NextResponse.json(
-      { error: "JIRA no configurado en este servidor" },
+      { error: "ClickUp no configurado en este servidor" },
       { status: 503 }
     );
   }
@@ -77,8 +74,8 @@ export async function POST(req: NextRequest) {
     errores.push("Sub-tipo inválido");
   if (!PRIORIDADES.includes(body.prioridad?.toLowerCase()))
     errores.push("Prioridad inválida");
-  if (!body.proyecto_jira_key) errores.push("Falta proyecto");
-  if (!body.asignado_jira_id) errores.push("Falta asignado");
+  if (!body.proyecto_nombre?.trim()) errores.push("Falta proyecto/cliente");
+  if (!body.asignado_clickup_id) errores.push("Falta asignado");
   if (errores.length > 0) {
     return NextResponse.json(
       { error: "Validación falló", detalles: errores },
@@ -86,35 +83,36 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 1) Crear en JIRA
+  // 1) Resolver (o crear) la Lista del cliente/proyecto y crear la tarea en ClickUp
   const tituloFinal = aplicarPrefijo(body.tipo, body.titulo.trim());
-  const issueTypeName = mapearIssueTypeName(body.tipo, body.sub_tipo ?? null);
-  const prioridadName = mapearPrioridadAJira(body.prioridad);
-  const descripcionAdf = markdownToAdf(body.descripcion_md ?? "");
 
-  // Sprint activo del proyecto (best-effort).
-  let sprintId: number | null = null;
+  let listId: string;
   try {
-    const s = await getActiveSprint(body.proyecto_jira_key);
-    sprintId = s?.id ?? null;
-  } catch {}
+    listId = await resolveProyectoListId(body.proyecto_nombre.trim());
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "No se pudo resolver la Lista de ClickUp" },
+      { status: 500 }
+    );
+  }
 
-  let jira;
+  let task;
   try {
-    jira = await createIssue({
-      proyectoKey: body.proyecto_jira_key,
-      titulo: tituloFinal,
-      descripcionAdf,
-      issueTypeName,
-      asignadoAccountId: body.asignado_jira_id,
-      prioridadName,
-      horasEstimadas: body.horas_estimadas ?? null,
-      sprintId,
-      carrilName: body.carril ?? null,
+    task = await createTask({
+      list_id: listId,
+      name: tituloFinal,
+      description: body.descripcion_md ?? undefined,
+      status: body.carril ?? undefined,
+      priority: mapearPrioridadAClickUp(body.prioridad),
+      time_estimate:
+        body.horas_estimadas && body.horas_estimadas > 0
+          ? Math.round(body.horas_estimadas * 60 * 60 * 1000)
+          : undefined,
+      assignees: [Number(body.asignado_clickup_id)],
     });
   } catch (e: any) {
     return NextResponse.json(
-      { error: e?.message || "No se pudo crear el ticket en JIRA" },
+      { error: e?.message || "No se pudo crear el ticket en ClickUp" },
       { status: 500 }
     );
   }
@@ -122,21 +120,21 @@ export async function POST(req: NextRequest) {
   // 2) Persistir en Supabase
   const supa = createSupabaseServiceClient();
   const { data: inserted, error: insErr } = await supa
-    .from("tickets_jira")
+    .from("tickets_clickup")
     .insert({
-      jira_key: jira.key,
-      jira_url: jira.url,
+      clickup_task_id: task.id,
+      clickup_url: task.url,
       titulo: tituloFinal,
       descripcion_md: body.descripcion_md ?? null,
       tipo: body.tipo,
       sub_tipo: body.sub_tipo ?? null,
       prioridad: body.prioridad.toLowerCase(),
       horas_estimadas: body.horas_estimadas ?? null,
-      asignado_jira_id: body.asignado_jira_id,
+      asignado_clickup_id: body.asignado_clickup_id,
       asignado_nombre: body.asignado_nombre,
       asignado_correo: body.asignado_correo ?? null,
-      proyecto_jira_key: body.proyecto_jira_key,
-      proyecto_jira_nombre: body.proyecto_jira_nombre,
+      lista_clickup_id: listId,
+      lista_nombre: body.proyecto_nombre.trim(),
       carril: body.carril ?? null,
       cotizacion_ref: body.cotizacion_ref ?? null,
       tarea_estimacion_ref: body.tarea_estimacion_ref ?? null,
@@ -145,14 +143,14 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (insErr || !inserted) {
-    // El ticket ya existe en JIRA pero no se guardó local — lo reportamos
+    // El ticket ya existe en ClickUp pero no se guardó local — lo reportamos
     // pero no rollback. El usuario puede re-importarlo después si hace falta.
     return NextResponse.json(
       {
         ok: false,
-        jira_key: jira.key,
-        jira_url: jira.url,
-        warning: `Ticket creado en JIRA pero no se persistió: ${
+        clickup_task_id: task.id,
+        clickup_url: task.url,
+        warning: `Ticket creado en ClickUp pero no se persistió: ${
           insErr?.message ?? "desconocido"
         }`,
       },
@@ -161,21 +159,15 @@ export async function POST(req: NextRequest) {
   }
 
   // 3) DM a Slack al asignado (best-effort, no bloquea respuesta).
-  // Si SLACK_USER_TOKEN está configurado, el DM sale "como Johana"; si no,
-  // sale del bot.
-  //
-  // Resolución de correo: primero el que vino de JIRA. Si JIRA lo oculta
-  // por privacy, caemos a la tabla `programadores` (correo manual).
   let correoFinal = body.asignado_correo;
   if (!correoFinal) {
     correoFinal = await resolverCorreoProgramador(
       body.asignado_nombre,
-      body.asignado_jira_id
+      body.asignado_clickup_id
     );
     if (correoFinal) {
-      // Persistir el correo encontrado en el ticket para próximos DMs.
       await supa
-        .from("tickets_jira")
+        .from("tickets_clickup")
         .update({ asignado_correo: correoFinal })
         .eq("id", inserted.id);
     }
@@ -184,18 +176,17 @@ export async function POST(req: NextRequest) {
   let slack_warning: string | null = null;
   if (slackConfigured() && correoFinal) {
     try {
-      const blocks = blocksTicketAsignado({
+      const blocks = blocksTicketAsignadoClickUp({
         titulo: tituloFinal,
-        jiraKey: jira.key,
-        jiraUrl: jira.url,
+        clickupUrl: task.url,
         tipo: body.tipo,
         prioridad: body.prioridad,
         horasEstimadas: body.horas_estimadas ?? null,
-        proyectoNombre: body.proyecto_jira_nombre,
+        proyectoNombre: body.proyecto_nombre,
         descripcionMd: body.descripcion_md ?? null,
         enviadoPor: "Johana Montero",
       });
-      const fallbackText = `📋 Nuevo ticket asignado en JIRA: ${tituloFinal} — ${jira.url}`;
+      const fallbackText = `📋 Nuevo ticket asignado en ClickUp: ${tituloFinal} — ${task.url}`;
       const dm = await postDMByEmail({
         email: correoFinal!,
         text: fallbackText,
@@ -206,7 +197,7 @@ export async function POST(req: NextRequest) {
         slack_warning = `No se encontró usuario de Slack con el correo ${correoFinal}`;
       } else {
         await supa
-          .from("tickets_jira")
+          .from("tickets_clickup")
           .update({
             slack_dm_ts: dm.ts ?? null,
             slack_dm_canal: dm.channel ?? null,
@@ -218,17 +209,20 @@ export async function POST(req: NextRequest) {
     }
   } else if (!correoFinal) {
     slack_warning =
-      "El asignado no tiene correo (ni en JIRA ni en programadores) — sin DM de Slack.";
+      "El asignado no tiene correo (ni en ClickUp ni en programadores) — sin DM de Slack.";
   }
 
-  revalidatePath("/panel/tickets");
+  if (body.cotizacion_ref) {
+    revalidatePath(`/panel/cotizaciones/${body.cotizacion_ref}`);
+  }
+  revalidatePath("/panel");
+
   return NextResponse.json({
     ok: true,
     id: inserted.id,
-    jira_key: jira.key,
-    jira_url: jira.url,
+    clickup_task_id: task.id,
+    clickup_url: task.url,
     slack_warning,
-    sprint_warning: jira.sprintWarning ?? null,
   });
 }
 
@@ -249,16 +243,16 @@ export async function GET(req: NextRequest) {
 
   const supa = createSupabaseServiceClient();
   let q = supa
-    .from("tickets_jira")
+    .from("tickets_clickup")
     .select(
-      "id, jira_key, jira_url, titulo, tipo, sub_tipo, prioridad, horas_estimadas, asignado_nombre, asignado_correo, proyecto_jira_key, proyecto_jira_nombre, carril, cotizacion_ref, created_at"
+      "id, clickup_task_id, clickup_url, titulo, tipo, sub_tipo, prioridad, horas_estimadas, asignado_nombre, asignado_correo, lista_clickup_id, lista_nombre, carril, cotizacion_ref, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (tipo) q = q.eq("tipo", tipo);
-  if (proyecto) q = q.eq("proyecto_jira_key", proyecto);
-  if (asignado) q = q.eq("asignado_jira_id", asignado);
+  if (proyecto) q = q.eq("lista_clickup_id", proyecto);
+  if (asignado) q = q.eq("asignado_clickup_id", asignado);
 
   const { data, error } = await q;
   if (error) {

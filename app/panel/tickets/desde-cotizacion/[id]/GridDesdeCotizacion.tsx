@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Send,
-  Sparkles,
   Search,
   User as UserIcon,
   FolderKanban,
@@ -12,15 +11,10 @@ import {
   Flag,
   Check,
 } from "lucide-react";
-import type { SubTipoTicket, TipoTicket } from "@/lib/jira/format";
+import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
 
-type JiraProject = { id: string; key: string; name: string };
-type JiraUser = {
-  accountId: string;
-  displayName: string;
-  emailAddress?: string;
-};
-type JiraStatus = { id: string; name: string };
+type ClickUpProyecto = { id: string; name: string };
+type ClickUpUsuario = { id: string; username: string; email?: string };
 
 type TareaForm = {
   id: string; // tarea_estimacion_ref
@@ -28,7 +22,7 @@ type TareaForm = {
   descripcionMd: string;
   horasEstimadas: string;
   // resultado tras crear
-  resultado: null | { ok: boolean; key?: string; url?: string; error?: string };
+  resultado: null | { ok: boolean; url?: string; error?: string };
 };
 
 const TIPOS: { id: TipoTicket; label: string }[] = [
@@ -61,8 +55,8 @@ export default function GridDesdeCotizacion({
   const router = useRouter();
 
   // Datos generales que aplican a TODOS los tickets
-  const [proyecto, setProyecto] = useState<JiraProject | null>(null);
-  const [asignado, setAsignado] = useState<JiraUser | null>(null);
+  const [proyecto, setProyecto] = useState<string>("");
+  const [asignado, setAsignado] = useState<ClickUpUsuario | null>(null);
   const [tipo, setTipo] = useState<TipoTicket>("desarrollo");
   const [subTipo, setSubTipo] = useState<SubTipoTicket | null>("task");
   const [carril, setCarril] = useState<string | null>(null);
@@ -72,17 +66,13 @@ export default function GridDesdeCotizacion({
   const [tareas, setTareas] = useState<TareaForm[]>([]);
   const [cotNombre, setCotNombre] = useState<string>("");
 
-  // Meta JIRA
+  // Meta ClickUp
   const [meta, setMeta] = useState<{
-    proyectos: JiraProject[];
-    usuarios: JiraUser[];
+    proyectos: ClickUpProyecto[];
+    usuarios: ClickUpUsuario[];
   } | null>(null);
-  const [carriles, setCarriles] = useState<JiraStatus[]>([]);
-  const [sprintActivo, setSprintActivo] = useState<{ id: number; name: string } | null>(
-    null
-  );
+  const [carriles, setCarriles] = useState<string[]>([]);
   const [filtroUsuarios, setFiltroUsuarios] = useState("");
-  const [filtroProyectos, setFiltroProyectos] = useState("");
 
   // Estado de envío
   const [creando, setCreando] = useState(false);
@@ -112,9 +102,9 @@ export default function GridDesdeCotizacion({
       .catch(() => setError("Error de red cargando la cotización"));
   }, [cotizacionId]);
 
-  // Cargar meta JIRA
+  // Cargar meta ClickUp
   useEffect(() => {
-    fetch("/api/tickets/jira-meta")
+    fetch("/api/tickets/clickup-meta")
       .then((r) => r.json())
       .then((j) =>
         setMeta({
@@ -125,32 +115,32 @@ export default function GridDesdeCotizacion({
       .catch(() => setMeta({ proyectos: [], usuarios: [] }));
   }, []);
 
-  // Cuando cambia proyecto → cargar carriles + sprint
+  const listaSeleccionada = useMemo(() => {
+    if (!meta || !proyecto.trim()) return null;
+    const term = proyecto.trim().toLowerCase();
+    return meta.proyectos.find((p) => p.name.trim().toLowerCase() === term) ?? null;
+  }, [meta, proyecto]);
+
+  // Cuando el proyecto elegido ya existe → cargar sus carriles
   useEffect(() => {
-    if (!proyecto) return;
+    if (!listaSeleccionada) {
+      setCarriles([]);
+      setCarril(null);
+      return;
+    }
     setCarriles([]);
     setCarril(null);
-    setSprintActivo(null);
-    fetch(`/api/tickets/jira-carriles?proyecto=${proyecto.key}`)
+    fetch(`/api/tickets/clickup-carriles?lista=${listaSeleccionada.id}`)
       .then((r) => r.json())
-      .then((j) => {
-        setCarriles(j.carriles ?? []);
-        if (j.sprintActivo && typeof j.sprintActivo.id === "number") {
-          setSprintActivo({ id: j.sprintActivo.id, name: j.sprintActivo.name });
-        }
-      });
-  }, [proyecto]);
+      .then((j) => setCarriles(j.carriles ?? []));
+  }, [listaSeleccionada]);
 
   const proyectosFiltrados = useMemo(() => {
     if (!meta) return [];
-    const term = filtroProyectos.trim().toLowerCase();
+    const term = proyecto.trim().toLowerCase();
     if (!term) return meta.proyectos;
-    return meta.proyectos.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.key.toLowerCase().includes(term)
-    );
-  }, [meta, filtroProyectos]);
+    return meta.proyectos.filter((p) => p.name.toLowerCase().includes(term));
+  }, [meta, proyecto]);
 
   const usuariosFiltrados = useMemo(() => {
     if (!meta) return [];
@@ -158,15 +148,15 @@ export default function GridDesdeCotizacion({
     if (!term) return meta.usuarios;
     return meta.usuarios.filter(
       (u) =>
-        u.displayName.toLowerCase().includes(term) ||
-        u.emailAddress?.toLowerCase().includes(term)
+        u.username.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term)
     );
   }, [meta, filtroUsuarios]);
 
   const subTiposDisponibles = SUBTIPOS_POR_TIPO[tipo];
 
   const puedeCrear = useMemo(() => {
-    if (!proyecto || !asignado || !prioridad) return false;
+    if (!proyecto.trim() || !asignado || !prioridad) return false;
     if (tareas.length === 0) return false;
     return tareas.every((t) => t.titulo.trim().length > 0);
   }, [proyecto, asignado, prioridad, tareas]);
@@ -178,19 +168,17 @@ export default function GridDesdeCotizacion({
   };
 
   const crearTodos = async () => {
-    if (!proyecto || !asignado) return;
+    if (!proyecto.trim() || !asignado) return;
     setError(null);
     setCreando(true);
 
-    // Recorre las tareas pendientes secuencialmente para no spammear JIRA.
+    // Recorre las tareas pendientes secuencialmente para no spammear ClickUp.
     for (let i = 0; i < tareas.length; i++) {
       const t = tareas[i];
       if (t.resultado?.ok) continue; // ya creado en intento previo
 
       try {
-        const horas = t.horasEstimadas.trim()
-          ? Number(t.horasEstimadas)
-          : null;
+        const horas = t.horasEstimadas.trim() ? Number(t.horasEstimadas) : null;
         const res = await fetch("/api/tickets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -202,11 +190,10 @@ export default function GridDesdeCotizacion({
             prioridad,
             horas_estimadas:
               Number.isFinite(horas) && (horas as number) > 0 ? horas : null,
-            proyecto_jira_key: proyecto.key,
-            proyecto_jira_nombre: proyecto.name,
-            asignado_jira_id: asignado.accountId,
-            asignado_nombre: asignado.displayName,
-            asignado_correo: asignado.emailAddress ?? null,
+            proyecto_nombre: proyecto.trim(),
+            asignado_clickup_id: asignado.id,
+            asignado_nombre: asignado.username,
+            asignado_correo: asignado.email ?? null,
             carril,
             cotizacion_ref: cotizacionId,
             tarea_estimacion_ref: t.id,
@@ -214,22 +201,14 @@ export default function GridDesdeCotizacion({
         });
         const j = await res.json();
         if (!res.ok && res.status !== 207) {
-          actualizarTarea(i, {
-            resultado: { ok: false, error: j.error || "Error" },
-          });
+          actualizarTarea(i, { resultado: { ok: false, error: j.error || "Error" } });
         } else {
           actualizarTarea(i, {
-            resultado: {
-              ok: true,
-              key: j.jira_key,
-              url: j.jira_url,
-            },
+            resultado: { ok: true, url: j.clickup_url },
           });
         }
       } catch {
-        actualizarTarea(i, {
-          resultado: { ok: false, error: "Error de red" },
-        });
+        actualizarTarea(i, { resultado: { ok: false, error: "Error de red" } });
       }
     }
 
@@ -238,12 +217,10 @@ export default function GridDesdeCotizacion({
   };
 
   if (!meta) {
-    return <div className="card text-body text-text-secondary">Cargando JIRA…</div>;
+    return <div className="card text-body text-text-secondary">Cargando ClickUp…</div>;
   }
   if (tareas.length === 0 && !error) {
-    return (
-      <div className="card text-body text-text-secondary">Cargando tareas…</div>
-    );
+    return <div className="card text-body text-text-secondary">Cargando tareas…</div>;
   }
   if (error && tareas.length === 0) {
     return (
@@ -260,17 +237,14 @@ export default function GridDesdeCotizacion({
       {/* Cotización origen */}
       <div
         className="card card-tight"
-        style={{
-          background: "var(--bg-surface)",
-          borderColor: "var(--state-info)",
-        }}
+        style={{ background: "var(--bg-surface)", borderColor: "var(--state-info)" }}
       >
         <div className="text-body-medium" style={{ color: "var(--state-info)" }}>
           {tareas.length} ticket{tareas.length === 1 ? "" : "s"} a generar
         </div>
         <div className="text-caption text-text-secondary mt-1">
           Desde la cotización <strong>{cotNombre}</strong>. Cada tarea genera
-          un ticket independiente en JIRA con su propia descripción y horas.
+          un ticket independiente en ClickUp con su propia descripción y horas.
         </div>
       </div>
 
@@ -284,10 +258,7 @@ export default function GridDesdeCotizacion({
             <UserIcon size={14} strokeWidth={1.75} className="inline mr-1" />
             Asignado *
           </label>
-          <div
-            className="input flex items-center gap-2 mb-2"
-            style={{ padding: "0 12px" }}
-          >
+          <div className="input flex items-center gap-2 mb-2" style={{ padding: "0 12px" }}>
             <Search size={14} strokeWidth={1.75} className="text-text-tertiary" />
             <input
               className="flex-1 bg-transparent outline-none border-0"
@@ -298,39 +269,25 @@ export default function GridDesdeCotizacion({
           </div>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[200px] overflow-y-auto">
             {usuariosFiltrados.map((u) => {
-              const activo = asignado?.accountId === u.accountId;
+              const activo = asignado?.id === u.id;
               return (
-                <li key={u.accountId}>
+                <li key={u.id}>
                   <button
                     type="button"
                     onClick={() => setAsignado(u)}
                     className="w-full text-left p-2 rounded-[10px] text-body flex items-center justify-between gap-2"
                     style={{
-                      background: activo
-                        ? "var(--bg-overlay)"
-                        : "var(--bg-surface)",
-                      border: `1px solid ${
-                        activo ? "#0066FF" : "var(--border-subtle)"
-                      }`,
+                      background: activo ? "var(--bg-overlay)" : "var(--bg-surface)",
+                      border: `1px solid ${activo ? "#0066FF" : "var(--border-subtle)"}`,
                     }}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-body-medium">
-                        {u.displayName}
-                      </div>
-                      {u.emailAddress && (
-                        <div className="text-caption text-text-tertiary truncate">
-                          {u.emailAddress}
-                        </div>
+                      <div className="truncate text-body-medium">{u.username}</div>
+                      {u.email && (
+                        <div className="text-caption text-text-tertiary truncate">{u.email}</div>
                       )}
                     </div>
-                    {activo && (
-                      <Check
-                        size={14}
-                        strokeWidth={1.75}
-                        style={{ color: "#0066FF" }}
-                      />
-                    )}
+                    {activo && <Check size={14} strokeWidth={1.75} style={{ color: "#0066FF" }} />}
                   </button>
                 </li>
               );
@@ -342,77 +299,45 @@ export default function GridDesdeCotizacion({
         <div>
           <label className="field-label">
             <FolderKanban size={14} strokeWidth={1.75} className="inline mr-1" />
-            Proyecto JIRA *
+            Cliente/Proyecto (Lista de ClickUp) *
           </label>
-          <div
-            className="input flex items-center gap-2 mb-2"
-            style={{ padding: "0 12px" }}
-          >
+          <div className="input flex items-center gap-2 mb-2" style={{ padding: "0 12px" }}>
             <Search size={14} strokeWidth={1.75} className="text-text-tertiary" />
             <input
               className="flex-1 bg-transparent outline-none border-0"
-              placeholder="Buscar proyecto…"
-              value={filtroProyectos}
-              onChange={(e) => setFiltroProyectos(e.target.value)}
+              placeholder="Buscar o escribir uno nuevo…"
+              value={proyecto}
+              onChange={(e) => setProyecto(e.target.value)}
             />
           </div>
+          {proyecto.trim() && !listaSeleccionada && (
+            <p className="text-caption mb-2" style={{ color: "var(--state-info)" }}>
+              No existe todavía — se creará una carpeta y lista nuevas “{proyecto.trim()}” en ClickUp.
+            </p>
+          )}
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[200px] overflow-y-auto">
             {proyectosFiltrados.map((p) => {
-              const activo = proyecto?.key === p.key;
+              const activo = proyecto.trim().toLowerCase() === p.name.trim().toLowerCase();
               return (
-                <li key={p.key}>
+                <li key={p.id}>
                   <button
                     type="button"
-                    onClick={() => setProyecto(p)}
+                    onClick={() => setProyecto(p.name)}
                     className="w-full text-left p-2 rounded-[10px] text-body flex items-center justify-between"
                     style={{
-                      background: activo
-                        ? "var(--bg-overlay)"
-                        : "var(--bg-surface)",
-                      border: `1px solid ${
-                        activo ? "#0066FF" : "var(--border-subtle)"
-                      }`,
+                      background: activo ? "var(--bg-overlay)" : "var(--bg-surface)",
+                      border: `1px solid ${activo ? "#0066FF" : "var(--border-subtle)"}`,
                     }}
                   >
                     <div className="min-w-0">
                       <div className="truncate text-body-medium">{p.name}</div>
-                      <div className="text-caption text-text-tertiary num-tabular">
-                        {p.key}
-                      </div>
                     </div>
-                    {activo && (
-                      <Check
-                        size={14}
-                        strokeWidth={1.75}
-                        style={{ color: "#0066FF" }}
-                      />
-                    )}
+                    {activo && <Check size={14} strokeWidth={1.75} style={{ color: "#0066FF" }} />}
                   </button>
                 </li>
               );
             })}
           </ul>
-          {proyecto && (
-            <div
-              className="text-caption mt-2 p-2 rounded-[8px]"
-              style={{
-                background: "var(--bg-surface)",
-                border: `1px solid ${
-                  sprintActivo ? "var(--border-subtle)" : "var(--state-warning)"
-                }`,
-              }}
-            >
-              {sprintActivo ? (
-                <>
-                  Sprint activo: <strong>{sprintActivo.name}</strong>
-                </>
-              ) : (
-                <span style={{ color: "var(--state-warning)" }}>
-                  ⚠ Sin sprint activo — los tickets quedan en backlog.
-                </span>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Tipo + sub-tipo + carril + prioridad */}
@@ -459,12 +384,12 @@ export default function GridDesdeCotizacion({
               className="input"
               value={carril ?? ""}
               onChange={(e) => setCarril(e.target.value || null)}
-              disabled={!proyecto || carriles.length === 0}
+              disabled={!listaSeleccionada || carriles.length === 0}
             >
               <option value="">— inicial por defecto —</option>
               {carriles.map((c) => (
-                <option key={c.id} value={c.name}>
-                  {c.name}
+                <option key={c} value={c}>
+                  {c}
                 </option>
               ))}
             </select>
@@ -474,11 +399,7 @@ export default function GridDesdeCotizacion({
               <Flag size={14} strokeWidth={1.75} className="inline mr-1" />
               Prioridad *
             </label>
-            <select
-              className="input"
-              value={prioridad}
-              onChange={(e) => setPrioridad(e.target.value)}
-            >
+            <select className="input" value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
               {PRIORIDADES.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
@@ -498,9 +419,7 @@ export default function GridDesdeCotizacion({
               key={t.id}
               className="rounded-[12px] border overflow-hidden"
               style={{
-                background: t.resultado?.ok
-                  ? "rgba(34,197,94,0.06)"
-                  : "var(--bg-elevated)",
+                background: t.resultado?.ok ? "rgba(34,197,94,0.06)" : "var(--bg-elevated)",
                 borderColor: t.resultado?.ok
                   ? "var(--state-success)"
                   : t.resultado?.error
@@ -510,14 +429,9 @@ export default function GridDesdeCotizacion({
             >
               <div
                 className="flex items-center justify-between px-5 py-3 border-b"
-                style={{
-                  background: "var(--bg-surface)",
-                  borderColor: "var(--border-subtle)",
-                }}
+                style={{ background: "var(--bg-surface)", borderColor: "var(--border-subtle)" }}
               >
-                <div className="text-overline text-text-tertiary">
-                  Ticket {i + 1}
-                </div>
+                <div className="text-overline text-text-tertiary">Ticket {i + 1}</div>
                 {t.resultado?.ok ? (
                   <a
                     href={t.resultado.url}
@@ -526,13 +440,10 @@ export default function GridDesdeCotizacion({
                     className="text-caption num-tabular"
                     style={{ color: "var(--state-success)" }}
                   >
-                    ✓ Creado: {t.resultado.key}
+                    ✓ Creado en ClickUp
                   </a>
                 ) : t.resultado?.error ? (
-                  <span
-                    className="text-caption"
-                    style={{ color: "var(--state-error)" }}
-                  >
+                  <span className="text-caption" style={{ color: "var(--state-error)" }}>
                     ⚠ {t.resultado.error}
                   </span>
                 ) : null}
@@ -544,9 +455,7 @@ export default function GridDesdeCotizacion({
                     className="input"
                     value={t.titulo}
                     disabled={t.resultado?.ok}
-                    onChange={(e) =>
-                      actualizarTarea(i, { titulo: e.target.value })
-                    }
+                    onChange={(e) => actualizarTarea(i, { titulo: e.target.value })}
                   />
                 </div>
                 <div>
@@ -556,9 +465,7 @@ export default function GridDesdeCotizacion({
                     rows={6}
                     value={t.descripcionMd}
                     disabled={t.resultado?.ok}
-                    onChange={(e) =>
-                      actualizarTarea(i, { descripcionMd: e.target.value })
-                    }
+                    onChange={(e) => actualizarTarea(i, { descripcionMd: e.target.value })}
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -573,14 +480,10 @@ export default function GridDesdeCotizacion({
                     inputMode="decimal"
                     value={t.horasEstimadas}
                     disabled={t.resultado?.ok}
-                    onChange={(e) =>
-                      actualizarTarea(i, { horasEstimadas: e.target.value })
-                    }
+                    onChange={(e) => actualizarTarea(i, { horasEstimadas: e.target.value })}
                     style={{ maxWidth: 100 }}
                   />
-                  <span className="text-caption text-text-secondary">
-                    horas
-                  </span>
+                  <span className="text-caption text-text-secondary">horas</span>
                 </div>
               </div>
             </li>
@@ -597,10 +500,7 @@ export default function GridDesdeCotizacion({
 
       <div
         className="sticky bottom-4 pt-4 flex items-center justify-between gap-3 flex-wrap"
-        style={{
-          borderTop: "1px solid var(--border-subtle)",
-          background: "var(--bg-base)",
-        }}
+        style={{ borderTop: "1px solid var(--border-subtle)", background: "var(--bg-base)" }}
       >
         <div className="text-caption text-text-tertiary">
           {tareas.length - totalPendientes} de {tareas.length} creados
@@ -628,11 +528,11 @@ export default function GridDesdeCotizacion({
           style={{ background: "rgba(34,197,94,0.06)", borderColor: "var(--state-success)" }}
         >
           <p className="text-body-medium" style={{ color: "var(--state-success)" }}>
-            ✓ Todos los tickets se crearon en JIRA
+            ✓ Todos los tickets se crearon en ClickUp
           </p>
-          <a href="/panel/tickets" className="btn-primary inline-flex">
-            <Sparkles size={16} strokeWidth={1.75} />
-            <span>Ver todos los tickets</span>
+          <a href={`/panel/cotizaciones/${cotizacionId}`} className="btn-primary inline-flex">
+            <Check size={16} strokeWidth={1.75} />
+            <span>Volver a la cotización</span>
           </a>
         </div>
       )}

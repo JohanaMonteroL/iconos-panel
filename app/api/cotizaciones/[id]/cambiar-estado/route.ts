@@ -1,18 +1,10 @@
 // Cambia el estado de la cotización (aprobada, cambios_solicitados, archivada, etc.).
-// Si pasa a "aprobada", actualiza también el carril en ClickUp.
 // Registra en el log con acciones_cotizacion.
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import {
-  updateTaskStatus,
-  findMatchingStatus,
-  resolveCotizacionesListId,
-  deleteTask,
-  STATUS_CANDIDATES,
-} from "@/lib/clickup/client";
 
 export const runtime = "nodejs";
 
@@ -52,13 +44,12 @@ export async function POST(
   }
   const comentario = body?.comentario ? String(body.comentario) : null;
   const aprobadoPor = body?.aprobado_por ? String(body.aprobado_por) : null; // "johana" | "ivan"
-  const borrarClickUp = Boolean(body?.borrar_clickup_ticket);
 
   const supa = createSupabaseServiceClient();
 
   const { data: cot, error: cotErr } = await supa
     .from("cotizaciones")
-    .select("id, estado, clickup_ticket_id")
+    .select("id, estado")
     .eq("id", params.id)
     .maybeSingle();
   if (cotErr || !cot) {
@@ -78,56 +69,6 @@ export async function POST(
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  // ClickUp — actualizar el lane si tenemos ticket (matching flexible).
-  // Caso especial: si se archiva y se pidió borrar el ticket, lo eliminamos.
-  let clickup_warning: string | null = null;
-
-  if (
-    nuevo === "archivada" &&
-    borrarClickUp &&
-    cot.clickup_ticket_id &&
-    process.env.CLICKUP_API_KEY
-  ) {
-    try {
-      await deleteTask(cot.clickup_ticket_id);
-      await supa
-        .from("cotizaciones")
-        .update({ clickup_ticket_id: null })
-        .eq("id", params.id);
-    } catch (e: any) {
-      clickup_warning = e?.message || "No se pudo borrar el ticket de ClickUp";
-    }
-  }
-
-  const candidates = STATUS_CANDIDATES[nuevo];
-  if (
-    !borrarClickUp &&
-    cot.clickup_ticket_id &&
-    candidates &&
-    candidates.length > 0 &&
-    process.env.CLICKUP_API_KEY
-  ) {
-    try {
-      const listId = await resolveCotizacionesListId();
-      const { status: matched, available } = listId
-        ? await findMatchingStatus(listId, candidates)
-        : { status: null, available: [] };
-
-      if (matched) {
-        await updateTaskStatus(cot.clickup_ticket_id, matched);
-      } else if (available.length > 0) {
-        clickup_warning =
-          `Ningún carril de ClickUp coincide con "${nuevo}". ` +
-          `Carriles disponibles: ${available.join(" · ")}. ` +
-          `Agrega uno de: ${candidates.join(" / ")} en el board, ` +
-          `o avísame para mapear a otro nombre.`;
-      }
-    } catch (e: any) {
-      clickup_warning =
-        e?.message || `No se pudo actualizar el carril en ClickUp.`;
-    }
-  }
-
   // Log
   await supa.from("acciones_cotizacion").insert({
     cotizacion_id: params.id,
@@ -137,7 +78,6 @@ export async function POST(
       estado_nuevo: nuevo,
       aprobado_por: aprobadoPor,
       comentario,
-      clickup_warning,
     },
   });
 
@@ -145,5 +85,5 @@ export async function POST(
   revalidatePath("/panel/cotizaciones");
   revalidatePath("/panel");
 
-  return NextResponse.json({ ok: true, clickup_warning });
+  return NextResponse.json({ ok: true });
 }

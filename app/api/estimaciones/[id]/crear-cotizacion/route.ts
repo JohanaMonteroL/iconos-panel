@@ -2,18 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import {
-  clickUpConfigured,
-  createTask,
-  getProyectoFieldId,
-  resolveCotizacionesListId,
-  getFieldByNamePattern,
-  findOptionIdsByName,
-  getDefaultAssigneeId,
-  findMatchingStatus,
-  STATUS_CANDIDATES,
-} from "@/lib/clickup/client";
-import { buildClickUpDescription, stripEmojis } from "@/lib/clickup/format";
 import { buildSlackText, shortDescripcion, puntosFallback } from "@/lib/slack/format";
 import { postMessage, slackConfigured } from "@/lib/slack/client";
 import { blocksAprobacionCotizacion } from "@/lib/slack/blocks";
@@ -220,122 +208,11 @@ export async function POST(
     .update({ cotizacion_ref: cot.id })
     .eq("id", est.id);
 
-  // 5) ClickUp (best-effort)
-  let clickup_ticket_id: string | null = null;
-  let clickup_url: string | null = null;
-  let clickup_warning: string | null = null;
-
-  if (clickUpConfigured()) {
-    try {
-      // Resolver lista del sprint actual (cambia mes a mes)
-      const listId = await resolveCotizacionesListId();
-      if (!listId) {
-        throw new Error(
-          "No se encontró la lista 'Cotizaciones' en el sprint actual del Space ICONOS ADMIN. " +
-            "Verifica que exista un sprint folder vigente con una lista 'Cotizaciones'."
-        );
-      }
-
-      // Descripción con el nuevo formato (H3 + tabla + secciones)
-      const description = buildClickUpDescription({
-        limpia,
-        programadorNombre,
-        bufferPct,
-        horasEnvio,
-        notas: raw.notas ?? null,
-      });
-
-      // Custom fields
-      const custom_fields: Array<{ id: string; value: any }> = [];
-
-      // 1) Proyecto (drop_down)
-      if (raw.proyecto_clickup_id) {
-        const proyectoFieldId = await getProyectoFieldId();
-        if (proyectoFieldId) {
-          custom_fields.push({ id: proyectoFieldId, value: raw.proyecto_clickup_id });
-        }
-      }
-
-      // 2) Horas enviadas (short_text)
-      const horasField = await getFieldByNamePattern(/horas enviad/i);
-      if (horasField) {
-        custom_fields.push({ id: horasField.id, value: String(horasEnvio) });
-      }
-
-      // 3) Programador (labels) — match por nombre
-      if (programadorNombre && programadorNombre !== "—") {
-        const prog = await findOptionIdsByName(/programador/i, programadorNombre);
-        if (prog) {
-          custom_fields.push({ id: prog.fieldId, value: prog.optionIds });
-        }
-      }
-
-      // Assignee: Johana (siempre)
-      const johanaId = await getDefaultAssigneeId();
-
-      // Título sin emojis (Johana lo pidió así)
-      const titulo = stripEmojis(limpia.nombre_solicitud);
-
-      // Resolver el status "Estimado" en el board real (flex match)
-      const { status: estadoEstimado } = await findMatchingStatus(
-        listId,
-        STATUS_CANDIDATES.estimado
-      );
-
-      const task = await createTask({
-        list_id: listId,
-        name: titulo,
-        description,
-        status: estadoEstimado ?? undefined,
-        assignees: johanaId ? [johanaId] : undefined,
-        custom_fields: custom_fields.length > 0 ? custom_fields : undefined,
-      });
-      clickup_ticket_id = task.id;
-      clickup_url = task.url;
-      await supa
-        .from("cotizaciones")
-        .update({ clickup_ticket_id: task.id })
-        .eq("id", cot.id);
-
-      // Si NO había override de texto, re-generar el slack_text con la URL real
-      if (!raw.slack_text_override) {
-        const slackTextConUrl = buildSlackText({
-          nombreCotizacion: limpia.nombre_solicitud,
-          proyecto: raw.proyecto_nombre ?? null,
-          programador: programadorNombre,
-          horasEnvio,
-          bufferPct,
-          descripcionCorta: shortDescripcion(limpia),
-          puntosClave: puntosFallback(limpia),
-          notas: raw.notas ?? null,
-          clickupUrl: task.url,
-        });
-        await supa
-          .from("cotizaciones")
-          .update({ slack_text: slackTextConUrl })
-          .eq("id", cot.id);
-      }
-
-      await supa.from("acciones_cotizacion").insert({
-        cotizacion_id: cot.id,
-        tipo_accion: "ticket_clickup_creado",
-        metadata: { task_id: task.id, url: task.url },
-      });
-    } catch (e: any) {
-      console.error("[clickup] error creando task:", e);
-      clickup_warning = e?.message || "No se pudo crear el ticket en ClickUp";
-    }
-  } else {
-    clickup_warning =
-      "ClickUp no configurado — la cotización quedó solo en el panel. Configura CLICKUP_API_KEY y CLICKUP_SPACE_ICONOS_ADMIN en .env.local.";
-  }
-
-  // 6) Slack al canal admin (best-effort)
+  // 5) Slack al canal admin (best-effort)
   let slack_warning: string | null = null;
   let slack_message_ts: string | null = null;
   if (slackConfigured()) {
     try {
-      // Reconstruir el mensaje con la URL final del ticket si la tenemos
       const textoFinal =
         raw.slack_text_override ??
         buildSlackText({
@@ -347,13 +224,13 @@ export async function POST(
           descripcionCorta: shortDescripcion(limpia),
           puntosClave: puntosFallback(limpia),
           notas: raw.notas ?? null,
-          clickupUrl: clickup_url,
+          clickupUrl: null,
         });
 
       const r = await postMessage({
         channel: process.env.SLACK_CHANNEL_ADMIN!,
         text: textoFinal, // fallback para notificaciones
-        blocks: blocksAprobacionCotizacion(textoFinal, cot.id, clickup_url),
+        blocks: blocksAprobacionCotizacion(textoFinal, cot.id, null),
       });
 
       slack_message_ts = r.ts ?? null;
@@ -398,9 +275,6 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     cotizacion_id: cot.id,
-    clickup_ticket_id,
-    clickup_url,
-    clickup_warning,
     slack_message_ts,
     slack_warning,
   });

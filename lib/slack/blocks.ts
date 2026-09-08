@@ -91,22 +91,25 @@ const TIPO_EMOJI: Record<string, string> = {
   investigacion: "🔍",
 };
 
-export function blocksTicketAsignado(input: {
+/**
+ * Bloques para el DM al programador cuando se le asigna un ticket de
+ * desarrollo en ClickUp.
+ */
+export function blocksTicketAsignadoClickUp(input: {
   titulo: string;
-  jiraKey: string;
-  jiraUrl: string;
-  tipo: string; // estimacion|desarrollo|soporte|investigacion
-  prioridad: string; // highest|high|medium|low|lowest
+  clickupUrl: string;
+  tipo: string;
+  prioridad: string;
   horasEstimadas?: number | null;
   proyectoNombre?: string | null;
   descripcionMd?: string | null;
-  enviadoPor?: string | null; // Johana
+  enviadoPor?: string | null;
   actualizacion?: boolean;
 }): SlackBlock[] {
   const headerEmoji = input.actualizacion ? "🔄" : "📋";
   const headerTexto = input.actualizacion
-    ? `Ticket reasignado a ti — ${input.jiraKey}`
-    : `Nuevo ticket asignado — ${input.jiraKey}`;
+    ? "Ticket reasignado a ti"
+    : "Nuevo ticket asignado";
 
   const detalles: string[] = [];
   detalles.push(
@@ -138,7 +141,6 @@ export function blocksTicketAsignado(input: {
   ];
 
   if (input.descripcionMd && input.descripcionMd.trim()) {
-    // Slack tiene un límite de 3000 caracteres por bloque section.
     const desc = input.descripcionMd.trim().slice(0, 2800);
     blocks.push({ type: "divider" });
     blocks.push({
@@ -152,8 +154,8 @@ export function blocksTicketAsignado(input: {
     elements: [
       {
         type: "button",
-        text: { type: "plain_text", text: "🔗 Abrir en JIRA" },
-        url: input.jiraUrl,
+        text: { type: "plain_text", text: "🔗 Abrir en ClickUp" },
+        url: input.clickupUrl,
         style: "primary",
       },
     ],
@@ -162,12 +164,7 @@ export function blocksTicketAsignado(input: {
   if (input.enviadoPor) {
     blocks.push({
       type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: `Asignado por ${input.enviadoPor}`,
-        },
-      ],
+      elements: [{ type: "mrkdwn", text: `Asignado por ${input.enviadoPor}` }],
     });
   }
 
@@ -175,12 +172,11 @@ export function blocksTicketAsignado(input: {
 }
 
 /**
- * Mensaje para Sherlyn cuando la cotización fue aprobada.
+ * Mensaje a Johana cuando la cotización fue aprobada por el jefe.
  */
-export function blocksNotificacionSherlyn(
+export function blocksNotificacionAprobacion(
   nombre: string,
   proyecto: string | null,
-  clickupUrl: string | null,
   horas: number
 ): SlackBlock[] {
   const lineas: string[] = [
@@ -190,7 +186,6 @@ export function blocksNotificacionSherlyn(
   ];
   if (proyecto) lineas.push(`*Proyecto:* ${proyecto}`);
   lineas.push(`*Tiempo:* ${horas} horas`);
-  if (clickupUrl) lineas.push(`<${clickupUrl}|Ver en ClickUp>`);
 
   return [
     {

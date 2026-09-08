@@ -152,10 +152,19 @@ export type ClickUpMember = {
   };
 };
 
+/**
+ * ClickUp no tiene un endpoint `/team/{id}/member` — los miembros vienen
+ * embebidos en el array `members` de `GET /team` (lista todos los workspaces
+ * accesibles con este API key).
+ */
 export async function listMembers(
   workspaceId: string
 ): Promise<{ members: ClickUpMember[] }> {
-  return request(`/team/${workspaceId}/member`);
+  const { teams } = await request<{
+    teams: Array<{ id: string; members: ClickUpMember[] }>;
+  }>("/team");
+  const team = teams.find((t) => t.id === workspaceId);
+  return { members: team?.members ?? [] };
 }
 
 /**
@@ -163,7 +172,7 @@ export async function listMembers(
  * (case-insensitive, todas las palabras presentes). Devuelve user.id o null.
  */
 export async function findUserIdByName(name: string): Promise<number | null> {
-  const wid = process.env.CLICKUP_WORKSPACE_ID;
+  const wid = process.env.CLICKUP_WORKSPACE_ID_TICKETS;
   if (!wid || !process.env.CLICKUP_API_KEY) return null;
   try {
     const { members } = await listMembers(wid);
@@ -428,6 +437,103 @@ export async function resolveCotizacionesListId(): Promise<string | null> {
   } catch (e) {
     console.error("[clickup] resolveCotizacionesListId:", e);
     return null;
+  }
+}
+
+// ── Space "Desarrollo" — tickets de desarrollo (Carpeta + Lista por cliente/proyecto) ──
+
+/**
+ * Lista todas las Listas del Space de tickets de desarrollo, tanto las que
+ * están dentro de carpetas (una por proyecto) como las folderless.
+ */
+export async function listListsInSpace(
+  spaceId: string
+): Promise<Array<{ id: string; name: string }>> {
+  const all: Array<{ id: string; name: string }> = [];
+  const { folders } = await listFolders(spaceId);
+  for (const folder of folders) {
+    if (folder.archived || folder.hidden) continue;
+    for (const list of folder.lists ?? []) {
+      if (!list.archived) all.push({ id: list.id, name: list.name });
+    }
+  }
+  for (const l of await listFolderlessLists(spaceId)) {
+    if (!l.archived) all.push({ id: l.id, name: l.name });
+  }
+  return all;
+}
+
+export async function createFolder(
+  spaceId: string,
+  name: string
+): Promise<{ id: string; name: string }> {
+  return request<{ id: string; name: string }>(`/space/${spaceId}/folder`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function createListInFolder(
+  folderId: string,
+  name: string
+): Promise<{ id: string; name: string }> {
+  return request<{ id: string; name: string }>(`/folder/${folderId}/list`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+/**
+ * Resuelve el id de la Lista de un cliente/proyecto dentro del Space de
+ * tickets de desarrollo (CLICKUP_SPACE_TICKETS_DEV). Estructura: una Carpeta
+ * por proyecto (nombre = proyecto), y dentro una Lista con el mismo nombre.
+ * Si la carpeta y/o la lista no existen, se crean.
+ */
+export async function resolveProyectoListId(nombre: string): Promise<string> {
+  const spaceId = process.env.CLICKUP_SPACE_TICKETS_DEV;
+  if (!spaceId) {
+    throw new Error("CLICKUP_SPACE_TICKETS_DEV no configurado");
+  }
+  const nombreNorm = nombre.trim().toLowerCase();
+
+  const { folders } = await listFolders(spaceId);
+  const folder = folders.find(
+    (f) => !f.archived && !f.hidden && f.name.trim().toLowerCase() === nombreNorm
+  );
+
+  if (!folder) {
+    const carpetaCreada = await createFolder(spaceId, nombre.trim());
+    const listaCreada = await createListInFolder(carpetaCreada.id, nombre.trim());
+    return listaCreada.id;
+  }
+
+  const listaExistente = (folder.lists ?? []).find(
+    (l) => !l.archived && l.name.trim().toLowerCase() === nombreNorm
+  );
+  if (listaExistente) return listaExistente.id;
+
+  const listaCreada = await createListInFolder(folder.id, nombre.trim());
+  return listaCreada.id;
+}
+
+/**
+ * Sube un adjunto a un ticket de ClickUp (multipart/form-data).
+ */
+export async function addAttachment(
+  taskId: string,
+  file: Blob,
+  filename: string
+): Promise<void> {
+  const fd = new FormData();
+  fd.append("attachment", file, filename);
+  const res = await fetch(`${BASE}/task/${taskId}/attachment`, {
+    method: "POST",
+    headers: { Authorization: getKey() },
+    body: fd,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`ClickUp adjunto ${res.status}: ${text.slice(0, 300)}`);
   }
 }
 

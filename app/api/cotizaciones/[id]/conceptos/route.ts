@@ -1,19 +1,13 @@
 // POST /api/cotizaciones/[id]/conceptos
 //
 // Reemplaza la lista completa de conceptos de una cotización fija.
-// Recalcula el monto_fijo, regenera slack_text con buildSlackTextFijo
-// y sincroniza la descripción del ticket en ClickUp.
+// Recalcula el monto_fijo y regenera slack_text con buildSlackTextFijo.
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackTextFijo } from "@/lib/slack/format";
-import { buildClickUpDescriptionFijo } from "@/lib/clickup/format";
-import {
-  clickUpConfigured,
-  updateTaskDescription,
-} from "@/lib/clickup/client";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -63,7 +57,7 @@ export async function POST(
   const { data: cot, error: cotErr } = await supa
     .from("cotizaciones")
     .select(
-      `id, nombre, contexto_sherlyn, borrador_correo, clickup_ticket_id,
+      `id, nombre, contexto_sherlyn, borrador_correo,
        tipo_precio, programadores(nombre)`
     )
     .eq("id", params.id)
@@ -104,9 +98,6 @@ export async function POST(
   );
 
   // Regenerar slack_text con buildSlackTextFijo
-  const clickupUrl = cot.clickup_ticket_id
-    ? `https://app.clickup.com/t/${cot.clickup_ticket_id}`
-    : null;
   const slackText = buildSlackTextFijo({
     nombreCotizacion: cot.nombre,
     programador: programadorNombre,
@@ -114,7 +105,7 @@ export async function POST(
     descripcionCorta: cot.contexto_sherlyn ?? "",
     conceptos,
     notas: null,
-    clickupUrl,
+    clickupUrl: null,
   });
 
   const { error: updErr } = await supa
@@ -128,23 +119,6 @@ export async function POST(
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  // Sincronizar descripción en ClickUp (best-effort)
-  let clickup_warning: string | null = null;
-  if (cot.clickup_ticket_id && clickUpConfigured()) {
-    try {
-      const desc = buildClickUpDescriptionFijo({
-        montoFijoMxn: montoTotal,
-        programadorNombre,
-        descripcion: cot.contexto_sherlyn ?? "",
-        conceptos,
-        borradorCorreo: cot.borrador_correo,
-      });
-      await updateTaskDescription(cot.clickup_ticket_id, desc);
-    } catch (e: any) {
-      clickup_warning = e?.message ?? "No se pudo sincronizar ClickUp";
-    }
-  }
-
   await supa.from("acciones_cotizacion").insert({
     cotizacion_id: params.id,
     tipo_accion: "conceptos_actualizados",
@@ -155,6 +129,5 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     monto_total: montoTotal,
-    clickup_warning,
   });
 }

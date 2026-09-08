@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import Markdown from "@/components/ui/Markdown";
 import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
 import CotizacionEditor, {
@@ -225,35 +225,7 @@ export default async function CotizacionDetallePage({
         </p>
       </header>
 
-      {it.clickup_ticket_id ? (
-        <a
-          href={`https://app.clickup.com/t/${it.clickup_ticket_id}`}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-secondary"
-        >
-          <ExternalLink size={16} strokeWidth={1.75} />
-          <span>Ver ticket en ClickUp</span>
-        </a>
-      ) : (
-        <div
-          className="card card-tight text-caption"
-          style={{
-            background: "var(--bg-surface)",
-            borderColor: "var(--state-warning)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          ⚠️ Esta cotización aún no tiene ticket en ClickUp. Usa el botón “Reintentar
-          ClickUp” en Acciones.
-        </div>
-      )}
-
-      <CotizacionAcciones
-        cotizacionId={it.id}
-        estado={it.estado}
-        tieneTicketClickUp={!!it.clickup_ticket_id}
-      />
+      <CotizacionAcciones cotizacionId={it.id} estado={it.estado} />
 
       {/* 1. Resumen — varía según tipo (horas vs monto fijo) */}
       {it.tipo_precio === "fijo" ? (

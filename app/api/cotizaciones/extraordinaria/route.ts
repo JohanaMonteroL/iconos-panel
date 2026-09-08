@@ -10,18 +10,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import {
-  clickUpConfigured,
-  createTask,
-  resolveCotizacionesListId,
-  getProyectoFieldId,
-  getFieldByNamePattern,
-  findOptionIdsByName,
-  getDefaultAssigneeId,
-  findMatchingStatus,
-  STATUS_CANDIDATES,
-} from "@/lib/clickup/client";
-import { buildClickUpDescriptionFijo, stripEmojis } from "@/lib/clickup/format";
 import { buildSlackTextFijo } from "@/lib/slack/format";
 import { postMessage, slackConfigured } from "@/lib/slack/client";
 import { blocksAprobacionCotizacion } from "@/lib/slack/blocks";
@@ -193,91 +181,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // 2) ClickUp (best-effort)
-  let clickup_ticket_id: string | null = null;
-  let clickup_url: string | null = null;
-  let clickup_warning: string | null = null;
-
-  if (clickUpConfigured()) {
-    try {
-      const listId = await resolveCotizacionesListId();
-      if (!listId) {
-        throw new Error(
-          "No se encontró la lista 'Cotizaciones' en el sprint actual."
-        );
-      }
-
-      const description = buildClickUpDescriptionFijo({
-        nombre: body.nombre.trim(),
-        montoFijoMxn: montoTotal,
-        programadorNombre,
-        descripcion: descripcionCorta,
-        conceptos: conceptosNorm,
-        borradorCorreo: body.borrador_correo,
-        notas: body.notas,
-      });
-
-      // Custom fields que apliquen.
-      const custom_fields: Array<{ id: string; value: any }> = [];
-
-      if (body.proyecto_clickup_id) {
-        const proyectoFieldId = await getProyectoFieldId();
-        if (proyectoFieldId) {
-          custom_fields.push({ id: proyectoFieldId, value: body.proyecto_clickup_id });
-        }
-      }
-
-      // Asignar programador si existe (al campo Programador del board).
-      if (programadorNombre && programadorNombre !== "—") {
-        const prog = await findOptionIdsByName(/programador/i, programadorNombre);
-        if (prog) {
-          custom_fields.push({ id: prog.fieldId, value: prog.optionIds });
-        }
-      }
-
-      // Campo opcional "Monto" si existe en el board.
-      const montoField = await getFieldByNamePattern(/monto|total|precio/i);
-      if (montoField) {
-        custom_fields.push({ id: montoField.id, value: montoTotal });
-      }
-
-      const johanaId = await getDefaultAssigneeId();
-      const titulo = stripEmojis(body.nombre.trim());
-      const { status: estadoEstimado } = await findMatchingStatus(
-        listId,
-        STATUS_CANDIDATES.estimado
-      );
-
-      const task = await createTask({
-        list_id: listId,
-        name: titulo,
-        description,
-        status: estadoEstimado ?? undefined,
-        assignees: johanaId ? [johanaId] : undefined,
-        custom_fields: custom_fields.length > 0 ? custom_fields : undefined,
-      });
-
-      clickup_ticket_id = task.id;
-      clickup_url = task.url;
-      await supa
-        .from("cotizaciones")
-        .update({ clickup_ticket_id: task.id })
-        .eq("id", cot.id);
-
-      await supa.from("acciones_cotizacion").insert({
-        cotizacion_id: cot.id,
-        tipo_accion: "ticket_clickup_creado",
-        metadata: { task_id: task.id, url: task.url },
-      });
-    } catch (e: any) {
-      console.error("[clickup extraordinaria] error:", e);
-      clickup_warning = e?.message || "No se pudo crear el ticket en ClickUp";
-    }
-  } else {
-    clickup_warning = "ClickUp no configurado — la cotización quedó solo en el panel.";
-  }
-
-  // 3) Slack al canal admin
+  // 2) Slack al canal admin
   let slack_warning: string | null = null;
   let slack_message_ts: string | null = null;
   if (slackConfigured()) {
@@ -290,13 +194,13 @@ export async function POST(req: NextRequest) {
         descripcionCorta: descripcionCorta,
         conceptos: conceptosNorm,
         notas: body.notas ?? null,
-        clickupUrl: clickup_url,
+        clickupUrl: null,
       });
 
       const r = await postMessage({
         channel: process.env.SLACK_CHANNEL_ADMIN!,
         text: textoSlack,
-        blocks: blocksAprobacionCotizacion(textoSlack, cot.id, clickup_url),
+        blocks: blocksAprobacionCotizacion(textoSlack, cot.id, null),
       });
 
       slack_message_ts = r.ts ?? null;
@@ -330,10 +234,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     id: cot.id,
-    clickup_ticket_id,
-    clickup_url,
     slack_message_ts,
-    clickup_warning,
     slack_warning,
   });
 }

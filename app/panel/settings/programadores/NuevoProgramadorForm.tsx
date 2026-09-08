@@ -96,7 +96,7 @@ export default function NuevoProgramadorForm() {
             placeholder="programador@iconos.mx"
           />
           <span className="field-hint">
-            Para los DMs de tickets cuando JIRA oculta el email.
+            Para los DMs de Slack cuando se le asigna un ticket.
           </span>
         </div>
         <div>
