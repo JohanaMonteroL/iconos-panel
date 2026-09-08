@@ -1,7 +1,7 @@
 import EstimacionForm from "./EstimacionForm";
 import PublicHeader from "@/components/ui/PublicHeader";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProyectoOptions } from "@/lib/clickup/client";
+import { getProyectosDesdeCarpetasDesarrollo } from "@/lib/clickup/client";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
 export default async function NuevaEstimacionPage() {
   const [programadores, proyectos] = await Promise.all([
     getProgramadores(),
-    getProyectoOptions(),
+    getProyectosDesdeCarpetasDesarrollo(),
   ]);
 
   return (

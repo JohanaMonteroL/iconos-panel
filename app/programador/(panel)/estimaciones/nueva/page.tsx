@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { requireProgramador } from "@/lib/programador/auth";
-import { getProyectoOptions } from "@/lib/clickup/client";
+import { getProyectosDesdeCarpetasDesarrollo } from "@/lib/clickup/client";
 import EstimacionForm from "@/app/estimaciones/nueva/EstimacionForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function NuevaEstimacionProgramadorPage() {
   const p = (await requireProgramador())!;
-  const proyectosRaw = await getProyectoOptions().catch(() => []);
+  const proyectosRaw = await getProyectosDesdeCarpetasDesarrollo().catch(() => []);
   const proyectos = proyectosRaw.map((px) => ({ id: px.id, nombre: px.name }));
 
   return (
