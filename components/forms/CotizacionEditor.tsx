@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
 import Modal from "@/components/ui/Modal";
+import EnviarPdfModal from "@/components/forms/EnviarPdfModal";
 import {
   ORDEN_FLUJO_COTIZACION,
   labelEstado,
@@ -371,11 +372,16 @@ export default function CotizacionEditor({ cotizacion }: Props) {
 type ActionsProps = {
   cotizacionId: string;
   estado: string;
+  // Para el preview de EnviarPdfModal (horas totales × costo interno).
+  horasEnvio?: number;
+  precioHora?: number;
 };
 
 export function CotizacionAcciones({
   cotizacionId,
   estado,
+  horasEnvio = 0,
+  precioHora = 0,
 }: ActionsProps) {
   const router = useRouter();
   const [working, setWorking] = useState<string | null>(null);
@@ -389,6 +395,7 @@ export function CotizacionAcciones({
   const [cambioEstadoAbierto, setCambioEstadoAbierto] = useState(false);
   const [nuevoEstado, setNuevoEstado] = useState<string>("");
   const [comentarioEstado, setComentarioEstado] = useState("");
+  const [enviarPdfAbierto, setEnviarPdfAbierto] = useState(false);
 
   const archivar = async () => {
     const res = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
@@ -525,10 +532,12 @@ export function CotizacionAcciones({
           </span>
         </button>
 
-        {(estado === "aprobada" ||
-          estado === "enviada_cliente" ||
-          estado === "aprobado_cliente" ||
-          estado === "en_desarrollo") && (
+        {(estado === "enviada" ||
+          estado === "aprobada" ||
+          estado === "en_desarrollo" ||
+          estado === "en_espera_de_cobro" ||
+          estado === "pendiente_por_cobrar" ||
+          estado === "cobrada") && (
           <button
             disabled={working !== null}
             onClick={() => setGenerarTicketsAbierto(true)}
@@ -596,6 +605,13 @@ export function CotizacionAcciones({
               type="button"
               disabled={!nuevoEstado || nuevoEstado === estado || !!working}
               onClick={async () => {
+                // "Enviada" exige subir el PDF que se mandó al cliente —
+                // en vez de llamar a cambiar-estado, abrimos ese flujo.
+                if (nuevoEstado === "enviada") {
+                  setCambioEstadoAbierto(false);
+                  setEnviarPdfAbierto(true);
+                  return;
+                }
                 await cambiarEstado(nuevoEstado, {
                   comentario: comentarioEstado.trim() || undefined,
                 });
@@ -607,6 +623,8 @@ export function CotizacionAcciones({
               <span>
                 {working
                   ? "Aplicando…"
+                  : nuevoEstado === "enviada"
+                  ? "Continuar — subir PDF"
                   : `Cambiar a "${labelEstado(nuevoEstado || estado)}"`}
               </span>
             </button>
@@ -640,7 +658,9 @@ export function CotizacionAcciones({
             </select>
             <span className="field-hint">
               Puedes moverla a cualquier estado del flujo. Al guardar también
-              se actualiza el carril en ClickUp si tiene ticket.
+              se actualiza el carril en ClickUp si tiene ticket.{" "}
+              {nuevoEstado === "enviada" &&
+                "Para \"Enviada\" te vamos a pedir el PDF que se le mandó al cliente."}
             </span>
           </div>
 
@@ -837,6 +857,18 @@ export function CotizacionAcciones({
         textoBoton="Eliminar definitivamente"
         peligroso
       />
+
+      <EnviarPdfModal
+        cotizacionId={cotizacionId}
+        horasEnvio={horasEnvio}
+        precioHora={precioHora}
+        open={enviarPdfAbierto}
+        onClose={() => setEnviarPdfAbierto(false)}
+        onEnviado={() => {
+          setEnviarPdfAbierto(false);
+          router.refresh();
+        }}
+      />
     </section>
   );
 }
@@ -852,19 +884,25 @@ type LogAccion = {
 
 const LABEL_ACCION: Record<string, string> = {
   creada_desde_estimacion: "Cotización creada desde estimación",
+  creada_desde_formulario: "Estimación recibida del formulario",
+  creada_manual: "Estimación creada manualmente",
   ticket_clickup_creado: "Ticket de ClickUp creado",
   ticket_clickup_creado_retry: "Ticket de ClickUp creado (reintento)",
   sync_clickup_manual: "↻ Sincronizado con ClickUp",
   editada: "Cotización editada",
-  estado_pendiente_revisar: "📋 Por revisar",
-  estado_esperando_aprobacion: "⏳ Esperando jefe",
-  estado_aprobada: "✅ Aprobado por Iván",
+  estado_por_estimar: "📝 Por estimar",
+  estado_pendiente_revision_interna: "📋 Revisión interna",
+  estado_esperando_aprobacion: "⏳ Esperando aprobación",
   estado_cambios_solicitados: "✏️ Cambios solicitados",
-  estado_aprobado_cliente: "👤 Aprobado por cliente",
-  estado_enviada_cliente: "📤 Enviada al cliente",
+  estado_enviada: "📤 Enviada al cliente",
+  estado_aprobada: "✅ Aprobada por cliente",
   estado_en_desarrollo: "🚧 En desarrollo",
-  estado_finalizado: "🏁 Finalizado",
+  estado_en_espera_de_cobro: "🕒 En espera de cobro",
+  estado_pendiente_por_cobrar: "💰 Pendiente por cobrar",
+  estado_rechazada: "❌ Rechazada",
+  estado_cobrada: "🏁 Cobrada",
   estado_archivada: "📦 Archivada",
+  jefe_aprobacion_recibida: "✅ Visto bueno de Iván recibido",
   slack_reenviado: "↻ Mensaje reenviado en Slack",
   slack_notificada_actualizacion: "🔄 Actualización notificada al jefe",
 };

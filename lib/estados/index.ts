@@ -1,65 +1,58 @@
-// Catálogo central de estados de estimaciones y cotizaciones, con sus
-// etiquetas para mostrar al usuario y las clases de badge. Importar de aquí
-// en cualquier parte de la app para mantener consistencia.
-
-export const ESTADOS_ESTIMACION = [
-  "recibida",
-  "procesada_ia",
-  "en_revision",
-  "descartada",
-] as const;
+// Catálogo central de estados de cotizaciones, con sus etiquetas para
+// mostrar al usuario y las clases de badge. Importar de aquí en cualquier
+// parte de la app para mantener consistencia.
+//
+// Desde la fusión Cotizaciones + Estimaciones, un registro nace como
+// "estimación" (por_estimar / pendiente_revision_interna) y recorre TODO el
+// flujo — sin cambiar de tabla ni de id — hasta "cobrada". Ya no existe un
+// vocabulario de estado separado para estimaciones.
 
 export const ESTADOS_COTIZACION = [
-  "pendiente_revisar",
+  "por_estimar",
+  "pendiente_revision_interna",
   "esperando_aprobacion",
-  "aprobada",
   "cambios_solicitados",
-  "aprobado_cliente",
-  "enviada_cliente",
+  "enviada",
+  "aprobada",
   "en_desarrollo",
-  "finalizado",
+  "en_espera_de_cobro",
+  "pendiente_por_cobrar",
+  "rechazada",
+  "cobrada",
   "archivada",
 ] as const;
 
-export type EstadoEstimacion = (typeof ESTADOS_ESTIMACION)[number];
 export type EstadoCotizacion = (typeof ESTADOS_COTIZACION)[number];
-export type EstadoCualquiera = EstadoEstimacion | EstadoCotizacion;
 
 // Etiquetas que ve el usuario.
 export const ESTADO_LABEL: Record<string, string> = {
-  // Estimación
-  recibida: "Recibida",
-  procesada_ia: "Procesada con IA",
-  en_revision: "Procesada con IA", // legacy mismo significado
-  descartada: "Descartada",
-  // Cotización
-  pendiente_revisar: "Por revisar",
-  esperando_aprobacion: "Esperando jefe",
-  aprobada: "Aprobado por Iván",
+  por_estimar: "Por estimar",
+  pendiente_revision_interna: "Revisión interna",
+  esperando_aprobacion: "Esperando aprobación",
   cambios_solicitados: "Cambios solicitados",
-  aprobado_cliente: "Aprobado por cliente",
-  enviada_cliente: "Enviada al cliente",
+  enviada: "Enviada al cliente",
+  aprobada: "Aprobada por cliente",
   en_desarrollo: "En desarrollo",
-  finalizado: "Finalizado",
+  en_espera_de_cobro: "En espera de cobro",
+  pendiente_por_cobrar: "Pendiente por cobrar",
+  rechazada: "Rechazada",
+  cobrada: "Cobrada",
   archivada: "Archivada",
 };
 
 // Clase de badge para el estado (debe matchear app/globals.css).
 export const ESTADO_BADGE: Record<string, string> = {
-  // Estimación
-  recibida: "badge-warning",
-  procesada_ia: "badge-info",
-  en_revision: "badge-info",
-  descartada: "badge-neutral",
-  // Cotización
-  pendiente_revisar: "badge-warning",
+  por_estimar: "badge-neutral",
+  pendiente_revision_interna: "badge-warning",
   esperando_aprobacion: "badge-info",
-  aprobada: "badge-success",
   cambios_solicitados: "badge-danger",
-  aprobado_cliente: "badge-success",
-  enviada_cliente: "badge-info",
+  enviada: "badge-info",
+  aprobada: "badge-success",
   en_desarrollo: "badge-info",
-  finalizado: "badge-success",
+  en_espera_de_cobro: "badge-warning",
+  pendiente_por_cobrar: "badge-warning",
+  rechazada: "badge-danger",
+  cobrada: "badge-success",
   archivada: "badge-neutral",
 };
 
@@ -75,20 +68,26 @@ export function badgeEstado(estado: string | null | undefined): string {
 }
 
 // Orden lógico del flujo (de inicial a final). Útil para selectors.
+// Incluye "archivada" al final (housekeeping, no es parte del flujo visual
+// principal) — quien construya un tablero kanban debe filtrarla.
 export const ORDEN_FLUJO_COTIZACION: EstadoCotizacion[] = [
-  "pendiente_revisar",
+  "por_estimar",
+  "pendiente_revision_interna",
   "esperando_aprobacion",
-  "aprobada",
   "cambios_solicitados",
-  "aprobado_cliente",
-  "enviada_cliente",
+  "enviada",
+  "aprobada",
   "en_desarrollo",
-  "finalizado",
+  "en_espera_de_cobro",
+  "pendiente_por_cobrar",
+  "rechazada",
+  "cobrada",
   "archivada",
 ];
 
-export const ORDEN_FLUJO_ESTIMACION: EstadoEstimacion[] = [
-  "recibida",
-  "procesada_ia",
-  "descartada",
+// Estados que cuentan como "estimación por revisar" (badge del sidebar,
+// dashboard, y la vista angosta /panel/estimaciones).
+export const ESTADOS_ESTIMACION_ACTIVA: EstadoCotizacion[] = [
+  "por_estimar",
+  "pendiente_revision_interna",
 ];

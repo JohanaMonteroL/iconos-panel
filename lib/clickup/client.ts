@@ -284,20 +284,23 @@ export async function findMatchingStatus(
   return { status: null, available };
 }
 
-// Mapeo de estados internos a candidatos de nombre en ClickUp.
+// Mapeo de estados internos (lib/estados) a candidatos de nombre en ClickUp.
 // Si el board tiene varios carriles que pueden corresponder, se prueba en
 // orden y el primer match flexible gana.
+//
+// NOTA: ni STATUS_CANDIDATES ni findMatchingStatus tienen todavía un
+// llamador en el código (queda para "la siguiente iteración" de sync
+// ClickUp <-> estado) — las llaves se actualizaron para seguir el
+// vocabulario unificado de cotizaciones, pero no hay riesgo de romper nada
+// en producción al tocarlas.
 export const STATUS_CANDIDATES: Record<string, string[]> = {
-  estimado: ["Estimado", "Estimada", "Por estimar", "Estimando", "Por revisar"],
-  // Aprobada por Iván (jefe) — el ticket pasa a "Por cotizar" / "Lista".
-  aprobada: [
+  por_estimar: ["Por estimar", "Estimando"],
+  pendiente_revision_interna: ["Revisión interna", "Por revisar", "En revisión"],
+  esperando_aprobacion: [
+    "Esperando aprobación",
     "Por cotizar",
     "Lista para enviar",
-    "Aprobada por jefe",
-    "Aprobada",
-    "Aprobado",
-    "Approved",
-    "Aceptada",
+    "Esperando jefe",
   ],
   cambios_solicitados: [
     "Cambios solicitados",
@@ -306,14 +309,9 @@ export const STATUS_CANDIDATES: Record<string, string[]> = {
     "En revisión",
     "Revisión",
   ],
-  enviada_cliente: [
-    "Enviada al cliente",
-    "Enviada",
-    "Sent",
-    "Para enviar",
-  ],
-  // Aprobado por el cliente — carril "Aprobado" en ClickUp.
-  aprobado_cliente: [
+  enviada: ["Enviada al cliente", "Enviada", "Sent", "Para enviar"],
+  // Aprobada por el cliente — carril "Aprobado" en ClickUp.
+  aprobada: [
     "Aprobado",
     "Aprobada por cliente",
     "Aprobado por cliente",
@@ -321,8 +319,11 @@ export const STATUS_CANDIDATES: Record<string, string[]> = {
     "Client approved",
   ],
   en_desarrollo: ["En desarrollo", "Desarrollo", "In progress", "Doing"],
-  // Finalizado — el carril en ClickUp es "Cobrado".
-  finalizado: [
+  en_espera_de_cobro: ["En espera de cobro", "Esperando cobro"],
+  pendiente_por_cobrar: ["Pendiente por cobrar", "Por cobrar"],
+  rechazada: ["Rechazada", "Rechazado", "Declined"],
+  // Cobrada — el carril en ClickUp es "Cobrado".
+  cobrada: [
     "Cobrado",
     "Pagado",
     "Finalizado",

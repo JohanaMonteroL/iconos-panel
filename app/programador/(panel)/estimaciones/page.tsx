@@ -1,131 +1,56 @@
+// Lista de "mis estimaciones" del programador — desde la fusión
+// Cotizaciones + Estimaciones, todo vive directo en `cotizaciones`
+// (programador_id), sin el join intermedio contra estimaciones_formulario
+// que existía antes.
+
 import Link from "next/link";
-import { Plus, Clock, ExternalLink, FileCheck, Sparkles } from "lucide-react";
+import { Plus, Clock, ExternalLink, FileCheck } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { requireProgramador } from "@/lib/programador/auth";
 import { formatFechaCorta } from "@/lib/dates";
+import { labelEstado, badgeEstado } from "@/lib/estados";
 import FiltrosEstimaciones from "./FiltrosEstimaciones";
 
 export const dynamic = "force-dynamic";
 
-type EstimacionRow = {
+type CotizacionRow = {
   id: string;
   created_at: string;
   estado: string;
-  cotizacion_ref: string | null;
-  datos_raw: {
-    nombre_solicitud?: string;
-    notas?: string | null;
-    proyecto_nombre?: string | null;
-    buffer_porcentaje?: number;
-    envio?: { horas?: number } | null;
-    tareas?: Array<{ hrs_min: number; hrs_max: number }>;
-  };
-};
-
-type CotizacionLite = {
-  id: string;
-  estado: string;
-  horas_envio: number | null;
+  nombre: string;
+  proyecto_nombre: string | null;
   horas_min: number;
   horas_max: number;
+  horas_envio: number | null;
+  buffer_porcentaje: number | null;
   clickup_ticket_id: string | null;
+  tareas_estimacion: { id: string }[] | null;
 };
 
 async function getData(
   programadorId: string,
   query: { busqueda?: string; estado?: string }
-): Promise<{
-  estimaciones: EstimacionRow[];
-  cotsByEstimacionId: Map<string, CotizacionLite>;
-}> {
+): Promise<CotizacionRow[]> {
   const supa = createSupabaseServiceClient();
 
-  const { data: ests } = await supa
-    .from("estimaciones_formulario")
-    .select("id, created_at, estado, cotizacion_ref, datos_raw")
+  let q = supa
+    .from("cotizaciones")
+    .select(
+      "id, created_at, estado, nombre, proyecto_nombre, horas_min, horas_max, horas_envio, buffer_porcentaje, clickup_ticket_id, tareas_estimacion(id)"
+    )
     .eq("programador_id", programadorId)
     .order("created_at", { ascending: false })
     .limit(300);
-  let estimaciones = (ests ?? []) as EstimacionRow[];
 
-  // Buscar cotizaciones referenciadas, para enriquecer las cards con estado
-  // de cotización + ticket JIRA si lo hay.
-  const cotIds = estimaciones
-    .map((e) => e.cotizacion_ref)
-    .filter((x): x is string => !!x);
-  const cotsByEstimacionId = new Map<string, CotizacionLite>();
+  if (query.estado) q = q.eq("estado", query.estado);
+  if (query.busqueda) q = q.ilike("nombre", `%${query.busqueda}%`);
 
-  if (cotIds.length > 0) {
-    const sel =
-      "id, estado, horas_envio, horas_min, horas_max, clickup_ticket_id, estimacion_formulario_id, jira_ticket_ids";
-    const selSinHorasEnvio = sel.replace("horas_envio, ", "");
-    let resp: { data: any; error: any } = await supa
-      .from("cotizaciones")
-      .select(sel)
-      .in("id", cotIds);
-    if (resp.error && /horas_envio/i.test(resp.error.message)) {
-      resp = await supa
-        .from("cotizaciones")
-        .select(selSinHorasEnvio)
-        .in("id", cotIds);
-    }
-    for (const c of (resp.data ?? []) as any[]) {
-      if (c.estimacion_formulario_id) {
-        cotsByEstimacionId.set(c.estimacion_formulario_id, c as CotizacionLite);
-      }
-    }
+  const { data, error } = await q;
+  if (error) {
+    console.error("[programador/estimaciones] error:", error);
+    return [];
   }
-
-  // Filtros opcionales (en memoria — el set ya es chico).
-  // Trabajamos sobre el ESTADO EFECTIVO (el de la cotización si existe, si
-  // no el de la estimación) para que las archivadas/aprobadas también
-  // matcheen aunque la estimación origen siga en "procesada_ia".
-  if (query.estado) {
-    const target = query.estado;
-    estimaciones = estimaciones.filter((e) => {
-      const cot = cotsByEstimacionId.get(e.id);
-      const efectivo = cot?.estado ?? e.estado;
-      // Agrupamos descartada (estimación) y archivada (cotización) bajo
-      // el mismo filtro porque ambas significan "ya no va".
-      if (target === "descartada") {
-        return efectivo === "descartada" || efectivo === "archivada";
-      }
-      if (target === "procesada_ia") {
-        return efectivo === "procesada_ia" || efectivo === "en_revision";
-      }
-      if (target === "esperando_aprobacion") {
-        return (
-          efectivo === "esperando_aprobacion" ||
-          efectivo === "pendiente_revisar"
-        );
-      }
-      return efectivo === target;
-    });
-  }
-  if (query.busqueda) {
-    const term = query.busqueda.trim().toLowerCase();
-    estimaciones = estimaciones.filter((e) => {
-      const txt = JSON.stringify(e.datos_raw ?? {}).toLowerCase();
-      return txt.includes(term);
-    });
-  }
-
-  return { estimaciones, cotsByEstimacionId };
-}
-
-import { labelEstado, badgeEstado } from "@/lib/estados";
-
-function totalHorasOriginal(
-  tareas?: Array<{ hrs_min: number; hrs_max: number }>
-): { min: number; max: number } {
-  if (!tareas) return { min: 0, max: 0 };
-  return tareas.reduce(
-    (acc, t) => ({
-      min: acc.min + (t.hrs_min || 0),
-      max: acc.max + (t.hrs_max || 0),
-    }),
-    { min: 0, max: 0 }
-  );
+  return (data ?? []) as unknown as CotizacionRow[];
 }
 
 export default async function MisEstimacionesPage({
@@ -134,7 +59,7 @@ export default async function MisEstimacionesPage({
   searchParams: { estado?: string; q?: string };
 }) {
   const p = (await requireProgramador())!;
-  const { estimaciones, cotsByEstimacionId } = await getData(p.id, {
+  const items = await getData(p.id, {
     estado: searchParams.estado,
     busqueda: searchParams.q,
   });
@@ -161,7 +86,7 @@ export default async function MisEstimacionesPage({
         }}
       />
 
-      {estimaciones.length === 0 ? (
+      {items.length === 0 ? (
         <div className="card text-body text-text-secondary text-center py-10 space-y-3">
           <p>
             Sin estimaciones que coincidan con los filtros. Crea una nueva o
@@ -174,20 +99,11 @@ export default async function MisEstimacionesPage({
         </div>
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
-          {estimaciones.map((it) => {
-            const totalOrig = totalHorasOriginal(it.datos_raw?.tareas);
-            const numTareas = it.datos_raw?.tareas?.length ?? 0;
-            const buffer = it.datos_raw?.buffer_porcentaje ?? 0;
-
-            // Si tiene cotización, el estado y horas finales vienen de ahí.
-            const cot = cotsByEstimacionId.get(it.id);
-            const estadoEfectivo = cot?.estado ?? it.estado;
-            const horasFinales =
-              cot?.horas_envio ??
-              (it.datos_raw?.envio?.horas ?? null);
-
-            const clickupUrl = cot?.clickup_ticket_id
-              ? `https://app.clickup.com/t/${cot.clickup_ticket_id}`
+          {items.map((it) => {
+            const numTareas = it.tareas_estimacion?.length ?? 0;
+            const buffer = it.buffer_porcentaje ?? 0;
+            const clickupUrl = it.clickup_ticket_id
+              ? `https://app.clickup.com/t/${it.clickup_ticket_id}`
               : null;
 
             return (
@@ -198,31 +114,29 @@ export default async function MisEstimacionesPage({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="text-body-medium text-text-primary line-clamp-2 min-w-0 flex-1">
-                      {it.datos_raw?.nombre_solicitud || "(sin nombre)"}
+                      {it.nombre || "(sin nombre)"}
                     </h2>
-                    <span className={`badge ${badgeEstado(estadoEfectivo)}`}>
-                      {labelEstado(estadoEfectivo)}
+                    <span className={`badge ${badgeEstado(it.estado)}`}>
+                      {labelEstado(it.estado)}
                     </span>
                   </div>
 
                   <div className="text-caption text-text-tertiary flex flex-wrap gap-x-4 gap-y-1">
-                    {it.datos_raw?.proyecto_nombre && (
-                      <span>{it.datos_raw.proyecto_nombre}</span>
-                    )}
+                    {it.proyecto_nombre && <span>{it.proyecto_nombre}</span>}
                     <span className="inline-flex items-center gap-1.5">
                       <FileCheck size={12} strokeWidth={1.5} />
                       {numTareas} tarea{numTareas === 1 ? "" : "s"}
                     </span>
                     <span className="num-tabular inline-flex items-center gap-1.5">
                       <Clock size={12} strokeWidth={1.5} />
-                      {totalOrig.min}–{totalOrig.max}h
+                      {it.horas_min}–{it.horas_max}h
                     </span>
                     {buffer > 0 && (
                       <span className="num-tabular">+{buffer}% buffer</span>
                     )}
                   </div>
 
-                  {horasFinales != null && horasFinales > 0 && (
+                  {it.horas_envio != null && it.horas_envio > 0 && (
                     <div
                       className="rounded-[8px] p-2 text-caption num-tabular flex items-center gap-2"
                       style={{
@@ -230,9 +144,10 @@ export default async function MisEstimacionesPage({
                         border: "1px solid var(--border-subtle)",
                       }}
                     >
-                      <Sparkles size={12} strokeWidth={1.5} />
                       <span>
-                        <strong className="text-text-primary">{horasFinales}h</strong>{" "}
+                        <strong className="text-text-primary">
+                          {it.horas_envio}h
+                        </strong>{" "}
                         enviadas al jefe
                       </span>
                     </div>

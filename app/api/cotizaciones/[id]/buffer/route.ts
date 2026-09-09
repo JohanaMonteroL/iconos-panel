@@ -1,4 +1,8 @@
-// Actualiza el buffer aplicado de una estimación.
+// POST /api/cotizaciones/[id]/buffer
+// Actualiza el buffer_porcentaje de una cotización en etapa temprana
+// (columna real desde la migración 0016 — antes vivía en
+// estimaciones_formulario.datos_raw.buffer_porcentaje).
+
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
@@ -33,27 +37,23 @@ export async function POST(
   }
 
   const supa = createSupabaseServiceClient();
-  const { data: est, error } = await supa
-    .from("estimaciones_formulario")
-    .select("datos_raw")
+  const { data: cot, error } = await supa
+    .from("cotizaciones")
+    .select("id")
     .eq("id", params.id)
     .maybeSingle();
-  if (error || !est) {
-    return NextResponse.json({ error: "Estimación no encontrada" }, { status: 404 });
+  if (error || !cot) {
+    return NextResponse.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
 
-  const newRaw = {
-    ...((est.datos_raw as Record<string, unknown>) ?? {}),
-    buffer_porcentaje: buffer,
-  };
   const { error: updErr } = await supa
-    .from("estimaciones_formulario")
-    .update({ datos_raw: newRaw })
+    .from("cotizaciones")
+    .update({ buffer_porcentaje: buffer })
     .eq("id", params.id);
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  revalidatePath(`/panel/estimaciones/${params.id}`);
+  revalidatePath(`/panel/cotizaciones/${params.id}`);
   return NextResponse.json({ ok: true });
 }

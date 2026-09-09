@@ -2,12 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import Markdown from "@/components/ui/Markdown";
+import MarcarRevisada from "@/components/ui/MarcarRevisada";
 import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
 import CotizacionEditor, {
   CotizacionAcciones,
   CotizacionLog,
   type CotizacionData,
 } from "@/components/forms/CotizacionEditor";
+import EtapaTempranaPanel from "@/components/forms/EtapaTempranaPanel";
+import EnvioDetalle from "@/components/forms/EnvioDetalle";
 import HorasEnvioCotizacion from "@/components/forms/HorasEnvioCotizacion";
 import InlineTextEditor from "@/components/forms/InlineTextEditor";
 import MontoFijoEditor from "@/components/forms/MontoFijoEditor";
@@ -18,8 +21,11 @@ import { getProyectoOptions } from "@/lib/clickup/client";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
 import { formatFechaLarga as fmtFecha } from "@/lib/dates";
+import { ESTADOS_ESTIMACION_ACTIVA } from "@/lib/estados";
 
 export const dynamic = "force-dynamic";
+
+const BUCKET_PDFS = "cotizacion-pdfs";
 
 type Tarea = {
   id: string;
@@ -51,6 +57,13 @@ type Cotizacion = {
   monto_fijo: number | null;
   proyecto_clickup_id: string | null;
   proyecto_nombre: string | null;
+  buffer_porcentaje: number | null;
+  envio_pdf_path: string | null;
+  envio_pdf_nombre_original: string | null;
+  envio_horas_totales: number | null;
+  envio_costo_aproximado: number | null;
+  envio_estimado_por: string | null;
+  envio_fecha: string | null;
   programadores: { nombre: string; precio_hora: number } | null;
   tareas_estimacion: Tarea[];
 };
@@ -76,24 +89,34 @@ async function getCotizacion(
   cotizacion: Cotizacion;
   acciones: Accion[];
   conceptos: Concepto[];
+  pdfUrl: string | null;
 } | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
 
-  // Intento con todos los campos nuevos (migraciones 0004 + 0005).
+  // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016).
   // Si alguna columna no existe, reintento con menos campos.
   const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at, clickup_ticket_id,
      ia_recomendacion, borrador_correo, contexto_sherlyn,
      jefe_aprobacion_solicitada_at, jefe_aprobacion_recibida_at,
      tipo_precio, monto_fijo, proyecto_clickup_id, proyecto_nombre, estimacion_formulario_id,
+     buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_horas_totales,
+     envio_costo_aproximado, envio_estimado_por, envio_fecha,
      programadores(nombre, precio_hora),
      tareas_estimacion(id, orden, nombre_limpio, nombre_original, descripcion_limpia, hrs_min, hrs_max)`;
-  const selectNoProyectoNombre = selectFull.replace(", proyecto_nombre", "");
+  const selectNo0016 = selectFull.replace(
+    /buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_horas_totales,\s*\n\s*envio_costo_aproximado, envio_estimado_por, envio_fecha,\n\s*/,
+    ""
+  );
+  const selectNoProyectoNombre = selectNo0016.replace(", proyecto_nombre", "");
   const selectNoFijo = selectNoProyectoNombre.replace("tipo_precio, monto_fijo, proyecto_clickup_id,\n     ", "");
   const selectNo0005 = selectNoFijo.replace("precio_venta_hora, slack_text, ", "");
   const selectNoExtras = selectNo0005.replace("horas_envio, ", "");
 
   let cotResp = await supa.from("cotizaciones").select(selectFull).eq("id", id).maybeSingle();
+  if (cotResp.error && /(buffer_porcentaje|envio_pdf_path|envio_horas_totales)/i.test(cotResp.error.message)) {
+    cotResp = await supa.from("cotizaciones").select(selectNo0016).eq("id", id).maybeSingle();
+  }
   if (cotResp.error && /proyecto_nombre/i.test(cotResp.error.message)) {
     cotResp = await supa.from("cotizaciones").select(selectNoProyectoNombre).eq("id", id).maybeSingle();
   }
@@ -148,10 +171,22 @@ async function getCotizacion(
     if (c) conceptos = c as Concepto[];
   } catch {}
 
+  // Vista previa del PDF de envío — signed URL de 1h (el bucket es privado).
+  let pdfUrl: string | null = null;
+  if (data.envio_pdf_path) {
+    try {
+      const { data: signed } = await supa.storage
+        .from(BUCKET_PDFS)
+        .createSignedUrl(data.envio_pdf_path, 3600);
+      pdfUrl = signed?.signedUrl ?? null;
+    } catch {}
+  }
+
   return {
     cotizacion: data as Cotizacion,
     acciones: (log as unknown as Accion[]) ?? [],
     conceptos,
+    pdfUrl,
   };
 }
 
@@ -168,13 +203,16 @@ export default async function CotizacionDetallePage({
     getProyectoOptions().catch(() => []),
   ]);
   if (!result) notFound();
-  const { cotizacion: it, acciones, conceptos } = result;
+  const { cotizacion: it, acciones, conceptos, pdfUrl } = result;
   const proyectos = proyectosRaw.map((p) => ({ id: p.id, nombre: p.name }));
 
   const precio = it.programadores?.precio_hora ?? 0;
   const costoMin = it.horas_min * precio;
   const costoMax = it.horas_max * precio;
   const horasEnvio = it.horas_envio ?? Math.round(((it.horas_min + it.horas_max) / 2) * 10) / 10;
+  const etapaTemprana = (ESTADOS_ESTIMACION_ACTIVA as readonly string[]).includes(
+    it.estado
+  );
 
   const editorData: CotizacionData = {
     id: it.id,
@@ -220,12 +258,41 @@ export default async function CotizacionDetallePage({
           )}
           {" · creada "}{fmtFecha(it.created_at)}
           {it.jefe_aprobacion_recibida_at && (
-            <> · aprobada {fmtFecha(it.jefe_aprobacion_recibida_at)}</>
+            <> · visto bueno de Iván {fmtFecha(it.jefe_aprobacion_recibida_at)}</>
           )}
         </p>
       </header>
 
-      <CotizacionAcciones cotizacionId={it.id} estado={it.estado} />
+      <MarcarRevisada cotizacionId={it.id} />
+
+      <CotizacionAcciones
+        cotizacionId={it.id}
+        estado={it.estado}
+        horasEnvio={horasEnvio}
+        precioHora={precio}
+      />
+
+      {etapaTemprana && (
+        <EtapaTempranaPanel
+          cotizacionId={it.id}
+          bufferPct={it.buffer_porcentaje ?? 0}
+          iaRecomendacion={it.ia_recomendacion}
+          horasMin={it.horas_min}
+          horasMax={it.horas_max}
+          tareasCount={it.tareas_estimacion.length}
+        />
+      )}
+
+      {it.envio_pdf_path && (
+        <EnvioDetalle
+          pdfUrl={pdfUrl}
+          pdfNombreOriginal={it.envio_pdf_nombre_original}
+          horasTotales={it.envio_horas_totales}
+          costoAproximado={it.envio_costo_aproximado}
+          estimadoPor={it.envio_estimado_por}
+          fecha={it.envio_fecha}
+        />
+      )}
 
       {/* 1. Resumen — varía según tipo (horas vs monto fijo) */}
       {it.tipo_precio === "fijo" ? (

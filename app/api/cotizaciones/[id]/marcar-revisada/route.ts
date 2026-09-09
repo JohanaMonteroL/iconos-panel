@@ -1,6 +1,7 @@
-// POST /api/estimaciones/[id]/marcar-revisada
-// Marca una estimación como "vista por el admin" (resta del badge del sidebar
-// y del icono del PWA). Solo escribe la primera vez (idempotente).
+// POST /api/cotizaciones/[id]/marcar-revisada
+// Marca una cotización (en etapa temprana) como "vista por el admin" — resta
+// del badge del sidebar y del icono del PWA. Solo escribe la primera vez
+// (idempotente). Reemplaza al equivalente de estimaciones_formulario.
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
@@ -21,10 +22,8 @@ export async function POST(
   }
 
   const supa = createSupabaseServiceClient();
-  // Solo escribe si está null (idempotente). Si la columna aún no existe
-  // por migración pendiente, devolvemos ok igual para no romper el flujo.
   const { error } = await supa
-    .from("estimaciones_formulario")
+    .from("cotizaciones")
     .update({ revisada_at: new Date().toISOString() })
     .eq("id", params.id)
     .is("revisada_at", null);
@@ -35,5 +34,6 @@ export async function POST(
 
   revalidatePath("/panel");
   revalidatePath("/panel/estimaciones");
+  revalidatePath(`/panel/cotizaciones/${params.id}`);
   return NextResponse.json({ ok: true });
 }

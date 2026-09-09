@@ -56,7 +56,7 @@ export async function POST(
   // Hago un select resiliente a migraciones pendientes.
   // Select resiliente — si la migración 0005 (precio_venta_hora) no se corrió,
   // reintentamos sin ese campo.
-  const baseSel = `id, nombre, horas_min, horas_max, contexto_sherlyn,
+  const baseSel = `id, nombre, estado, horas_min, horas_max, contexto_sherlyn,
        programadores(nombre)`;
   const withPrecio = baseSel.replace(
     "contexto_sherlyn,",
@@ -134,6 +134,19 @@ export async function POST(
       body.proyecto_nombre,
       (cot as any).proyecto_nombre ?? null
     );
+  }
+
+  // Auto-transición: un placeholder "por_estimar" (nacido vacío) pasa a
+  // "pendiente_revision_interna" en cuanto le llegan tareas reales — mismo
+  // patch, sin round-trip extra.
+  const estadoActual = (cot as any).estado as string | undefined;
+  if (
+    estadoActual === "por_estimar" &&
+    Array.isArray(body.tareas) &&
+    body.tareas.length > 0
+  ) {
+    patch.estado = "pendiente_revision_interna";
+    cambios.estado = { antes: estadoActual, despues: patch.estado };
   }
 
   if (Object.keys(patch).length > 0) {

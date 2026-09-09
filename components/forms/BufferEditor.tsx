@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
 
 type Props = {
-  estimacionId: string;
+  // Endpoint para guardar el buffer_porcentaje (p. ej.
+  // `/api/cotizaciones/${id}/buffer`).
+  savePath: string;
   valorInicial: number;
 };
 
 const PRESETS = [0, 5, 10, 12, 15];
 
-export default function BufferEditor({ estimacionId, valorInicial }: Props) {
+export default function BufferEditor({ savePath, valorInicial }: Props) {
   const router = useRouter();
   const [value, setValue] = useState(valorInicial);
   const [usaCustom, setUsaCustom] = useState(!PRESETS.includes(valorInicial));
@@ -30,7 +32,7 @@ export default function BufferEditor({ estimacionId, valorInicial }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/estimaciones/${estimacionId}/buffer`, {
+      const res = await fetch(savePath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ buffer_porcentaje: value }),

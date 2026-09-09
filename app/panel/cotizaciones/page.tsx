@@ -4,10 +4,10 @@ import AutoRefresh from "@/components/ui/AutoRefresh";
 import VistaToggle from "@/components/ui/VistaToggle";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
-import { labelEstado, badgeEstado } from "@/lib/estados";
+import { labelEstado, badgeEstado, ORDEN_FLUJO_COTIZACION } from "@/lib/estados";
 import FiltrosCotizaciones from "./FiltrosCotizaciones";
 
-type Vista = "lista" | "cuadricula";
+type Vista = "lista" | "cuadricula" | "board";
 
 export const dynamic = "force-dynamic";
 
@@ -29,14 +29,17 @@ type Row = {
 };
 
 const estadosVisibles = [
-  "pendiente_revisar",
+  "por_estimar",
+  "pendiente_revision_interna",
   "esperando_aprobacion",
-  "aprobada",
   "cambios_solicitados",
-  "aprobado_cliente",
-  "enviada_cliente",
+  "enviada",
+  "aprobada",
   "en_desarrollo",
-  "finalizado",
+  "en_espera_de_cobro",
+  "pendiente_por_cobrar",
+  "rechazada",
+  "cobrada",
 ];
 
 type Filtros = {
@@ -186,6 +189,8 @@ export default async function CotizacionesPage({
   const vistaExplicita: Vista | null =
     searchParams.vista === "cuadricula"
       ? "cuadricula"
+      : searchParams.vista === "board"
+      ? "board"
       : searchParams.vista === "lista"
       ? "lista"
       : null;
@@ -254,7 +259,9 @@ export default async function CotizacionesPage({
           Sin cotizaciones que coincidan con los filtros.
         </div>
       ) : vistaExplicita ? (
-        vistaExplicita === "cuadricula" ? (
+        vistaExplicita === "board" ? (
+          <TableroCotizaciones items={items} />
+        ) : vistaExplicita === "cuadricula" ? (
           <CuadriculaCotizaciones items={items} />
         ) : (
           <ListaCotizaciones items={items} />
@@ -270,6 +277,52 @@ export default async function CotizacionesPage({
         </>
       )}
     </>
+  );
+}
+
+function TableroCotizaciones({ items }: { items: Row[] }) {
+  const columnas = ORDEN_FLUJO_COTIZACION.filter((e) => e !== "archivada");
+  const porEstado = new Map<string, Row[]>();
+  for (const e of columnas) porEstado.set(e, []);
+  for (const it of items) {
+    if (!porEstado.has(it.estado)) porEstado.set(it.estado, []);
+    porEstado.get(it.estado)!.push(it);
+  }
+
+  return (
+    <div className="overflow-x-auto pb-2">
+      <div className="flex gap-4" style={{ minWidth: "max-content" }}>
+        {columnas.map((estado) => {
+          const cards = porEstado.get(estado) ?? [];
+          return (
+            <div key={estado} className="w-[280px] shrink-0 space-y-3">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className={`badge ${badgeEstado(estado)}`}>
+                  {labelEstado(estado)}
+                </span>
+                <span className="text-caption text-text-tertiary num-tabular">
+                  {cards.length}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {cards.length === 0 ? (
+                  <div
+                    className="rounded-[12px] p-4 text-caption text-text-tertiary text-center"
+                    style={{
+                      border: "1px dashed var(--border-subtle)",
+                    }}
+                  >
+                    Sin cotizaciones
+                  </div>
+                ) : (
+                  cards.map((it) => <TarjetaCotizacion key={it.id} it={it} />)
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -383,57 +436,60 @@ function ListaCotizaciones({ items }: { items: Row[] }) {
 function CuadriculaCotizaciones({ items }: { items: Row[] }) {
   return (
     <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
-      {items.map((it) => {
-        const fijo = it.tipo_precio === "fijo";
-        return (
-          <li key={it.id}>
-            <Link
-              href={`/panel/cotizaciones/${it.id}`}
-              className="card card-hover space-y-3 block"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="text-body-medium text-text-primary break-words flex-1 min-w-0">
-                  {it.nombre}
-                </h2>
-                <span className={`badge ${badgeEstado(it.estado)} shrink-0`}>
-                  {labelEstado(it.estado)}
-                </span>
-              </div>
-              <div className="text-caption text-text-tertiary flex flex-wrap gap-x-4 gap-y-1">
-                <span className="inline-flex items-center gap-1.5">
-                  <User size={12} strokeWidth={1.5} />
-                  {it.programadores?.nombre ?? "—"}
-                </span>
-                {fijo ? (
-                  <span className="num-tabular inline-flex items-center gap-1.5">
-                    <DollarSign size={12} strokeWidth={1.5} />
-                    {it.monto_fijo != null ? fmtMxn(Number(it.monto_fijo)) : "—"}
-                  </span>
-                ) : (
-                  <span className="num-tabular inline-flex items-center gap-1.5">
-                    <Clock size={12} strokeWidth={1.5} />
-                    {it.horas_min}–{it.horas_max} h
-                  </span>
-                )}
-                {it.clickup_ticket_id && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <ExternalLink size={12} strokeWidth={1.5} />
-                    ClickUp
-                  </span>
-                )}
-              </div>
-              {it.proyecto_nombre && (
-                <p className="text-caption text-text-tertiary">
-                  {it.proyecto_nombre}
-                </p>
-              )}
-              <p className="text-caption text-text-tertiary num-tabular">
-                {fmtFecha(it.created_at)}
-              </p>
-            </Link>
-          </li>
-        );
-      })}
+      {items.map((it) => (
+        <li key={it.id}>
+          <TarjetaCotizacion it={it} />
+        </li>
+      ))}
     </ul>
+  );
+}
+
+// Tarjeta reusada tanto en la vista cuadrícula como en el tablero (board).
+function TarjetaCotizacion({ it }: { it: Row }) {
+  const fijo = it.tipo_precio === "fijo";
+  return (
+    <Link
+      href={`/panel/cotizaciones/${it.id}`}
+      className="card card-hover space-y-3 block"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-body-medium text-text-primary break-words flex-1 min-w-0">
+          {it.nombre}
+        </h2>
+        <span className={`badge ${badgeEstado(it.estado)} shrink-0`}>
+          {labelEstado(it.estado)}
+        </span>
+      </div>
+      <div className="text-caption text-text-tertiary flex flex-wrap gap-x-4 gap-y-1">
+        <span className="inline-flex items-center gap-1.5">
+          <User size={12} strokeWidth={1.5} />
+          {it.programadores?.nombre ?? "—"}
+        </span>
+        {fijo ? (
+          <span className="num-tabular inline-flex items-center gap-1.5">
+            <DollarSign size={12} strokeWidth={1.5} />
+            {it.monto_fijo != null ? fmtMxn(Number(it.monto_fijo)) : "—"}
+          </span>
+        ) : (
+          <span className="num-tabular inline-flex items-center gap-1.5">
+            <Clock size={12} strokeWidth={1.5} />
+            {it.horas_min}–{it.horas_max} h
+          </span>
+        )}
+        {it.clickup_ticket_id && (
+          <span className="inline-flex items-center gap-1.5">
+            <ExternalLink size={12} strokeWidth={1.5} />
+            ClickUp
+          </span>
+        )}
+      </div>
+      {it.proyecto_nombre && (
+        <p className="text-caption text-text-tertiary">{it.proyecto_nombre}</p>
+      )}
+      <p className="text-caption text-text-tertiary num-tabular">
+        {fmtFecha(it.created_at)}
+      </p>
+    </Link>
   );
 }

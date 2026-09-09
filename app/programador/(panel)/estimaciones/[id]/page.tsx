@@ -1,115 +1,74 @@
+// Detalle de "mi estimación" (programador) — lee directo de `cotizaciones` +
+// `tareas_estimacion`. Ya no hay estimacion vs. cotización por separado: el
+// toggle "Original / Final" ahora compara nombre_original/descripcion_original
+// (lo que escribió el programador) contra nombre_limpio/descripcion_limpia
+// (lo que quedó después de IA + ediciones de Johana) por tarea.
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft, ExternalLink, Send } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { requireProgramador } from "@/lib/programador/auth";
 import { formatFechaLarga } from "@/lib/dates";
+import { labelEstado, badgeEstado } from "@/lib/estados";
 import ToggleOriginalLimpia from "./ToggleOriginalLimpia";
 
 export const dynamic = "force-dynamic";
 
-type Tarea = {
-  nombre: string;
-  descripcion: string;
+type TareaRow = {
+  orden: number;
+  nombre_original: string;
+  nombre_limpio: string | null;
+  descripcion_original: string | null;
+  descripcion_limpia: string | null;
   hrs_min: number;
   hrs_max: number;
 };
 
-type EstimacionDetalle = {
+type CotizacionDetalle = {
   id: string;
   created_at: string;
   estado: string;
-  cotizacion_ref: string | null;
-  programador_id: string;
-  datos_raw: {
-    nombre_solicitud?: string;
-    notas?: string | null;
-    proyecto_nombre?: string | null;
-    buffer_porcentaje?: number;
-    envio?: { horas?: number; tipo?: string } | null;
-    tareas?: Tarea[];
-  };
-  datos_limpios: {
-    nombre_solicitud?: string;
-    tareas?: Tarea[];
-  } | null;
-};
-
-type CotizacionLite = {
-  id: string;
-  estado: string;
-  horas_envio: number | null;
+  programador_id: string | null;
+  nombre: string;
+  nombre_original: string | null;
+  proyecto_nombre: string | null;
+  notas_programador: string | null;
+  buffer_porcentaje: number | null;
   horas_min: number;
   horas_max: number;
+  horas_envio: number | null;
   clickup_ticket_id: string | null;
   jefe_aprobacion_recibida_at: string | null;
+  tareas_estimacion: TareaRow[];
 };
 
-async function getEstimacion(
+async function getCotizacion(
   id: string,
   programadorId: string
-): Promise<{
-  est: EstimacionDetalle;
-  cot: CotizacionLite | null;
-  tareasFinales: Tarea[] | null;
-} | null> {
+): Promise<CotizacionDetalle | null> {
   const supa = createSupabaseServiceClient();
-  const { data: est } = await supa
-    .from("estimaciones_formulario")
+  const { data } = await supa
+    .from("cotizaciones")
     .select(
-      "id, created_at, estado, cotizacion_ref, programador_id, datos_raw, datos_limpios"
+      `id, created_at, estado, programador_id, nombre, nombre_original,
+       proyecto_nombre, notas_programador, buffer_porcentaje,
+       horas_min, horas_max, horas_envio, clickup_ticket_id,
+       jefe_aprobacion_recibida_at,
+       tareas_estimacion(orden, nombre_original, nombre_limpio, descripcion_original, descripcion_limpia, hrs_min, hrs_max)`
     )
     .eq("id", id)
     .maybeSingle();
-  if (!est || est.programador_id !== programadorId) return null;
+  if (!data || data.programador_id !== programadorId) return null;
 
-  let cot: CotizacionLite | null = null;
-  let tareasFinales: Tarea[] | null = null;
-  if (est.cotizacion_ref) {
-    const sel =
-      "id, estado, horas_envio, horas_min, horas_max, clickup_ticket_id, jefe_aprobacion_recibida_at";
-    const selSinHorasEnvio = sel.replace("horas_envio, ", "");
-    let resp: { data: any; error: any } = await supa
-      .from("cotizaciones")
-      .select(sel)
-      .eq("id", est.cotizacion_ref)
-      .maybeSingle();
-    if (resp.error && /horas_envio/i.test(resp.error.message)) {
-      resp = await supa
-        .from("cotizaciones")
-        .select(selSinHorasEnvio)
-        .eq("id", est.cotizacion_ref)
-        .maybeSingle();
-    }
-    cot = (resp.data as CotizacionLite) ?? null;
-
-    // Las tareas FINALES (las que Johana realmente envió) están en
-    // tareas_estimacion ligadas a la cotización. Estas reflejan los
-    // cambios manuales que ella hizo después del paso por la IA.
-    const { data: tFin } = await supa
-      .from("tareas_estimacion")
-      .select(
-        "orden, nombre_limpio, nombre_original, descripcion_limpia, descripcion_original, hrs_min, hrs_max"
-      )
-      .eq("cotizacion_id", est.cotizacion_ref)
-      .order("orden", { ascending: true });
-    if (tFin && tFin.length > 0) {
-      tareasFinales = tFin.map((t: any) => ({
-        nombre: t.nombre_limpio || t.nombre_original || "",
-        descripcion: t.descripcion_limpia || t.descripcion_original || "",
-        hrs_min: Number(t.hrs_min) || 0,
-        hrs_max: Number(t.hrs_max) || 0,
-      }));
-    }
-  }
-
-  return { est: est as EstimacionDetalle, cot, tareasFinales };
+  const cot = data as unknown as CotizacionDetalle;
+  cot.tareas_estimacion = (cot.tareas_estimacion ?? []).slice().sort(
+    (a, b) => a.orden - b.orden
+  );
+  return cot;
 }
 
-import { labelEstado, badgeEstado } from "@/lib/estados";
-
-function totales(tareas?: Tarea[]) {
-  if (!tareas) return { min: 0, max: 0, pert: 0 };
+function totales(tareas: TareaRow[]) {
   const min = tareas.reduce((s, t) => s + (t.hrs_min || 0), 0);
   const max = tareas.reduce((s, t) => s + (t.hrs_max || 0), 0);
   const pert = Math.round(((min + max) / 2) * 10) / 10;
@@ -122,39 +81,34 @@ export default async function EstimacionDetallePage({
   params: { id: string };
 }) {
   const p = (await requireProgramador())!;
-  const data = await getEstimacion(params.id, p.id);
-  if (!data) notFound();
-  const { est, cot, tareasFinales } = data;
+  const cot = await getCotizacion(params.id, p.id);
+  if (!cot) notFound();
 
-  // Determinamos qué versión mostrar como "principal" (la más fiel a lo
-  // que el cliente / jefe acabó viendo).
-  //   1. Si hay cotización con tareas → usar esas (las que Johana editó).
-  //   2. Si no, usar las que limpió la IA (datos_limpios).
-  //   3. Si tampoco, las originales del programador.
-  const tareasPrincipales: Tarea[] | null =
-    tareasFinales && tareasFinales.length > 0
-      ? tareasFinales
-      : est.datos_limpios?.tareas && est.datos_limpios.tareas.length > 0
-      ? (est.datos_limpios.tareas as Tarea[])
-      : null;
-
-  // ¿Hay diferencia con lo original como para ofrecer el toggle?
-  const tareasOriginales = (est.datos_raw?.tareas ?? []) as Tarea[];
-  const hayDiferenciaConOriginal =
-    !!tareasPrincipales && tareasPrincipales !== tareasOriginales;
-
-  const estadoEfectivo = cot?.estado ?? est.estado;
-  const horasFinales =
-    cot?.horas_envio ?? est.datos_raw?.envio?.horas ?? null;
-  const buffer = est.datos_raw?.buffer_porcentaje ?? 0;
-  const clickupUrl = cot?.clickup_ticket_id
+  const nombreOriginal = cot.nombre_original || cot.nombre || "(sin nombre)";
+  const nombreFinal = cot.nombre || nombreOriginal;
+  const buffer = cot.buffer_porcentaje ?? 0;
+  const clickupUrl = cot.clickup_ticket_id
     ? `https://app.clickup.com/t/${cot.clickup_ticket_id}`
     : null;
+  const totOrig = totales(cot.tareas_estimacion);
 
-  const totOrig = totales(est.datos_raw?.tareas);
-
-  const nombreOriginal = est.datos_raw?.nombre_solicitud || "(sin nombre)";
-  const nombreLimpio = est.datos_limpios?.nombre_solicitud || nombreOriginal;
+  const tareasFinales = cot.tareas_estimacion.map((t) => ({
+    nombre: t.nombre_limpio || t.nombre_original,
+    descripcion: t.descripcion_limpia || t.descripcion_original || "",
+    hrs_min: t.hrs_min,
+    hrs_max: t.hrs_max,
+  }));
+  const tareasOriginales = cot.tareas_estimacion.map((t) => ({
+    nombre: t.nombre_original,
+    descripcion: t.descripcion_original || "",
+    hrs_min: t.hrs_min,
+    hrs_max: t.hrs_max,
+  }));
+  const hayDiferenciaConOriginal = cot.tareas_estimacion.some(
+    (t) =>
+      (t.nombre_limpio && t.nombre_limpio !== t.nombre_original) ||
+      (t.descripcion_limpia && t.descripcion_limpia !== t.descripcion_original)
+  );
 
   return (
     <>
@@ -168,27 +122,21 @@ export default async function EstimacionDetallePage({
 
       <header className="space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <h1 className="text-display">{nombreLimpio}</h1>
-          <span
-            className={`badge ${badgeEstado(estadoEfectivo)}`}
-          >
-            {labelEstado(estadoEfectivo)}
+          <h1 className="text-display">{nombreFinal}</h1>
+          <span className={`badge ${badgeEstado(cot.estado)}`}>
+            {labelEstado(cot.estado)}
           </span>
         </div>
         <p className="text-caption text-text-secondary">
-          {est.datos_raw?.proyecto_nombre && (
+          {cot.proyecto_nombre && (
             <>
-              <span className="text-text-primary">
-                {est.datos_raw.proyecto_nombre}
-              </span>
+              <span className="text-text-primary">{cot.proyecto_nombre}</span>
               {" · "}
             </>
           )}
-          creada {formatFechaLarga(est.created_at)}
-          {cot?.jefe_aprobacion_recibida_at && (
-            <>
-              {" · "}aprobada {formatFechaLarga(cot.jefe_aprobacion_recibida_at)}
-            </>
+          creada {formatFechaLarga(cot.created_at)}
+          {cot.jefe_aprobacion_recibida_at && (
+            <> · aprobada {formatFechaLarga(cot.jefe_aprobacion_recibida_at)}</>
           )}
         </p>
       </header>
@@ -204,28 +152,19 @@ export default async function EstimacionDetallePage({
           <div className="grid grid-cols-3 gap-6">
             <div>
               <div className="text-caption text-text-tertiary">Mínimo</div>
-              <div
-                className="mt-1 num-tabular"
-                style={{ fontSize: 22, fontWeight: 600 }}
-              >
+              <div className="mt-1 num-tabular" style={{ fontSize: 22, fontWeight: 600 }}>
                 {totOrig.min}h
               </div>
             </div>
             <div>
               <div className="text-caption text-text-tertiary">PERT</div>
-              <div
-                className="mt-1 num-tabular"
-                style={{ fontSize: 22, fontWeight: 600 }}
-              >
+              <div className="mt-1 num-tabular" style={{ fontSize: 22, fontWeight: 600 }}>
                 {totOrig.pert}h
               </div>
             </div>
             <div>
               <div className="text-caption text-text-tertiary">Máximo</div>
-              <div
-                className="mt-1 num-tabular"
-                style={{ fontSize: 22, fontWeight: 600 }}
-              >
+              <div className="mt-1 num-tabular" style={{ fontSize: 22, fontWeight: 600 }}>
                 {totOrig.max}h
               </div>
             </div>
@@ -238,7 +177,7 @@ export default async function EstimacionDetallePage({
           </p>
         )}
 
-        {horasFinales != null && horasFinales > 0 && (
+        {cot.horas_envio != null && cot.horas_envio > 0 && (
           <div
             className="rounded-[10px] p-4"
             style={{
@@ -250,11 +189,8 @@ export default async function EstimacionDetallePage({
               <Send size={12} strokeWidth={1.5} />
               Horas enviadas al jefe / cliente
             </div>
-            <div
-              className="mt-1 num-tabular"
-              style={{ fontSize: 28, fontWeight: 700 }}
-            >
-              {horasFinales}h
+            <div className="mt-1 num-tabular" style={{ fontSize: 28, fontWeight: 700 }}>
+              {cot.horas_envio}h
             </div>
             <div className="text-caption text-text-tertiary">
               Total final con buffer y ajustes que decidió Johana.
@@ -263,53 +199,31 @@ export default async function EstimacionDetallePage({
         )}
       </section>
 
-      {/* Ticket JIRA */}
       {clickupUrl && (
-        <a
-          href={clickupUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-secondary"
-        >
+        <a href={clickupUrl} target="_blank" rel="noreferrer" className="btn-secondary">
           <ExternalLink size={16} strokeWidth={1.75} />
           <span>Abrir ticket de ClickUp</span>
         </a>
       )}
 
-      {/* Tareas — con toggle entre final (enviado) y original */}
+      {/* Tareas — con toggle entre final (limpia/enviada) y original */}
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-heading-2">
-            Tareas (
-            {tareasPrincipales
-              ? tareasPrincipales.length
-              : tareasOriginales.length}
-            )
-          </h2>
-          {tareasPrincipales && hayDiferenciaConOriginal && (
+          <h2 className="text-heading-2">Tareas ({cot.tareas_estimacion.length})</h2>
+          {hayDiferenciaConOriginal && (
             <ToggleOriginalLimpia
-              limpia={tareasPrincipales}
+              limpia={tareasFinales}
               original={tareasOriginales}
               nombreOriginal={nombreOriginal}
-              nombreLimpio={nombreLimpio}
-              labelLimpia={tareasFinales ? "Final (enviadas)" : "Limpia (IA)"}
+              nombreLimpio={nombreFinal}
+              labelLimpia="Final"
             />
           )}
         </div>
 
-        {tareasFinales && tareasFinales.length > 0 && (
-          <p className="text-caption text-text-secondary">
-            Estas son las tareas <strong>finales</strong> que Johana envió al
-            jefe — pueden ser distintas a las que escribiste si ella las editó
-            o eliminó conceptos.
-          </p>
-        )}
-
-        {/* Si NO hay diferencias entre versiones, renderizamos directo
-            sin toggle (más limpio). */}
-        {(!tareasPrincipales || !hayDiferenciaConOriginal) && (
+        {!hayDiferenciaConOriginal && (
           <ul className="space-y-3">
-            {(tareasPrincipales ?? tareasOriginales).map((t, i) => (
+            {tareasOriginales.map((t, i) => (
               <li
                 key={i}
                 className="rounded-[12px] border overflow-hidden"
@@ -325,9 +239,7 @@ export default async function EstimacionDetallePage({
                     borderColor: "var(--border-subtle)",
                   }}
                 >
-                  <div className="text-overline text-text-tertiary">
-                    Tarea {i + 1}
-                  </div>
+                  <div className="text-overline text-text-tertiary">Tarea {i + 1}</div>
                   <span className="text-caption text-text-tertiary num-tabular">
                     {t.hrs_min}–{t.hrs_max}h
                   </span>
@@ -347,11 +259,11 @@ export default async function EstimacionDetallePage({
       </section>
 
       {/* Notas */}
-      {est.datos_raw?.notas && (
+      {cot.notas_programador && (
         <section className="card space-y-2">
           <h2 className="text-heading-2">Tus notas</h2>
           <p className="text-body text-text-secondary whitespace-pre-wrap">
-            {est.datos_raw.notas}
+            {cot.notas_programador}
           </p>
         </section>
       )}
