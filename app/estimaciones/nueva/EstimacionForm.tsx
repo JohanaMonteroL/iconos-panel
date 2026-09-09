@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sparkles, Send } from "lucide-react";
 import TareasTabla, { TareaRow, filaVacia } from "@/components/forms/TareasTabla";
 import ProyectoSearch from "@/components/forms/ProyectoSearch";
@@ -11,15 +12,27 @@ import Modal from "@/components/ui/Modal";
 import Markdown from "@/components/ui/Markdown";
 import { totalesPERT, aplicarBuffer } from "@/lib/pert";
 
-type Programador = { id: string; nombre: string };
+type Programador = { id: string; nombre: string; precio_hora?: number };
 type Proyecto = { id: string; nombre: string };
+type Prioridad = "alta" | "media" | "baja";
+
+const PRIORIDADES: { value: Prioridad; label: string }[] = [
+  { value: "baja", label: "Baja" },
+  { value: "media", label: "Media" },
+  { value: "alta", label: "Alta" },
+];
 
 type Props = {
   programadores: Programador[];
   proyectos?: Proyecto[];
+  // Modo admin (Johana crea desde /panel/cotizaciones): agrega prioridad y
+  // una tarjeta de costo estimado, y al terminar te lleva al detalle en vez
+  // de mostrar la pantalla de "enviada" (pensada para el programador).
+  modoAdmin?: boolean;
 };
 
-export default function EstimacionForm({ programadores, proyectos = [] }: Props) {
+export default function EstimacionForm({ programadores, proyectos = [], modoAdmin = false }: Props) {
+  const router = useRouter();
   // Si la lista trae un solo programador (caso portal interno donde solo
   // está el logueado), pre-seleccionarlo para evitar paso innecesario.
   const [programadorId, setProgramadorId] = useState(
@@ -30,6 +43,7 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
   const [notas, setNotas] = useState("");
   const [rows, setRows] = useState<TareaRow[]>([filaVacia()]);
   const [bufferPct, setBufferPct] = useState(0);
+  const [prioridad, setPrioridad] = useState<Prioridad>("media");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [ok, setOk] = useState(false);
@@ -55,6 +69,10 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
     [totales, bufferPct]
   );
 
+  const programadorSeleccionado = programadores.find((p) => p.id === programadorId);
+  const precioHora = programadorSeleccionado?.precio_hora ?? 0;
+  const costoEstimado = Math.round(totalesConBuffer.totalEsperado * precioHora * 100) / 100;
+
   if (ok) {
     return (
       <div className="card text-center py-12 space-y-3">
@@ -76,6 +94,7 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
       proyecto_clickup_id: proyectoId || undefined,
       proyecto_nombre: proyecto?.nombre,
       buffer_porcentaje: bufferPct,
+      prioridad,
       tareas: rows.map((r) => ({
         nombre: r.nombre.trim(),
         descripcion: r.descripcion.trim(),
@@ -160,7 +179,11 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
         return;
       }
       setConfirmAbierto(false);
-      setOk(true);
+      if (modoAdmin) {
+        router.push(`/panel/cotizaciones/${json.id}`);
+      } else {
+        setOk(true);
+      }
     } catch {
       setErrors({ __form: "Error de red. Intenta de nuevo." });
       setConfirmAbierto(false);
@@ -170,6 +193,7 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
   };
 
   return (
+    <div className={modoAdmin ? "grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start" : undefined}>
     <form onSubmit={onSubmit} className="space-y-8 pb-32">
       {/* Bloque 1: Datos generales */}
       <section className="card space-y-5">
@@ -195,6 +219,24 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
               </span>
             )}
           </div>
+
+          {modoAdmin && (
+            <div>
+              <label className="field-label">Prioridad</label>
+              <div className="flex gap-2">
+                {PRIORIDADES.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setPrioridad(p.value)}
+                    className={prioridad === p.value ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="field-label">
@@ -452,16 +494,59 @@ export default function EstimacionForm({ programadores, proyectos = [] }: Props)
         )}
       </Modal>
 
-      <TotalesFlotantes
-        numTareas={rows.length}
-        totalMin={totales.totalMin}
-        totalEsperado={totales.totalEsperado}
-        totalMax={totales.totalMax}
-        bufferPct={bufferPct}
-        totalMinBuf={totalesConBuffer.totalMin}
-        totalEsperadoBuf={totalesConBuffer.totalEsperado}
-        totalMaxBuf={totalesConBuffer.totalMax}
-      />
+      {!modoAdmin && (
+        <TotalesFlotantes
+          numTareas={rows.length}
+          totalMin={totales.totalMin}
+          totalEsperado={totales.totalEsperado}
+          totalMax={totales.totalMax}
+          bufferPct={bufferPct}
+          totalMinBuf={totalesConBuffer.totalMin}
+          totalEsperadoBuf={totalesConBuffer.totalEsperado}
+          totalMaxBuf={totalesConBuffer.totalMax}
+        />
+      )}
     </form>
+
+    {modoAdmin && (
+      <aside className="lg:sticky lg:top-6 space-y-4">
+        <div className="card space-y-4">
+          <h2 className="text-heading-2">Costo estimado</h2>
+          <div>
+            <div className="text-overline text-text-tertiary">Estimador</div>
+            <div className="text-body-medium mt-1">
+              {programadorSeleccionado?.nombre ?? "— sin seleccionar —"}
+            </div>
+          </div>
+          <div>
+            <div className="text-overline text-text-tertiary">Precio por hora</div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
+              ${precioHora.toLocaleString("es-MX")}
+            </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">
+              Horas (PERT{bufferPct > 0 ? ` +${bufferPct}%` : ""})
+            </div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
+              {totalesConBuffer.totalEsperado}h
+            </div>
+            <div className="text-caption text-text-tertiary">
+              rango: {totalesConBuffer.totalMin}–{totalesConBuffer.totalMax}h
+            </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">Costo total estimado</div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 27, fontWeight: 700 }}>
+              ${costoEstimado.toLocaleString("es-MX")}
+            </div>
+            <div className="text-caption text-text-tertiary">
+              {totalesConBuffer.totalEsperado}h × ${precioHora.toLocaleString("es-MX")}/h
+            </div>
+          </div>
+        </div>
+      </aside>
+    )}
+    </div>
   );
 }

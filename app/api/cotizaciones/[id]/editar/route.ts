@@ -20,6 +20,10 @@ type Body = {
   monto_fijo?: number | null;
   proyecto_clickup_id?: string | null;
   proyecto_nombre?: string | null;
+  programador_id?: string | null;
+  prioridad?: string | null;
+  notas_programador?: string | null;
+  buffer_porcentaje?: number | null;
   // Tareas: array completo. Si viene, se reemplazan.
   tareas?: Array<{
     id?: string;
@@ -57,6 +61,7 @@ export async function POST(
   // Select resiliente — si la migración 0005 (precio_venta_hora) no se corrió,
   // reintentamos sin ese campo.
   const baseSel = `id, nombre, estado, horas_min, horas_max, contexto_sherlyn,
+       programador_id, prioridad, notas_programador, buffer_porcentaje,
        programadores(nombre)`;
   const withPrecio = baseSel.replace(
     "contexto_sherlyn,",
@@ -133,6 +138,29 @@ export async function POST(
       "proyecto_nombre",
       body.proyecto_nombre,
       (cot as any).proyecto_nombre ?? null
+    );
+  }
+
+  // Estimador, prioridad, notas y buffer — parte del "Datos generales" /
+  // "Resumen" del formulario de estimaciones, ahora editables desde aquí.
+  if (body.programador_id !== undefined) {
+    setIfDiff("programador_id", body.programador_id, (cot as any).programador_id ?? null);
+  }
+  if (body.prioridad !== undefined) {
+    setIfDiff("prioridad", body.prioridad, (cot as any).prioridad ?? null);
+  }
+  if (body.notas_programador !== undefined) {
+    setIfDiff(
+      "notas_programador",
+      body.notas_programador,
+      (cot as any).notas_programador ?? null
+    );
+  }
+  if (body.buffer_porcentaje !== undefined) {
+    setIfDiff(
+      "buffer_porcentaje",
+      body.buffer_porcentaje,
+      (cot as any).buffer_porcentaje ?? 0
     );
   }
 

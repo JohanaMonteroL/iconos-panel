@@ -54,6 +54,13 @@ export async function POST(req: NextRequest) {
   const totalMin = result.data.tareas.reduce((s, t) => s + t.hrs_min, 0);
   const totalMax = result.data.tareas.reduce((s, t) => s + t.hrs_max, 0);
 
+  // `prioridad` no forma parte del payload validado (compartido con el
+  // formulario del programador, que no la usa) — se lee directo del body.
+  const prioridadRaw = (body as Record<string, unknown> | null)?.["prioridad"];
+  const prioridad = ["alta", "media", "baja"].includes(String(prioridadRaw))
+    ? String(prioridadRaw)
+    : "media";
+
   const { data: inserted, error: insErr } = await supa
     .from("cotizaciones")
     .insert({
@@ -65,6 +72,7 @@ export async function POST(req: NextRequest) {
       proyecto_clickup_id: result.data.proyecto_clickup_id ?? null,
       proyecto_nombre: result.data.proyecto_nombre ?? null,
       buffer_porcentaje: result.data.buffer_porcentaje ?? 0,
+      prioridad,
       horas_min: Math.round(totalMin),
       horas_max: Math.round(totalMax),
       estado: "pendiente_revision_interna",
@@ -124,10 +132,8 @@ export async function POST(req: NextRequest) {
 
   // Invalidar caches para que la nueva estimación aparezca de inmediato en:
   //   - /panel (badge del sidebar + contadores del dashboard)
-  //   - /panel/estimaciones (vista filtrada de cotizaciones tempranas)
-  //   - /panel/cotizaciones (listado general)
+  //   - /panel/cotizaciones (listado general, incluye las tempranas)
   revalidatePath("/panel");
-  revalidatePath("/panel/estimaciones");
   revalidatePath("/panel/cotizaciones");
 
   return NextResponse.json({ ok: true, id: inserted.id }, { status: 201 });

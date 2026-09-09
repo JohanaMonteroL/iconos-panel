@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import Markdown from "@/components/ui/Markdown";
+import InlineHeading from "@/components/ui/InlineHeading";
 import MarcarRevisada from "@/components/ui/MarcarRevisada";
 import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
+import EstimacionTempranaEditor from "@/components/forms/EstimacionTempranaEditor";
 import CotizacionEditor, {
   CotizacionAcciones,
   CotizacionLog,
@@ -64,6 +66,10 @@ type Cotizacion = {
   envio_costo_aproximado: number | null;
   envio_estimado_por: string | null;
   envio_fecha: string | null;
+  canal_entrada: string | null;
+  prioridad: string | null;
+  programador_id: string | null;
+  notas_programador: string | null;
   programadores: { nombre: string; precio_hora: number } | null;
   tareas_estimacion: Tarea[];
 };
@@ -97,6 +103,7 @@ async function getCotizacion(
   // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016).
   // Si alguna columna no existe, reintento con menos campos.
   const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at, clickup_ticket_id,
+     canal_entrada, prioridad, programador_id, notas_programador,
      ia_recomendacion, borrador_correo, contexto_sherlyn,
      jefe_aprobacion_solicitada_at, jefe_aprobacion_recibida_at,
      tipo_precio, monto_fijo, proyecto_clickup_id, proyecto_nombre, estimacion_formulario_id,
@@ -193,14 +200,31 @@ async function getCotizacion(
 
 import { labelEstado, badgeEstado } from "@/lib/estados";
 
+async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+  try {
+    const supa = createSupabaseServiceClient();
+    const { data, error } = await supa
+      .from("programadores")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("nombre");
+    if (error) return [];
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export default async function CotizacionDetallePage({
   params,
 }: {
   params: { id: string };
 }) {
-  const [result, proyectosRaw] = await Promise.all([
+  const [result, proyectosRaw, programadores] = await Promise.all([
     getCotizacion(params.id),
     getProyectoOptions().catch(() => []),
+    getProgramadores(),
   ]);
   if (!result) notFound();
   const { cotizacion: it, acciones, conceptos, pdfUrl } = result;
@@ -246,10 +270,25 @@ export default async function CotizacionDetallePage({
 
       <header className="space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <h1 className="text-display">{it.nombre}</h1>
-          <span className={`badge ${badgeEstado(it.estado)}`}>
-            {labelEstado(it.estado)}
-          </span>
+          <InlineHeading cotizacionId={it.id} initialValue={it.nombre} />
+          <div className="flex items-center gap-2">
+            {it.prioridad && (
+              <span
+                className={`badge ${
+                  it.prioridad === "alta"
+                    ? "badge-danger"
+                    : it.prioridad === "media"
+                    ? "badge-warning"
+                    : "badge-neutral"
+                }`}
+              >
+                Prioridad {it.prioridad}
+              </span>
+            )}
+            <span className={`badge ${badgeEstado(it.estado)}`}>
+              {labelEstado(it.estado)}
+            </span>
+          </div>
         </div>
         <p className="text-caption text-text-secondary">
           {it.programadores?.nombre ?? "—"}
@@ -257,6 +296,10 @@ export default async function CotizacionDetallePage({
             <> · <span className="text-text-primary">{it.proyecto_nombre}</span></>
           )}
           {" · creada "}{fmtFecha(it.created_at)}
+          {" · por "}
+          {it.canal_entrada === "formulario"
+            ? it.programadores?.nombre ?? "programador"
+            : "Johana"}
           {it.jefe_aprobacion_recibida_at && (
             <> · visto bueno de Iván {fmtFecha(it.jefe_aprobacion_recibida_at)}</>
           )}
@@ -265,21 +308,24 @@ export default async function CotizacionDetallePage({
 
       <MarcarRevisada cotizacionId={it.id} />
 
-      <CotizacionAcciones
-        cotizacionId={it.id}
-        estado={it.estado}
-        horasEnvio={horasEnvio}
-        precioHora={precio}
-      />
+      {/* En etapa temprana todavía no se manda nada a Slack ni hay que
+          archivar/eliminar desde aquí — Enviar a aprobación ya vive en
+          EtapaTempranaPanel, justo abajo. */}
+      {!etapaTemprana && (
+        <CotizacionAcciones
+          cotizacionId={it.id}
+          estado={it.estado}
+          horasEnvio={horasEnvio}
+          precioHora={precio}
+        />
+      )}
 
       {etapaTemprana && (
         <EtapaTempranaPanel
           cotizacionId={it.id}
           bufferPct={it.buffer_porcentaje ?? 0}
-          iaRecomendacion={it.ia_recomendacion}
           horasMin={it.horas_min}
           horasMax={it.horas_max}
-          tareasCount={it.tareas_estimacion.length}
         />
       )}
 
@@ -361,8 +407,9 @@ export default async function CotizacionDetallePage({
         </section>
       )}
 
-      {/* 2. Recomendación IA */}
-      {it.ia_recomendacion && (
+      {/* 2. Recomendación IA — en etapa temprana vive dentro de Tareas
+          (CotizacionEditor) en vez de aquí. */}
+      {!etapaTemprana && it.ia_recomendacion && (
         <section
           className="card"
           style={{
@@ -375,16 +422,19 @@ export default async function CotizacionDetallePage({
         </section>
       )}
 
-      {/* Proyecto — editable, siempre visible */}
-      <ProyectoEditor
-        cotizacionId={it.id}
-        proyectos={proyectos}
-        proyectoIdInicial={it.proyecto_clickup_id ?? null}
-        proyectoNombreInicial={it.proyecto_nombre ?? null}
-      />
+      {/* Proyecto — card independiente solo fuera de etapa temprana (en
+          etapa temprana vive dentro de "Datos generales", más abajo). */}
+      {!etapaTemprana && (
+        <ProyectoEditor
+          cotizacionId={it.id}
+          proyectos={proyectos}
+          proyectoIdInicial={it.proyecto_clickup_id ?? null}
+          proyectoNombreInicial={it.proyecto_nombre ?? null}
+        />
+      )}
 
-      {/* 3. Análisis financiero — solo para tipo horas */}
-      {it.tipo_precio !== "fijo" && (
+      {/* 3. Análisis financiero — solo para tipo horas, no en etapa temprana */}
+      {it.tipo_precio !== "fijo" && !etapaTemprana && (
         <AnalisisFinanciero
           savePath={`/api/cotizaciones/${it.id}/precio-venta`}
           precioHoraInterno={precio}
@@ -394,8 +444,34 @@ export default async function CotizacionDetallePage({
         />
       )}
 
-      {/* Editor de la cotización (nombre + tareas) — para tipo horas */}
-      {it.tipo_precio !== "fijo" && <CotizacionEditor cotizacion={editorData} />}
+      {/* Editor de la cotización — en etapa temprana es el mismo formulario
+          que se usó para crearla (Datos generales, Tareas, Resumen+Buffer,
+          todo en un solo Guardar). Fuera de etapa temprana, el editor de
+          tareas simple de siempre. */}
+      {it.tipo_precio !== "fijo" && etapaTemprana && (
+        <EstimacionTempranaEditor
+          cotizacionId={it.id}
+          programadores={programadores}
+          proyectos={proyectos}
+          programadorIdInicial={it.programador_id}
+          proyectoIdInicial={it.proyecto_clickup_id ?? null}
+          notasInicial={it.notas_programador ?? null}
+          bufferInicial={it.buffer_porcentaje ?? 0}
+          prioridadInicial={(it.prioridad as "alta" | "media" | "baja") ?? "media"}
+          tareasIniciales={it.tareas_estimacion.map((t) => ({
+            id: t.id,
+            orden: t.orden,
+            nombre_limpio: t.nombre_limpio ?? t.nombre_original,
+            descripcion_limpia: t.descripcion_limpia,
+            hrs_min: t.hrs_min,
+            hrs_max: t.hrs_max,
+          }))}
+          iaRecomendacion={it.ia_recomendacion}
+        />
+      )}
+      {it.tipo_precio !== "fijo" && !etapaTemprana && (
+        <CotizacionEditor cotizacion={editorData} />
+      )}
 
       {/* 4. Horas a enviar — solo para tipo horas */}
       {it.tipo_precio !== "fijo" && (
@@ -422,37 +498,23 @@ export default async function CotizacionDetallePage({
           />
         ))}
 
-      {/* 5. Contexto Sherlyn */}
-      <InlineTextEditor
-        cotizacionId={it.id}
-        field="contexto_sherlyn"
-        label="Contexto para Sherlyn"
-        initialValue={it.contexto_sherlyn}
-        rows={4}
-        placeholder="1-2 párrafos explicando el alcance a Sherlyn para que mande al cliente."
-        iaTipo="sherlyn"
-        iaContexto={
-          it.tipo_precio === "fijo"
-            ? `Cotización: ${it.nombre} · Monto: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN`
-            : `Cotización: ${it.nombre} · Horas: ${it.horas_min}–${it.horas_max}h · Programador: ${it.programadores?.nombre ?? "—"}`
-        }
-      />
-
-      {/* 6. Borrador correo */}
-      <InlineTextEditor
-        cotizacionId={it.id}
-        field="borrador_correo"
-        label="Borrador de correo al cliente"
-        initialValue={it.borrador_correo}
-        rows={8}
-        placeholder="Cuerpo del correo que Sherlyn mandará al cliente."
-        iaTipo="correo"
-        iaContexto={
-          it.tipo_precio === "fijo"
-            ? `Cotización: ${it.nombre} · Monto total: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN`
-            : `Cotización: ${it.nombre} · Horas: ${it.horas_min}–${it.horas_max}h`
-        }
-      />
+      {/* 6. Borrador correo — no aplica en etapa temprana */}
+      {!etapaTemprana && (
+        <InlineTextEditor
+          cotizacionId={it.id}
+          field="borrador_correo"
+          label="Borrador de correo al cliente"
+          initialValue={it.borrador_correo}
+          rows={8}
+          placeholder="Cuerpo del correo que Sherlyn mandará al cliente."
+          iaTipo="correo"
+          iaContexto={
+            it.tipo_precio === "fijo"
+              ? `Cotización: ${it.nombre} · Monto total: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN`
+              : `Cotización: ${it.nombre} · Horas: ${it.horas_min}–${it.horas_max}h`
+          }
+        />
+      )}
 
       {/* 7. Mensaje al jefe (Slack) — editable + IA */}
       <SlackMessageEditor

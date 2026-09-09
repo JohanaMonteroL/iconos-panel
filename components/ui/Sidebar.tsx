@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import {
   Home,
   FileText,
-  Inbox,
   Menu,
   X,
   Settings,
@@ -18,13 +17,10 @@ import {
 import LogoutButton from "./LogoutButton";
 
 const items = [
-  { href: "/panel", label: "Inicio", icon: Home, badgeKey: null as null | "estimaciones" },
-  { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText, badgeKey: null },
-  { href: "/panel/estimaciones", label: "Estimaciones", icon: Inbox, badgeKey: "estimaciones" as const },
-  { href: "/panel/settings", label: "Settings", icon: Settings, badgeKey: null },
+  { href: "/panel", label: "Inicio", icon: Home },
+  { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText },
+  { href: "/panel/settings", label: "Settings", icon: Settings },
 ];
-
-type Badges = { estimaciones: number };
 
 const SIDEBAR_W_KEY = "sidebar-collapsed";
 const SIDEBAR_EXPANDED = "240px";
@@ -32,20 +28,17 @@ const SIDEBAR_COLLAPSED = "68px";
 
 function NavList({
   pathname,
-  badges,
   collapsed,
   onNavigate,
 }: {
   pathname: string;
-  badges: Badges;
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   return (
     <nav className="flex flex-col gap-1">
-      {items.map(({ href, label, icon: Icon, badgeKey }) => {
+      {items.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || (href !== "/panel" && pathname.startsWith(href));
-        const count = badgeKey ? badges[badgeKey] : 0;
         return (
           <Link
             key={href}
@@ -56,29 +49,7 @@ function NavList({
             style={collapsed ? { justifyContent: "center", paddingLeft: 0, paddingRight: 0 } : undefined}
           >
             <Icon size={17} strokeWidth={1.7} style={{ opacity: 0.9, flexShrink: 0 }} />
-            {!collapsed && (
-              <>
-                <span className="flex-1">{label}</span>
-                {count > 0 && (
-                  <span
-                    className="num-tabular"
-                    style={{
-                      background: "var(--accent)",
-                      color: "white",
-                      padding: "1px 7px",
-                      borderRadius: 999,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      lineHeight: "16px",
-                      minWidth: 18,
-                      textAlign: "center",
-                    }}
-                  >
-                    {count > 99 ? "99+" : count}
-                  </span>
-                )}
-              </>
-            )}
+            {!collapsed && <span className="flex-1">{label}</span>}
           </Link>
         );
       })}
@@ -86,7 +57,7 @@ function NavList({
   );
 }
 
-export default function Sidebar({ badges }: { badges: Badges }) {
+export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -165,7 +136,7 @@ export default function Sidebar({ badges }: { badges: Badges }) {
               <Search size={15} strokeWidth={2} style={{ color: "var(--text-tertiary)" }} />
               <span className="text-caption text-text-tertiary flex-1">Buscar cliente, folio…</span>
             </div>
-            <NavList pathname={pathname} badges={badges} onNavigate={() => setOpen(false)} />
+            <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
             <div className="pt-4 border-t" style={{ borderColor: "var(--border-subtle)" }}>
               <LogoutButton />
             </div>
@@ -278,7 +249,7 @@ export default function Sidebar({ badges }: { badges: Badges }) {
             <div className="px-4 pt-4 pb-1.5 text-overline text-text-tertiary">Operación</div>
           )}
           <div className="px-3 pb-3">
-            <NavList pathname={pathname} badges={badges} collapsed={collapsed} />
+            <NavList pathname={pathname} collapsed={collapsed} />
           </div>
         </div>
 

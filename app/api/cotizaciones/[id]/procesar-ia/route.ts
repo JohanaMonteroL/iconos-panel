@@ -119,7 +119,6 @@ export async function POST(
 
   revalidatePath(`/panel/cotizaciones/${params.id}`);
   revalidatePath("/panel/cotizaciones");
-  revalidatePath("/panel/estimaciones");
 
   return NextResponse.json({ ok: true, datos_limpios: limpia });
 }

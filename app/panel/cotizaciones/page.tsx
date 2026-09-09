@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { Clock, ExternalLink, Plus, DollarSign, User } from "lucide-react";
+import { Clock, ExternalLink, DollarSign, User } from "lucide-react";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import VistaToggle from "@/components/ui/VistaToggle";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { labelEstado, badgeEstado, ORDEN_FLUJO_COTIZACION } from "@/lib/estados";
 import FiltrosCotizaciones from "./FiltrosCotizaciones";
+import CrearMenu from "./CrearMenu";
 
 type Vista = "lista" | "cuadricula" | "board";
 
@@ -226,10 +227,7 @@ export default async function CotizacionesPage({
         <div className="flex items-center gap-3 flex-wrap">
           <VistaToggle vista={vista} />
           <AutoRefresh intervalSeconds={15} />
-          <Link href="/panel/cotizaciones/nueva" className="btn-primary">
-            <Plus size={16} strokeWidth={1.75} />
-            <span>Cotización rápida</span>
-          </Link>
+          <CrearMenu />
         </div>
       </header>
 

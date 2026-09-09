@@ -56,6 +56,5 @@ export async function DELETE(
   }
 
   revalidatePath("/panel/cotizaciones");
-  revalidatePath("/panel/estimaciones");
   return NextResponse.json({ ok: true });
 }

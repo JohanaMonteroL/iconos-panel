@@ -69,7 +69,7 @@ export default async function PanelHome() {
             Sin archivar
           </div>
         </Link>
-        <Link href="/panel/estimaciones" className="card card-hover" style={{ display: "block" }}>
+        <Link href="/panel/cotizaciones?vista=board" className="card card-hover" style={{ display: "block" }}>
           <div className="flex items-center gap-2">
             <span
               className="grid place-items-center flex-shrink-0"
@@ -107,8 +107,8 @@ export default async function PanelHome() {
           <Link href="/panel/cotizaciones" className="btn-secondary">
             Ver cotizaciones
           </Link>
-          <Link href="/panel/estimaciones" className="btn-secondary">
-            Estimaciones recibidas
+          <Link href="/panel/cotizaciones?vista=board" className="btn-secondary">
+            Ver pendientes
           </Link>
         </div>
       </section>

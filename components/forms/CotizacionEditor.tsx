@@ -56,7 +56,6 @@ export default function CotizacionEditor({ cotizacion }: Props) {
   const router = useRouter();
 
   const [editing, setEditing] = useState(false);
-  const [nombre, setNombre] = useState(cotizacion.nombre);
   const [tareas, setTareas] = useState<CotizacionTarea[]>(cotizacion.tareas);
   const [comentario, setComentario] = useState("");
 
@@ -72,7 +71,6 @@ export default function CotizacionEditor({ cotizacion }: Props) {
 
   const cancelar = () => {
     setEditing(false);
-    setNombre(cotizacion.nombre);
     setTareas(cotizacion.tareas);
     setComentario("");
     setError(null);
@@ -88,7 +86,6 @@ export default function CotizacionEditor({ cotizacion }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nombre: nombre.trim(),
           // Horas vienen de la suma de las tareas. El rango y el buffer se
           // editan en cards aparte (HorasEnvioCotizacion).
           horas_min: totalMin,
@@ -145,22 +142,14 @@ export default function CotizacionEditor({ cotizacion }: Props) {
   if (!editing) {
     return (
       <>
-        <section className="card space-y-3">
+        <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-heading-2">Detalle</h2>
+            <h2 className="text-heading-2">Tareas ({cotizacion.tareas.length})</h2>
             <button onClick={() => setEditing(true)} className="btn-secondary btn-sm">
               <Edit3 size={14} strokeWidth={1.75} />
               <span>Editar</span>
             </button>
           </div>
-          <div>
-            <div className="text-overline text-text-tertiary mb-1">Nombre</div>
-            <div className="text-body-medium">{cotizacion.nombre}</div>
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-heading-2">Tareas ({cotizacion.tareas.length})</h2>
           <ul className="space-y-3">
             {cotizacion.tareas.map((t) => (
               <li key={t.id ?? t.orden} className="card card-tight space-y-2">
@@ -189,27 +178,15 @@ export default function CotizacionEditor({ cotizacion }: Props) {
   // ── Vista de edición ───────────────────────────────────────────────────
   return (
     <>
-      <section className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-heading-2">Editando cotización</h2>
-          <span className="badge badge-warning">Sin guardar</span>
-        </div>
-        <div>
-          <label className="field-label">Nombre</label>
-          <input
-            className="input"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-          />
-        </div>
-      </section>
-
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-heading-2">Tareas ({tareas.length})</h2>
-          <span className="text-caption text-text-secondary num-tabular">
-            Total: {totalMin}–{totalMax} h
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="badge badge-warning">Sin guardar</span>
+            <span className="text-caption text-text-secondary num-tabular">
+              Total: {totalMin}–{totalMax} h
+            </span>
+          </div>
         </div>
         <ul className="space-y-3">
           {tareas.map((t, i) => (

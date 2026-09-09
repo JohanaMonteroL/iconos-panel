@@ -85,8 +85,8 @@ export const ORDEN_FLUJO_COTIZACION: EstadoCotizacion[] = [
   "archivada",
 ];
 
-// Estados que cuentan como "estimación por revisar" (badge del sidebar,
-// dashboard, y la vista angosta /panel/estimaciones).
+// Estados que cuentan como "estimación por revisar" (badge/campanita del
+// header y contador del dashboard).
 export const ESTADOS_ESTIMACION_ACTIVA: EstadoCotizacion[] = [
   "por_estimar",
   "pendiente_revision_interna",

@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
   const canalEntrada = body?.canal_entrada
     ? String(body.canal_entrada)
     : "otro";
+  const prioridad = ["alta", "media", "baja"].includes(String(body?.prioridad))
+    ? String(body.prioridad)
+    : "media";
 
   const supa = createSupabaseServiceClient();
 
@@ -57,6 +60,7 @@ export async function POST(req: NextRequest) {
       proyecto_clickup_id: proyectoClickupId,
       proyecto_nombre: proyectoNombre,
       programador_id: programadorId,
+      prioridad,
       estado: "por_estimar",
     })
     .select("id")
@@ -75,7 +79,6 @@ export async function POST(req: NextRequest) {
     metadata: { canal_entrada: canalEntrada },
   });
 
-  revalidatePath("/panel/estimaciones");
   revalidatePath("/panel/cotizaciones");
   revalidatePath("/panel");
 

@@ -30,7 +30,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen">
-      <Sidebar badges={{ estimaciones: estimacionesPendientes }} />
+      <Sidebar />
       <AppBadgeSync count={estimacionesPendientes} />
       <main
         className="min-h-screen md:pl-[var(--sidebar-w,240px)]"

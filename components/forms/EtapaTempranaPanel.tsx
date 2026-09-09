@@ -2,41 +2,30 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, RefreshCcw, ArrowRight } from "lucide-react";
-import Markdown from "@/components/ui/Markdown";
-import BufferEditor from "@/components/forms/BufferEditor";
+import { ArrowRight, FileEdit, CheckCheck } from "lucide-react";
 import { aplicarBuffer, totalesPERT } from "@/lib/pert";
 
 type Props = {
   cotizacionId: string;
   bufferPct: number;
-  iaRecomendacion: string | null;
   horasMin: number;
   horasMax: number;
-  tareasCount: number;
 };
 
 /**
  * Panel de "etapa temprana" — visible mientras la cotización está en
- * por_estimar / pendiente_revision_interna. Reemplaza al viejo flujo de
- * RevisionIA (estimaciones_formulario): procesa con IA (misma lógica de
- * procesarEstimacion, ahora sobre cotizaciones/tareas_estimacion) y encadena
- * "Enviar a aprobación" (cambiar-estado + reenviar-slack, ya existentes).
- * El resto (editar nombre/tareas, precio de venta, horas a enviar, mensaje
- * de Slack) ya se muestra en las cards normales de la página de detalle —
- * funcionan igual antes y después de procesar con IA.
+ * por_estimar / pendiente_revision_interna. Acciones para arrancar el flujo
+ * de aprobación (o saltárselo) + el editor de buffer. El procesado con IA y
+ * las tareas viven en CotizacionEditor (sección Tareas), más abajo.
  */
 export default function EtapaTempranaPanel({
   cotizacionId,
   bufferPct,
-  iaRecomendacion,
   horasMin,
   horasMax,
-  tareasCount,
 }: Props) {
   const router = useRouter();
-  const [procesando, setProcesando] = useState(false);
-  const [enviando, setEnviando] = useState(false);
+  const [loading, setLoading] = useState<"enviar" | "aprobada" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const totales = useMemo(
@@ -48,40 +37,21 @@ export default function EtapaTempranaPanel({
     [totales, bufferPct]
   );
 
-  const procesar = async () => {
-    setProcesando(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/cotizaciones/${cotizacionId}/procesar-ia`, {
-        method: "POST",
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Error procesando con IA");
-        return;
-      }
-      router.refresh();
-    } catch {
-      setError("Error de red");
-    } finally {
-      setProcesando(false);
-    }
+  const cambiarAEsperandoAprobacion = async () => {
+    const r = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "esperando_aprobacion" }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "No se pudo cambiar el estado");
   };
 
   const enviarAAprobacion = async () => {
-    setEnviando(true);
+    setLoading("enviar");
     setError(null);
     try {
-      const r1 = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estado: "esperando_aprobacion" }),
-      });
-      const j1 = await r1.json();
-      if (!r1.ok) {
-        setError(j1.error || "No se pudo cambiar el estado");
-        return;
-      }
+      await cambiarAEsperandoAprobacion();
       const r2 = await fetch(`/api/cotizaciones/${cotizacionId}/reenviar-slack`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,15 +61,36 @@ export default function EtapaTempranaPanel({
       if (!r2.ok) {
         setError(
           j2.error ||
-            "El estado cambió, pero no se pudo enviar el mensaje a Slack. Usa \"Reenviar Slack\" abajo."
+            'El estado cambió, pero no se pudo enviar el mensaje a Slack. Usa "Reenviar Slack" en Acciones.'
         );
         return;
       }
       router.refresh();
-    } catch {
-      setError("Error de red");
+    } catch (e: any) {
+      setError(e?.message || "Error de red");
     } finally {
-      setEnviando(false);
+      setLoading(null);
+    }
+  };
+
+  const crearComoAprobada = async () => {
+    setLoading("aprobada");
+    setError(null);
+    try {
+      await cambiarAEsperandoAprobacion();
+      const r2 = await fetch(`/api/cotizaciones/${cotizacionId}/aprobar-interno`, {
+        method: "POST",
+      });
+      const j2 = await r2.json();
+      if (!r2.ok) {
+        setError(j2.error || "No se pudo marcar el visto bueno interno");
+        return;
+      }
+      router.refresh();
+    } catch (e: any) {
+      setError(e?.message || "Error de red");
+    } finally {
+      setLoading(null);
     }
   };
 
@@ -113,21 +104,6 @@ export default function EtapaTempranaPanel({
           <h2 className="text-heading-2">Etapa temprana</h2>
           <span className="badge badge-warning">Aún no enviada a aprobación</span>
         </div>
-
-        {iaRecomendacion ? (
-          <div className="mb-4">
-            <div className="text-overline text-text-tertiary mb-2">
-              Recomendación IA
-            </div>
-            <Markdown text={iaRecomendacion} className="text-body text-text-primary" />
-          </div>
-        ) : (
-          <p className="text-body text-text-secondary mb-4">
-            Claude puede limpiar el texto de las tareas, sugerir si las horas
-            son adecuadas y generar borradores para Sherlyn y para el
-            cliente. Puedes editar las tareas antes o después de procesar.
-          </p>
-        )}
 
         {bufferPct > 0 && (
           <div
@@ -148,46 +124,34 @@ export default function EtapaTempranaPanel({
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={procesar}
-            disabled={procesando || tareasCount === 0}
-            className={iaRecomendacion ? "btn-secondary" : "btn-primary"}
-            title={tareasCount === 0 ? "Agrega tareas primero" : undefined}
-          >
-            {iaRecomendacion ? (
-              <RefreshCcw size={16} strokeWidth={1.75} />
-            ) : (
-              <Sparkles size={16} strokeWidth={1.75} />
-            )}
-            <span>
-              {procesando
-                ? "Procesando…"
-                : iaRecomendacion
-                ? "Reprocesar con IA"
-                : "Procesar con IA"}
-            </span>
-          </button>
-
-          <button
-            type="button"
             onClick={enviarAAprobacion}
-            disabled={enviando || !iaRecomendacion}
+            disabled={loading !== null}
             className="btn-primary"
-            title={
-              !iaRecomendacion
-                ? "Procesa con IA antes de enviar a aprobación"
-                : undefined
-            }
           >
             <ArrowRight size={16} strokeWidth={1.75} />
-            <span>{enviando ? "Enviando…" : "Enviar a aprobación"}</span>
+            <span>{loading === "enviar" ? "Enviando…" : "Enviar a aprobación"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/panel/cotizaciones")}
+            disabled={loading !== null}
+            className="btn-secondary"
+          >
+            <FileEdit size={16} strokeWidth={1.75} />
+            <span>Solo guardar como borrador</span>
+          </button>
+          <button
+            type="button"
+            onClick={crearComoAprobada}
+            disabled={loading !== null}
+            className="btn-ghost"
+            title="Salta la notificación de Slack — la marca como si Iván ya la hubiera aprobado."
+          >
+            <CheckCheck size={16} strokeWidth={1.75} />
+            <span>{loading === "aprobada" ? "Marcando…" : "Crear directamente como Aprobada"}</span>
           </button>
         </div>
       </div>
-
-      <BufferEditor
-        savePath={`/api/cotizaciones/${cotizacionId}/buffer`}
-        valorInicial={bufferPct}
-      />
     </section>
   );
 }

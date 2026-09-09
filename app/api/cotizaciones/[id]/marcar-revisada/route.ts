@@ -33,7 +33,6 @@ export async function POST(
   }
 
   revalidatePath("/panel");
-  revalidatePath("/panel/estimaciones");
   revalidatePath(`/panel/cotizaciones/${params.id}`);
   return NextResponse.json({ ok: true });
 }
