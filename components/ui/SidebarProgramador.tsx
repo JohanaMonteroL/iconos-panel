@@ -40,7 +40,7 @@ function NavList({
             onClick={onNavigate}
             className={`nav-item ${active ? "nav-item-active" : ""}`}
           >
-            <Icon size={16} strokeWidth={1.5} />
+            <Icon size={17} strokeWidth={1.7} style={{ opacity: 0.9, flexShrink: 0 }} />
             <span>{label}</span>
           </Link>
         );
@@ -71,7 +71,7 @@ function AccountActions() {
         className="nav-item"
         title="Cambiar contraseña"
       >
-        <KeyRound size={16} strokeWidth={1.5} />
+        <KeyRound size={17} strokeWidth={1.7} style={{ opacity: 0.9, flexShrink: 0 }} />
         <span>Cambiar contraseña</span>
       </Link>
       <button
@@ -80,7 +80,7 @@ function AccountActions() {
         className="nav-item text-left w-full"
         style={{ color: "var(--state-error)" }}
       >
-        <LogOut size={16} strokeWidth={1.5} />
+        <LogOut size={17} strokeWidth={1.7} style={{ opacity: 0.9, flexShrink: 0 }} />
         <span>{loggingOut ? "Saliendo…" : "Cerrar sesión"}</span>
       </button>
     </div>
@@ -161,24 +161,45 @@ export default function SidebarProgramador({
 
       {/* Sidebar (desktop) */}
       <aside
-        className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 w-60 p-4 border-r"
+        className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 w-60 border-r"
         style={{
           background: "var(--bg-surface)",
-          borderColor: "var(--border-subtle)",
+          borderColor: "var(--border-default)",
         }}
       >
-        <div className="flex items-center justify-between mb-4 px-2">
-          <Link href="/programador" className="text-heading-2 font-semibold">
-            ICONOS
+        <div
+          className="flex items-center gap-3 px-4 border-b"
+          style={{ minHeight: 68, borderColor: "var(--border-subtle)" }}
+        >
+          <Link
+            href="/programador"
+            className="grid place-items-center flex-shrink-0"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 11,
+              background: "var(--action-primary-bg)",
+              color: "var(--action-primary-text)",
+              fontWeight: 700,
+              fontSize: 14,
+              letterSpacing: "-0.5px",
+            }}
+          >
+            IC
           </Link>
+          <div className="flex-1 min-w-0">
+            <div className="text-body-medium font-semibold truncate">ICONOS</div>
+            <div className="text-caption text-text-tertiary truncate">
+              Hola, <strong className="text-text-primary">{nombre}</strong>
+            </div>
+          </div>
           <ThemeToggle />
         </div>
-        <div className="px-2 mb-4 text-caption text-text-tertiary">
-          Hola, <strong className="text-text-primary">{nombre}</strong>
+        <div className="flex-1 min-h-0 overflow-y-auto p-3">
+          <NavList pathname={pathname} />
         </div>
-        <NavList pathname={pathname} />
         <div
-          className="mt-auto pt-4 border-t"
+          className="p-3 border-t"
           style={{ borderColor: "var(--border-subtle)" }}
         >
           <AccountActions />

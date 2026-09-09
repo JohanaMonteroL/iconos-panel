@@ -18,14 +18,9 @@ export default function VistaToggle({ vista }: { vista: Vista }) {
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
-  const baseStyle = {
-    background: "var(--bg-overlay)",
-  } as const;
-
   return (
     <div
-      className="inline-flex gap-1 p-1 rounded-lg"
-      style={baseStyle}
+      className="segmented inline-flex gap-1 p-1 rounded-lg"
       role="group"
       aria-label="Cambiar vista"
     >

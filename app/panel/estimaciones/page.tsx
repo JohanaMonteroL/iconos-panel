@@ -190,10 +190,7 @@ export default async function EstimacionesPage({
         </div>
       </header>
 
-      <div
-        className="inline-flex gap-1 p-1 rounded-lg"
-        style={{ background: "var(--bg-overlay)" }}
-      >
+      <div className="segmented inline-flex gap-1 p-1 rounded-lg">
         <Link
           href="/panel/estimaciones"
           className={`btn-sm ${!filtros.archivadas ? "btn-primary" : "btn-ghost"}`}
@@ -335,7 +332,7 @@ function ListaEstimaciones({ items }: { items: Row[] }) {
 
 function CuadriculaEstimaciones({ items }: { items: Row[] }) {
   return (
-    <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
       {items.map((it) => {
         const t = totalHoras(it.datos_raw?.tareas);
         const nTareas = it.datos_raw?.tareas?.length ?? 0;
