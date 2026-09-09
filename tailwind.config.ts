@@ -28,6 +28,7 @@ const config: Config = {
         "state-warning":  "var(--state-warning)",
         "state-error":    "var(--state-error)",
         "state-info":     "var(--state-info)",
+        "accent":         "var(--accent)",
       },
       spacing: {
         // Escala de espaciado del design system (4px base)
@@ -42,12 +43,13 @@ const config: Config = {
         "space-12": "48px",
       },
       borderRadius: {
-        sm: "6px",
-        md: "8px",
-        lg: "12px",
+        sm: "7px",
+        md: "9px",
+        lg: "14px",
       },
       fontFamily: {
-        sans: ['"Google Sans Flex"', "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ['"DM Sans"', "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ['"Geist Mono"', "ui-monospace", "SFMono-Regular", "monospace"],
       },
     },
   },

@@ -228,10 +228,7 @@ export default async function CotizacionesPage({
         </div>
       </header>
 
-      <div
-        className="inline-flex gap-1 p-1 rounded-lg"
-        style={{ background: "var(--bg-overlay)" }}
-      >
+      <div className="segmented inline-flex gap-1 p-1 rounded-lg">
         <Link
           href={`/panel/cotizaciones${searchParams.q ? `?q=${searchParams.q}` : ""}`}
           className={`btn-sm ${!filtros.archivadas ? "btn-primary" : "btn-ghost"}`}
@@ -279,18 +276,18 @@ export default async function CotizacionesPage({
 function ListaCotizaciones({ items }: { items: Row[] }) {
   return (
     <ul
-      className="rounded-[12px] overflow-hidden border"
+      className="rounded-[14px] overflow-hidden border"
       style={{
         background: "var(--bg-elevated)",
-        borderColor: "var(--border-subtle)",
+        borderColor: "var(--border-default)",
       }}
     >
       {/* Header (desktop) */}
       <li
-        className="hidden md:grid md:grid-cols-[1fr_160px_160px_120px_110px_36px] gap-3 px-5 py-2 text-overline text-text-tertiary"
+        className="hidden md:grid md:grid-cols-[1fr_160px_160px_120px_110px_36px] gap-3 px-4 py-2.5 text-overline text-text-tertiary"
         style={{
           background: "var(--bg-surface)",
-          borderBottom: "1px solid var(--border-subtle)",
+          borderBottom: "1px solid var(--border-faint)",
         }}
       >
         <div>Nombre</div>
@@ -306,7 +303,7 @@ function ListaCotizaciones({ items }: { items: Row[] }) {
           <li
             key={it.id}
             style={{
-              borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
+              borderTop: i === 0 ? "none" : "1px solid var(--border-faint)",
             }}
           >
             <Link
@@ -385,14 +382,14 @@ function ListaCotizaciones({ items }: { items: Row[] }) {
 
 function CuadriculaCotizaciones({ items }: { items: Row[] }) {
   return (
-    <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
       {items.map((it) => {
         const fijo = it.tipo_precio === "fijo";
         return (
           <li key={it.id}>
             <Link
               href={`/panel/cotizaciones/${it.id}`}
-              className="card hover:border-border-strong transition-colors space-y-3 block"
+              className="card card-hover space-y-3 block"
             >
               <div className="flex items-start justify-between gap-3">
                 <h2 className="text-body-medium text-text-primary break-words flex-1 min-w-0">

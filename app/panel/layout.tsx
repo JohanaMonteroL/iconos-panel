@@ -1,4 +1,5 @@
 import Sidebar from "@/components/ui/Sidebar";
+import PanelHeader from "@/components/ui/PanelHeader";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import AppBadgeSync from "@/components/ui/AppBadgeSync";
 
@@ -39,8 +40,12 @@ export default async function PanelLayout({ children }: { children: React.ReactN
     <div className="min-h-screen">
       <Sidebar badges={{ estimaciones: estimacionesPendientes }} />
       <AppBadgeSync count={estimacionesPendientes} />
-      <main className="md:pl-60 min-h-screen">
-        <div className="container-app py-10 lg:py-12 space-y-8">{children}</div>
+      <main
+        className="min-h-screen md:pl-[var(--sidebar-w,240px)]"
+        style={{ transition: "padding-left 260ms cubic-bezier(.4,0,.2,1)" }}
+      >
+        <PanelHeader badgeCount={estimacionesPendientes} />
+        <div className="container-panel py-8 lg:py-10 space-y-8">{children}</div>
       </main>
     </div>
   );

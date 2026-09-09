@@ -53,35 +53,55 @@ export default async function PanelHome() {
       </header>
 
       {/* Métricas */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link
-          href="/panel/cotizaciones"
-          className="card hover:border-border-strong transition-colors"
-          style={{ display: "block" }}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-overline text-text-tertiary">Cotizaciones activas</div>
-              <div className="mt-2 num-tabular" style={{ fontSize: 36, fontWeight: 600, lineHeight: 1 }}>
-                {cotizacionesActivas}
-              </div>
-            </div>
-            <FileText size={20} strokeWidth={1.5} className="text-text-tertiary" />
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+        <Link href="/panel/cotizaciones" className="card card-hover" style={{ display: "block" }}>
+          <div className="flex items-center gap-2">
+            <span
+              className="grid place-items-center flex-shrink-0"
+              style={{ width: 27, height: 27, borderRadius: "50%", background: "#DBEAFE", color: "#1D4ED8" }}
+            >
+              <FileText size={13.5} strokeWidth={1.9} />
+            </span>
+            <span className="text-caption" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+              Cotizaciones activas
+            </span>
+          </div>
+          <div
+            className="num-tabular"
+            style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-1.1px", lineHeight: 1.1, marginTop: 13 }}
+          >
+            {cotizacionesActivas}
+          </div>
+          <div
+            className="text-caption"
+            style={{ color: "var(--text-tertiary)", marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}
+          >
+            Sin archivar
           </div>
         </Link>
-        <Link
-          href="/panel/estimaciones"
-          className="card hover:border-border-strong transition-colors"
-          style={{ display: "block" }}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-overline text-text-tertiary">Estimaciones por revisar</div>
-              <div className="mt-2 num-tabular" style={{ fontSize: 36, fontWeight: 600, lineHeight: 1 }}>
-                {pendientes}
-              </div>
-            </div>
-            <Inbox size={20} strokeWidth={1.5} className="text-text-tertiary" />
+        <Link href="/panel/estimaciones" className="card card-hover" style={{ display: "block" }}>
+          <div className="flex items-center gap-2">
+            <span
+              className="grid place-items-center flex-shrink-0"
+              style={{ width: 27, height: 27, borderRadius: "50%", background: "#FEF3C7", color: "#B45309" }}
+            >
+              <Inbox size={13.5} strokeWidth={1.9} />
+            </span>
+            <span className="text-caption" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+              Estimaciones por revisar
+            </span>
+          </div>
+          <div
+            className="num-tabular"
+            style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-1.1px", lineHeight: 1.1, marginTop: 13 }}
+          >
+            {pendientes}
+          </div>
+          <div
+            className="text-caption"
+            style={{ color: "var(--text-tertiary)", marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}
+          >
+            Sin cotización asignada
           </div>
         </Link>
       </section>

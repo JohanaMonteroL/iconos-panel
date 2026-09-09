@@ -173,7 +173,7 @@ export default async function MisEstimacionesPage({
           </Link>
         </div>
       ) : (
-        <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
           {estimaciones.map((it) => {
             const totalOrig = totalHorasOriginal(it.datos_raw?.tareas);
             const numTareas = it.datos_raw?.tareas?.length ?? 0;

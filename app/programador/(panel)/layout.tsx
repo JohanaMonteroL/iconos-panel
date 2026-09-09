@@ -17,7 +17,7 @@ export default async function PanelProgramadorLayout({
     <div className="min-h-screen">
       <SidebarProgramador nombre={p.nombre} />
       <main className="md:pl-60 min-h-screen">
-        <div className="container-app py-10 lg:py-12 space-y-8">{children}</div>
+        <div className="container-panel py-8 lg:py-10 space-y-8">{children}</div>
       </main>
     </div>
   );
