@@ -74,6 +74,11 @@ export async function POST(
     );
   }
   const file = files[0];
+  const nombreDocumento = form.get("nombre_documento");
+  const pdfTitulo =
+    typeof nombreDocumento === "string" && nombreDocumento.trim()
+      ? nombreDocumento.trim().slice(0, 200)
+      : null;
 
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "El PDF excede 15 MB" }, { status: 422 });
@@ -115,18 +120,31 @@ export async function POST(
   }
 
   const envioFecha = new Date().toISOString();
-  const { error: updErr } = await supa
+  const datosEnvio: Record<string, unknown> = {
+    envio_pdf_path: path,
+    envio_pdf_nombre_original: file.name || "cotizacion.pdf",
+    envio_pdf_titulo: pdfTitulo,
+    envio_horas_totales: horasTotales,
+    envio_costo_aproximado: costoAproximado,
+    envio_estimado_por: programador?.nombre ?? null,
+    envio_fecha: envioFecha,
+    estado: "enviada",
+  };
+
+  let { error: updErr } = await supa
     .from("cotizaciones")
-    .update({
-      envio_pdf_path: path,
-      envio_pdf_nombre_original: file.name || "cotizacion.pdf",
-      envio_horas_totales: horasTotales,
-      envio_costo_aproximado: costoAproximado,
-      envio_estimado_por: programador?.nombre ?? null,
-      envio_fecha: envioFecha,
-      estado: "enviada",
-    })
+    .update(datosEnvio)
     .eq("id", params.id);
+
+  // La columna envio_pdf_titulo puede no existir todavía si la migración
+  // 0019 no se ha corrido — reintenta sin ella para no bloquear el envío.
+  if (updErr && /envio_pdf_titulo/i.test(updErr.message)) {
+    const { envio_pdf_titulo, ...sinTitulo } = datosEnvio;
+    ({ error: updErr } = await supa
+      .from("cotizaciones")
+      .update(sinTitulo)
+      .eq("id", params.id));
+  }
 
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });

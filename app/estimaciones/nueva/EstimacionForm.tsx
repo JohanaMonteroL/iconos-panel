@@ -14,6 +14,7 @@ import {
   Clock,
   CheckCheck,
   Folder,
+  RefreshCcw,
 } from "lucide-react";
 import TareasTabla, { TareaRow, filaVacia } from "@/components/forms/TareasTabla";
 import ProyectoSearch from "@/components/forms/ProyectoSearch";
@@ -24,6 +25,17 @@ import EnviarPdfModal from "@/components/forms/EnviarPdfModal";
 import Modal from "@/components/ui/Modal";
 import Markdown from "@/components/ui/Markdown";
 import { totalesPERT, aplicarBuffer } from "@/lib/pert";
+import {
+  CotizacionAcciones,
+  CotizacionLog,
+} from "@/components/forms/CotizacionEditor";
+import EnvioDetalle from "@/components/forms/EnvioDetalle";
+import InlineTextEditor from "@/components/forms/InlineTextEditor";
+import SlackMessageEditor from "@/components/forms/SlackMessageEditor";
+import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
+import ConceptosCotizacionCard from "@/components/forms/ConceptosCotizacionCard";
+import MontoFijoEditor from "@/components/forms/MontoFijoEditor";
+import type { Concepto } from "@/components/forms/ConceptosEditor";
 
 type Programador = { id: string; nombre: string; precio_hora?: number };
 type Proyecto = {
@@ -34,6 +46,58 @@ type Proyecto = {
 };
 type Prioridad = "alta" | "media" | "baja";
 type HorasEnvioTipo = "min" | "pert" | "max" | "custom";
+
+// ─── Shape de una cotización existente, para el modo edición ─────────────
+
+export type ExistenteTarea = {
+  id?: string;
+  orden: number;
+  nombre_limpio: string;
+  descripcion_limpia: string | null;
+  hrs_min: number;
+  hrs_max: number;
+};
+
+export type ExistenteAccion = {
+  id: string;
+  tipo_accion: string;
+  metadata: Record<string, any> | null;
+  created_at: string;
+};
+
+export type ExistenteCotizacion = {
+  id: string;
+  estado: string;
+  tipoPrecio: "horas" | "fijo";
+  nombre: string;
+  programadorId: string | null;
+  programadorNombre: string | null;
+  precioHoraInterno: number;
+  proyectoId: string | null;
+  proyectoNombre: string | null;
+  prioridad: "alta" | "media" | "baja" | null;
+  notasProgramador: string | null;
+  bufferPorcentaje: number;
+  horasMin: number;
+  horasMax: number;
+  horasEnvio: number | null;
+  tareas: ExistenteTarea[];
+  iaRecomendacion: string | null;
+  borradorCorreo: string | null;
+  precioVentaHora: number | null;
+  montoFijo: number | null;
+  conceptos: Concepto[];
+  envioPdfPath: string | null;
+  envioPdfNombreOriginal: string | null;
+  envioPdfTitulo: string | null;
+  envioHorasTotales: number | null;
+  envioCostoAproximado: number | null;
+  envioEstimadoPor: string | null;
+  envioFecha: string | null;
+  pdfUrl: string | null;
+  slackText: string;
+  acciones: ExistenteAccion[];
+};
 
 const PRIORIDADES: { value: Prioridad; label: string }[] = [
   { value: "baja", label: "Baja" },
@@ -86,6 +150,49 @@ function fmtMoneda(n: number, moneda: string): string {
   }
 }
 
+function tareasAFilas(tareas: ExistenteTarea[]): TareaRow[] {
+  return tareas.map((t) => ({
+    nombre: t.nombre_limpio,
+    descripcion: t.descripcion_limpia ?? "",
+    hrs_min: String(t.hrs_min ?? ""),
+    hrs_max: String(t.hrs_max ?? ""),
+  }));
+}
+
+function inferirTipoHorasEnvio(
+  horasMin: number,
+  horasMax: number,
+  horasEnvio: number | null
+): HorasEnvioTipo {
+  if (horasEnvio == null) return "pert";
+  const pert = Math.round(((horasMin + horasMax) / 2) * 10) / 10;
+  if (horasEnvio === horasMin) return "min";
+  if (horasEnvio === horasMax) return "max";
+  if (Math.abs(horasEnvio - pert) < 0.05) return "pert";
+  return "custom";
+}
+
+type Msg = { tipo: "ok" | "warn" | "err"; texto: string } | null;
+
+function MsgLine({ msg }: { msg: Msg }) {
+  if (!msg) return null;
+  return (
+    <p
+      className="text-caption"
+      style={{
+        color:
+          msg.tipo === "ok"
+            ? "var(--state-success)"
+            : msg.tipo === "warn"
+            ? "var(--state-warning)"
+            : "var(--state-error)",
+      }}
+    >
+      {msg.tipo === "ok" ? "✓" : "⚠"} {msg.texto}
+    </p>
+  );
+}
+
 type Props = {
   programadores: Programador[];
   proyectos?: Proyecto[];
@@ -94,23 +201,58 @@ type Props = {
   // guarda directo sin notificar a nadie — sin la pantalla de "enviada"
   // pensada para el programador.
   modoAdmin?: boolean;
+  // Cuando se manda, el formulario entra en modo EDICIÓN sobre una
+  // cotización real ya existente (cualquiera de los 12 estados, horas o
+  // fijo) en vez de modo creación. Cada sección guarda de forma
+  // independiente contra su endpoint correspondiente.
+  existente?: ExistenteCotizacion;
 };
 
-export default function EstimacionForm({ programadores, proyectos = [], modoAdmin = false }: Props) {
+export default function EstimacionForm({
+  programadores,
+  proyectos = [],
+  modoAdmin = false,
+  existente,
+}: Props) {
   const router = useRouter();
+  const esFijo = existente?.tipoPrecio === "fijo";
+
   // Si la lista trae un solo programador (caso portal interno donde solo
   // está el logueado), pre-seleccionarlo para evitar paso innecesario.
-  const [programadorId, setProgramadorId] = useState(
-    programadores.length === 1 ? programadores[0].id : ""
+  const [programadorId, setProgramadorId] = useState(() =>
+    existente
+      ? existente.programadorId ?? ""
+      : programadores.length === 1
+      ? programadores[0].id
+      : ""
   );
-  const [proyectoId, setProyectoId] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [notas, setNotas] = useState("");
-  const [rows, setRows] = useState<TareaRow[]>([filaVacia()]);
-  const [bufferPct, setBufferPct] = useState(0);
-  const [prioridad, setPrioridad] = useState<Prioridad>("media");
-  const [horasEnvioTipo, setHorasEnvioTipo] = useState<HorasEnvioTipo>("pert");
-  const [horasEnvioCustom, setHorasEnvioCustom] = useState("");
+  const [proyectoId, setProyectoId] = useState(() => existente?.proyectoId ?? "");
+  const [nombre, setNombre] = useState(() => existente?.nombre ?? "");
+  const [notas, setNotas] = useState(() => existente?.notasProgramador ?? "");
+  const [rows, setRows] = useState<TareaRow[]>(() =>
+    existente
+      ? existente.tareas.length > 0
+        ? tareasAFilas(existente.tareas)
+        : [filaVacia()]
+      : [filaVacia()]
+  );
+  const [bufferPct, setBufferPct] = useState(() => existente?.bufferPorcentaje ?? 0);
+  const [prioridad, setPrioridad] = useState<Prioridad>(
+    () => (existente?.prioridad as Prioridad) ?? "media"
+  );
+  const [horasEnvioTipo, setHorasEnvioTipo] = useState<HorasEnvioTipo>(() =>
+    existente
+      ? inferirTipoHorasEnvio(existente.horasMin, existente.horasMax, existente.horasEnvio)
+      : "pert"
+  );
+  const [horasEnvioCustom, setHorasEnvioCustom] = useState<string>(() =>
+    existente &&
+    inferirTipoHorasEnvio(existente.horasMin, existente.horasMax, existente.horasEnvio) ===
+      "custom" &&
+    existente.horasEnvio != null
+      ? String(existente.horasEnvio)
+      : ""
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [ok, setOk] = useState(false);
@@ -121,12 +263,29 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
   const [opinionErr, setOpinionErr] = useState<string | null>(null);
 
   // ── Admin: tabs, y las dos rutas de creación (aprobación / enviada) ──
-  const [tab, setTab] = useState<"desglose" | "documentos">("desglose");
+  type Tab = "desglose" | "documentos" | "financiero" | "comunicacion" | "historial";
+  const [tab, setTab] = useState<Tab>(() =>
+    existente ? (esFijo ? "financiero" : "desglose") : "desglose"
+  );
   const [creando, setCreando] = useState<"aprobacion" | "enviada" | null>(null);
   const [modalAprobacionAbierto, setModalAprobacionAbierto] = useState(false);
   const [slackPreview, setSlackPreview] = useState("");
   const [modalPdfAbierto, setModalPdfAbierto] = useState(false);
   const [cotizacionCreadaId, setCotizacionCreadaId] = useState<string | null>(null);
+
+  // ── Edición: guardado independiente por sección ──
+  const [savingDatosGenerales, setSavingDatosGenerales] = useState(false);
+  const [datosGeneralesMsg, setDatosGeneralesMsg] = useState<Msg>(null);
+  const [comentarioDesglose, setComentarioDesglose] = useState("");
+  const [savingDesglose, setSavingDesglose] = useState(false);
+  const [desgloseMsg, setDesgloseMsg] = useState<Msg>(null);
+  const [iaRecoLocal, setIaRecoLocal] = useState<string | null>(
+    existente?.iaRecomendacion ?? null
+  );
+  const [procesandoIA, setProcesandoIA] = useState(false);
+  const [procesarIAError, setProcesarIAError] = useState<string | null>(null);
+  const [savingHorasEnvio, setSavingHorasEnvio] = useState(false);
+  const [horasEnvioMsg, setHorasEnvioMsg] = useState<Msg>(null);
 
   const totales = useMemo(
     () =>
@@ -146,29 +305,41 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
 
   const programadorSeleccionado = programadores.find((p) => p.id === programadorId);
   const proyectoSeleccionado = proyectos.find((p) => p.id === proyectoId);
-  // El costo estimado (lo que se le cobraría al cliente) usa el precio/hora
-  // configurado en el PROYECTO, no el costo interno del estimador.
-  const precioHora = proyectoSeleccionado?.precio_hora_venta ?? 0;
+  // "Costo total estimado" = lo que cuesta internamente (horas × costo/hora
+  // del ESTIMADOR, siempre en MXN). "Precio total (horas a enviar)" = lo que
+  // se le cobra al cliente (horas × precio de venta del PROYECTO) — son dos
+  // bases distintas, cada una con su propia tarifa.
+  const precioHoraInterno = programadorSeleccionado?.precio_hora ?? 0;
+  const precioHoraVenta = proyectoSeleccionado?.precio_hora_venta ?? 0;
   const monedaHora = proyectoSeleccionado?.moneda_hora ?? "MXN";
-  const costoEstimado = Math.round(totalesConBuffer.totalEsperado * precioHora * 100) / 100;
+  const costoEstimado =
+    Math.round(totalesConBuffer.totalEsperado * precioHoraInterno * 100) / 100;
 
+  // "Horas a enviar" — en creación se basa en el borrador de tareas (aún no
+  // hay nada guardado). En edición se basa en las horas YA GUARDADAS de la
+  // cotización (igual que hacía HorasEnvioCotizacion antes), para que no se
+  // mueva con cambios sin guardar en la pestaña Desglose.
+  const horasBaseMin = existente ? existente.horasMin : totales.totalMin;
+  const horasBaseMax = existente ? existente.horasMax : totales.totalMax;
   const horasEnvioPert = useMemo(
-    () => Math.round(((totales.totalMin + totales.totalMax) / 2) * 10) / 10,
-    [totales]
+    () => Math.round(((horasBaseMin + horasBaseMax) / 2) * 10) / 10,
+    [horasBaseMin, horasBaseMax]
   );
   const horasEnvioValor = useMemo(() => {
-    if (horasEnvioTipo === "min") return totales.totalMin;
-    if (horasEnvioTipo === "max") return totales.totalMax;
+    if (horasEnvioTipo === "min") return horasBaseMin;
+    if (horasEnvioTipo === "max") return horasBaseMax;
     if (horasEnvioTipo === "pert") return horasEnvioPert;
     const n = Number(horasEnvioCustom);
     return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : 0;
-  }, [horasEnvioTipo, horasEnvioCustom, totales, horasEnvioPert]);
+  }, [horasEnvioTipo, horasEnvioCustom, horasBaseMin, horasBaseMax, horasEnvioPert]);
 
   // Precio total = horas que realmente se van a enviar (no el PERT+buffer)
   // por el precio de venta configurado en el proyecto.
-  const precioTotalEnvio = Math.round(horasEnvioValor * precioHora * 100) / 100;
+  const precioTotalEnvio = Math.round(horasEnvioValor * precioHoraVenta * 100) / 100;
 
   const tareasValidas = rows.filter((r) => r.nombre.trim() !== "");
+
+  const cotizacionIdEfectivo = existente?.id ?? cotizacionCreadaId;
 
   if (ok) {
     return (
@@ -449,9 +620,184 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
     }
   };
 
+  // ── Edición: Datos generales (estimador, proyecto, prioridad) ──
+  const datosGeneralesDirty = !!existente && (
+    programadorId !== (existente.programadorId ?? "") ||
+    proyectoId !== (existente.proyectoId ?? "") ||
+    prioridad !== ((existente.prioridad as Prioridad) ?? "media")
+  );
+
+  const guardarDatosGenerales = async () => {
+    if (!existente) return;
+    setSavingDatosGenerales(true);
+    setDatosGeneralesMsg(null);
+    try {
+      const proyecto = proyectos.find((p) => p.id === proyectoId);
+      const res = await fetch(`/api/cotizaciones/${existente.id}/editar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          programador_id: programadorId || null,
+          proyecto_clickup_id: proyectoId || null,
+          proyecto_nombre: proyecto?.nombre ?? null,
+          prioridad,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setDatosGeneralesMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
+        return;
+      }
+      setDatosGeneralesMsg({ tipo: "ok", texto: "Guardado" });
+      setTimeout(() => setDatosGeneralesMsg(null), 2500);
+      router.refresh();
+    } catch {
+      setDatosGeneralesMsg({ tipo: "err", texto: "Error de red" });
+    } finally {
+      setSavingDatosGenerales(false);
+    }
+  };
+
+  // ── Edición: Desglose (tareas, buffer, notas) — mismo payload que usaba
+  // EstimacionTempranaEditor, sin programador/proyecto/prioridad (esos ya
+  // se guardan aparte en "Datos generales"). ──
+  const guardarDesglose = async () => {
+    if (!existente) return;
+    setSavingDesglose(true);
+    setDesgloseMsg(null);
+    try {
+      const res = await fetch(`/api/cotizaciones/${existente.id}/editar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buffer_porcentaje: bufferPct,
+          notas_programador: notas.trim() || null,
+          horas_min: totales.totalMin,
+          horas_max: totales.totalMax,
+          tareas: rows.map((r, i) => ({
+            orden: i,
+            nombre_limpio: r.nombre.trim(),
+            descripcion_limpia: r.descripcion.trim() || null,
+            hrs_min: Number(r.hrs_min) || 0,
+            hrs_max: Number(r.hrs_max) || 0,
+          })),
+          comentario: comentarioDesglose.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setDesgloseMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
+        return;
+      }
+      setComentarioDesglose("");
+      setDesgloseMsg({ tipo: "ok", texto: "Guardado" });
+      setTimeout(() => setDesgloseMsg(null), 2500);
+      router.refresh();
+    } catch {
+      setDesgloseMsg({ tipo: "err", texto: "Error de red" });
+    } finally {
+      setSavingDesglose(false);
+    }
+  };
+
+  const procesarIA = async () => {
+    if (!existente) return;
+    setProcesandoIA(true);
+    setProcesarIAError(null);
+    try {
+      const res = await fetch(`/api/cotizaciones/${existente.id}/procesar-ia`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setProcesarIAError(json.error || "Error procesando con IA");
+        return;
+      }
+      const limpia = json.datos_limpios;
+      if (limpia?.tareas) {
+        setRows((prev) =>
+          prev.map((r, i) =>
+            limpia.tareas[i]
+              ? {
+                  ...r,
+                  nombre: limpia.tareas[i].nombre ?? r.nombre,
+                  descripcion: limpia.tareas[i].descripcion ?? r.descripcion,
+                }
+              : r
+          )
+        );
+      }
+      if (limpia?.recomendacion_horas) setIaRecoLocal(limpia.recomendacion_horas);
+      router.refresh();
+    } catch {
+      setProcesarIAError("Error de red");
+    } finally {
+      setProcesandoIA(false);
+    }
+  };
+
+  // ── Edición: Horas a enviar (sidebar) — misma lógica de
+  // HorasEnvioCotizacion, pero integrada en el panel lateral. ──
+  const horasEnvioDirty =
+    !!existente && horasEnvioValor !== (existente.horasEnvio ?? horasEnvioPert);
+
+  const guardarHorasEnvio = async () => {
+    if (!existente) return;
+    if (horasEnvioTipo === "custom" && (!Number(horasEnvioCustom) || Number(horasEnvioCustom) <= 0)) {
+      setHorasEnvioMsg({ tipo: "err", texto: "Pon un número válido en personalizado." });
+      return;
+    }
+    setSavingHorasEnvio(true);
+    setHorasEnvioMsg(null);
+    try {
+      const res = await fetch(`/api/cotizaciones/${existente.id}/horas-envio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: horasEnvioTipo,
+          custom: horasEnvioTipo === "custom" ? Number(horasEnvioCustom) : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setHorasEnvioMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
+        return;
+      }
+      setHorasEnvioMsg({ tipo: "ok", texto: `Horas actualizadas a ${json.horas_envio}h.` });
+      setTimeout(() => setHorasEnvioMsg(null), 3500);
+      router.refresh();
+    } catch {
+      setHorasEnvioMsg({ tipo: "err", texto: "Error de red" });
+    } finally {
+      setSavingHorasEnvio(false);
+    }
+  };
+
+  const tabsList: { value: Tab; label: string }[] = existente
+    ? esFijo
+      ? [
+          { value: "financiero", label: "Financiero" },
+          { value: "documentos", label: "Documentos" },
+          { value: "comunicacion", label: "Comunicación" },
+          { value: "historial", label: "Historial" },
+        ]
+      : [
+          { value: "desglose", label: "Desglose de estimación" },
+          { value: "documentos", label: "Documentos" },
+          { value: "financiero", label: "Financiero" },
+          { value: "comunicacion", label: "Comunicación" },
+          { value: "historial", label: "Historial" },
+        ]
+    : [
+        { value: "desglose", label: "Desglose de estimación" },
+        { value: "documentos", label: "Documentos" },
+      ];
+
+  const mostrarDesglose = !existente || !esFijo;
+
   return (
     <div className="space-y-4">
-    {modoAdmin && (
+    {modoAdmin && !existente && (
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-2">
           <h1 className="text-display">Crear estimación</h1>
@@ -491,7 +837,16 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
       </header>
     )}
 
-    {modoAdmin && errors.__form && (
+    {existente && (
+      <CotizacionAcciones
+        cotizacionId={existente.id}
+        estado={existente.estado}
+        horasEnvio={existente.horasEnvio ?? horasEnvioPert}
+        precioHora={existente.precioHoraInterno}
+      />
+    )}
+
+    {modoAdmin && !existente && errors.__form && (
       <p className="text-caption" style={{ color: "var(--state-error)" }}>
         {errors.__form}
       </p>
@@ -505,20 +860,22 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           Datos generales
         </SectionTitle>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className="field-label">Nombre de la cotización *</label>
-            <input
-              className="input"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej. Soporte pasarela de pagos Pollo Loco"
-            />
-            {errors.nombre_solicitud && (
-              <span className="field-hint" style={{ color: "var(--state-error)" }}>
-                {errors.nombre_solicitud}
-              </span>
-            )}
-          </div>
+          {!existente && (
+            <div className="md:col-span-2">
+              <label className="field-label">Nombre de la cotización *</label>
+              <input
+                className="input"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Ej. Soporte pasarela de pagos Pollo Loco"
+              />
+              {errors.nombre_solicitud && (
+                <span className="field-hint" style={{ color: "var(--state-error)" }}>
+                  {errors.nombre_solicitud}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="md:col-span-2">
             <label className="field-label">
@@ -588,21 +945,37 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
             </div>
           )}
         </div>
+
+        {existente && (
+          <div className="flex items-center justify-end gap-3 pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <MsgLine msg={datosGeneralesMsg} />
+            <button
+              type="button"
+              onClick={guardarDatosGenerales}
+              disabled={savingDatosGenerales || !datosGeneralesDirty}
+              className="btn-secondary btn-sm"
+            >
+              <Save size={14} strokeWidth={1.75} />
+              <span>
+                {savingDatosGenerales
+                  ? "Guardando…"
+                  : datosGeneralesDirty
+                  ? "Guardar datos generales"
+                  : "Sin cambios"}
+              </span>
+            </button>
+          </div>
+        )}
       </section>
 
       {modoAdmin && (
-        <div className="flex gap-1 border-b" style={{ borderColor: "var(--border-subtle)" }}>
-          {(
-            [
-              { value: "desglose", label: "Desglose de estimación" },
-              { value: "documentos", label: "Documentos" },
-            ] as const
-          ).map((t) => (
+        <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: "var(--border-subtle)" }}>
+          {tabsList.map((t) => (
             <button
               key={t.value}
               type="button"
               onClick={() => setTab(t.value)}
-              className="px-4 py-2.5 text-body-medium"
+              className="px-4 py-2.5 text-body-medium whitespace-nowrap"
               style={{
                 borderBottom: `2px solid ${tab === t.value ? "var(--accent)" : "transparent"}`,
                 color: tab === t.value ? "var(--text-primary)" : "var(--text-secondary)",
@@ -615,6 +988,7 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
         </div>
       )}
 
+      {mostrarDesglose && (
       <div hidden={modoAdmin && tab !== "desglose"} className="space-y-6">
       {/* Bloque 2: Tareas */}
       <section className="card space-y-4">
@@ -633,6 +1007,45 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           </p>
         )}
       </section>
+
+      {existente && (
+        <section
+          className="card space-y-3"
+          style={{ background: "var(--bg-surface)", borderColor: "var(--border-subtle)" }}
+        >
+          {iaRecoLocal ? (
+            <>
+              <div className="text-overline text-text-tertiary">Recomendación IA</div>
+              <Markdown text={iaRecoLocal} className="text-body text-text-primary" />
+            </>
+          ) : (
+            <p className="text-body text-text-secondary">
+              Claude puede limpiar el texto de las tareas y sugerir si las horas
+              son adecuadas. No es obligatorio para avanzar.
+            </p>
+          )}
+          {procesarIAError && (
+            <p className="text-caption" style={{ color: "var(--state-error)" }}>
+              {procesarIAError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={procesarIA}
+            disabled={procesandoIA || rows.every((r) => !r.nombre.trim())}
+            className={iaRecoLocal ? "btn-secondary btn-sm" : "btn-primary btn-sm"}
+          >
+            {iaRecoLocal ? (
+              <RefreshCcw size={14} strokeWidth={1.75} />
+            ) : (
+              <Sparkles size={14} strokeWidth={1.75} />
+            )}
+            <span>
+              {procesandoIA ? "Procesando…" : iaRecoLocal ? "Reprocesar con IA" : "Formatear con IA"}
+            </span>
+          </button>
+        </section>
+      )}
 
       {/* Bloque 3: Totales + Buffer */}
       <section className="card space-y-6">
@@ -771,7 +1184,33 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           </div>
         )}
       </section>
+
+      {existente && (
+        <section className="card space-y-3" style={{ background: "var(--bg-surface)" }}>
+          <label className="field-label">Comentario sobre estos cambios (opcional)</label>
+          <input
+            className="input"
+            value={comentarioDesglose}
+            onChange={(e) => setComentarioDesglose(e.target.value)}
+            placeholder="Ej. Cliente pidió ajustar pruebas y agregar capacitación"
+          />
+          <p className="field-hint">Queda registrado en el historial de la cotización.</p>
+          <div className="flex items-center justify-end gap-3">
+            <MsgLine msg={desgloseMsg} />
+            <button
+              type="button"
+              onClick={guardarDesglose}
+              disabled={savingDesglose}
+              className="btn-primary"
+            >
+              <Save size={16} strokeWidth={1.75} />
+              <span>{savingDesglose ? "Guardando…" : "Guardar cambios"}</span>
+            </button>
+          </div>
+        </section>
+      )}
       </div>
+      )}
 
       {modoAdmin && (
         <div hidden={tab !== "documentos"} className="space-y-6">
@@ -783,7 +1222,17 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
               Sube el PDF que se le mandó al cliente. Al subirlo, la cotización
               pasa a <strong className="text-text-primary">Enviada al cliente</strong>.
             </p>
-            {cotizacionCreadaId ? (
+            {existente?.envioPdfPath ? (
+              <EnvioDetalle
+                pdfUrl={existente.pdfUrl}
+                pdfNombreOriginal={existente.envioPdfNombreOriginal}
+                pdfTitulo={existente.envioPdfTitulo}
+                horasTotales={existente.envioHorasTotales}
+                costoAproximado={existente.envioCostoAproximado}
+                estimadoPor={existente.envioEstimadoPor}
+                fecha={existente.envioFecha}
+              />
+            ) : cotizacionIdEfectivo ? (
               <button
                 type="button"
                 onClick={() => setModalPdfAbierto(true)}
@@ -799,6 +1248,64 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
               </p>
             )}
           </section>
+        </div>
+      )}
+
+      {existente && (
+        <div hidden={tab !== "financiero"} className="space-y-6">
+          {esFijo ? (
+            existente.conceptos.length > 0 ? (
+              <ConceptosCotizacionCard
+                cotizacionId={existente.id}
+                conceptosIniciales={existente.conceptos}
+                montoTotal={existente.montoFijo ?? 0}
+              />
+            ) : (
+              <MontoFijoEditor cotizacionId={existente.id} montoActual={existente.montoFijo} />
+            )
+          ) : (
+            <AnalisisFinanciero
+              savePath={`/api/cotizaciones/${existente.id}/precio-venta`}
+              precioHoraInterno={existente.precioHoraInterno}
+              precioVentaInicial={existente.precioVentaHora}
+              horasMin={existente.horasMin}
+              horasMax={existente.horasMax}
+            />
+          )}
+        </div>
+      )}
+
+      {existente && (
+        <div hidden={tab !== "comunicacion"} className="space-y-6">
+          <InlineTextEditor
+            cotizacionId={existente.id}
+            field="borrador_correo"
+            label="Borrador de correo al cliente"
+            initialValue={existente.borradorCorreo}
+            rows={8}
+            placeholder="Cuerpo del correo que Sherlyn mandará al cliente."
+            iaTipo="correo"
+            iaContexto={
+              esFijo
+                ? `Cotización: ${existente.nombre} · Monto total: $${(existente.montoFijo ?? 0).toLocaleString("es-MX")} MXN`
+                : `Cotización: ${existente.nombre} · Horas: ${existente.horasMin}–${existente.horasMax}h`
+            }
+          />
+          <SlackMessageEditor
+            cotizacionId={existente.id}
+            slackText={existente.slackText}
+            iaContexto={
+              esFijo
+                ? `Cotización: ${existente.nombre} · Monto: $${(existente.montoFijo ?? 0).toLocaleString("es-MX")} MXN · Atendido por: ${existente.programadorNombre ?? "—"}`
+                : `Cotización: ${existente.nombre} · Horas enviadas: ${existente.horasEnvio ?? horasEnvioPert}h · Programador: ${existente.programadorNombre ?? "—"}`
+            }
+          />
+        </div>
+      )}
+
+      {existente && (
+        <div hidden={tab !== "historial"} className="space-y-6">
+          <CotizacionLog acciones={existente.acciones} />
         </div>
       )}
 
@@ -893,7 +1400,7 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
       )}
     </form>
 
-    {modoAdmin && (
+    {modoAdmin && (!existente || !esFijo) && (
       <aside className="lg:sticky lg:top-6 space-y-4">
         <div className="card space-y-4">
           <SectionTitle icon={DollarSign} bg="#EDE9FE" fg="#6D28D9">
@@ -906,12 +1413,12 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
             </div>
           </div>
           <div>
-            <div className="text-overline text-text-tertiary">Precio por hora (proyecto)</div>
+            <div className="text-overline text-text-tertiary">Costo por hora (estimador)</div>
             <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
-              {proyectoSeleccionado ? fmtMoneda(precioHora, monedaHora) : "—"}
+              {programadorSeleccionado ? fmtMoneda(precioHoraInterno, "MXN") : "—"}
             </div>
-            {!proyectoSeleccionado && (
-              <div className="text-caption text-text-tertiary">Selecciona un proyecto</div>
+            {!programadorSeleccionado && (
+              <div className="text-caption text-text-tertiary">Selecciona un estimador</div>
             )}
           </div>
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
@@ -928,11 +1435,20 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
             <div className="text-overline text-text-tertiary">Costo total estimado</div>
             <div className="mt-1 num-tabular" style={{ fontSize: 27, fontWeight: 700 }}>
-              {fmtMoneda(costoEstimado, monedaHora)}
+              {fmtMoneda(costoEstimado, "MXN")}
             </div>
             <div className="text-caption text-text-tertiary">
-              {totalesConBuffer.totalEsperado}h × {fmtMoneda(precioHora, monedaHora)}/h
+              {totalesConBuffer.totalEsperado}h × {fmtMoneda(precioHoraInterno, "MXN")}/h
             </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">Precio por hora (proyecto)</div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
+              {proyectoSeleccionado ? fmtMoneda(precioHoraVenta, monedaHora) : "—"}
+            </div>
+            {!proyectoSeleccionado && (
+              <div className="text-caption text-text-tertiary">Selecciona un proyecto</div>
+            )}
           </div>
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
             <div className="text-overline text-text-tertiary">Precio total (horas a enviar)</div>
@@ -940,11 +1456,12 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
               {fmtMoneda(precioTotalEnvio, monedaHora)}
             </div>
             <div className="text-caption text-text-tertiary">
-              {horasEnvioValor}h × {fmtMoneda(precioHora, monedaHora)}/h
+              {horasEnvioValor}h × {fmtMoneda(precioHoraVenta, monedaHora)}/h
             </div>
           </div>
 
-          {/* Notas — debajo del costo estimado, como se pidió */}
+          {/* Notas — debajo del costo estimado, como se pidió. En edición se
+              guarda junto con el resto de "Desglose de estimación". */}
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
             <label className="field-label">Notas</label>
             <textarea
@@ -954,10 +1471,16 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
               onChange={(e) => setNotas(e.target.value)}
               placeholder="Opcional — supuestos o advertencias"
             />
+            {existente && (
+              <span className="field-hint">
+                Se guarda con “Guardar cambios” en la pestaña Desglose.
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Horas a enviar — se elige desde la creación, no hasta después */}
+        {/* Horas a enviar — se elige desde la creación, o se ajusta y
+            guarda de inmediato en edición. */}
         <div className="card space-y-3">
           <SectionTitle icon={Clock} bg="#DBEAFE" fg="#1D4ED8">
             Horas a enviar
@@ -974,10 +1497,10 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
                 className={`btn-sm whitespace-nowrap ${horasEnvioTipo === t ? "btn-primary" : "btn-secondary"}`}
               >
                 {t === "min"
-                  ? `Mín · ${totales.totalMin}h`
+                  ? `Mín · ${horasBaseMin}h`
                   : t === "pert"
                   ? `PERT · ${horasEnvioPert}h`
-                  : `Máx · ${totales.totalMax}h`}
+                  : `Máx · ${horasBaseMax}h`}
               </button>
             ))}
             <button
@@ -1006,12 +1529,58 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           <div className="text-caption text-text-secondary num-tabular">
             Quedará en <strong className="text-text-primary font-semibold">{horasEnvioValor}h</strong>.
           </div>
+          {existente && (
+            <div className="flex items-center justify-end gap-3">
+              <MsgLine msg={horasEnvioMsg} />
+              <button
+                type="button"
+                onClick={guardarHorasEnvio}
+                disabled={savingHorasEnvio || !horasEnvioDirty}
+                className="btn-primary btn-sm"
+              >
+                <Save size={14} strokeWidth={1.75} />
+                <span>{savingHorasEnvio ? "Guardando…" : "Guardar horas"}</span>
+              </button>
+            </div>
+          )}
         </div>
+      </aside>
+    )}
+
+    {existente && esFijo && (
+      <aside className="lg:sticky lg:top-6 space-y-4">
+        <section className="card space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-heading-2">Resumen</h2>
+            <span className="badge badge-info">Monto fijo</span>
+          </div>
+          <div>
+            <div className="text-overline text-text-tertiary">Monto total</div>
+            <div className="mt-1 text-heading-1 num-tabular">
+              {(existente.montoFijo ?? 0).toLocaleString("es-MX", {
+                style: "currency",
+                currency: "MXN",
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              })}{" "}
+              MXN
+            </div>
+            <div className="text-caption text-text-tertiary">
+              Cotización extraordinaria, no se factura por horas.
+            </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">Atendido por</div>
+            <div className="mt-1 text-heading-1">
+              {programadorSeleccionado?.nombre ?? existente.programadorNombre ?? "—"}
+            </div>
+          </div>
+        </section>
       </aside>
     )}
     </div>
 
-    {modoAdmin && (
+    {modoAdmin && !existente && (
       <Modal
         open={modalAprobacionAbierto}
         onClose={() => !creando && setModalAprobacionAbierto(false)}
@@ -1064,15 +1633,21 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
 
     {modoAdmin && (
       <EnviarPdfModal
-        cotizacionId={cotizacionCreadaId ?? ""}
+        cotizacionId={cotizacionIdEfectivo ?? ""}
         open={modalPdfAbierto}
         onClose={() => setModalPdfAbierto(false)}
         onEnviado={() => {
           setModalPdfAbierto(false);
-          if (cotizacionCreadaId) router.push(`/panel/cotizaciones/${cotizacionCreadaId}`);
+          if (existente) {
+            router.refresh();
+          } else if (cotizacionCreadaId) {
+            router.push(`/panel/cotizaciones/${cotizacionCreadaId}`);
+          }
         }}
-        horasEnvio={horasEnvioValor}
-        precioHora={programadorSeleccionado?.precio_hora ?? 0}
+        horasEnvio={existente ? existente.horasEnvio ?? horasEnvioPert : horasEnvioValor}
+        precioHora={
+          existente ? existente.precioHoraInterno : programadorSeleccionado?.precio_hora ?? 0
+        }
       />
     )}
     </div>

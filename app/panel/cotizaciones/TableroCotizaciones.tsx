@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock, DollarSign } from "lucide-react";
-import { labelEstado, badgeEstado } from "@/lib/estados";
+import { labelEstado, colorHexEstado } from "@/lib/estados";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 
 type Row = {
@@ -32,23 +32,6 @@ function fmtMxn(n: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
-}
-
-// Color del punto de la columna, derivado de la misma clasificación que ya
-// usan los badges de estado (ver lib/estados) — sin inventar una paleta nueva.
-function dotColorForEstado(estado: string): string {
-  switch (badgeEstado(estado)) {
-    case "badge-success":
-      return "#16A34A";
-    case "badge-warning":
-      return "#B45309";
-    case "badge-danger":
-      return "#DC2626";
-    case "badge-info":
-      return "#1D4ED8";
-    default:
-      return "#A1A1AA";
-  }
 }
 
 const AVATAR_COLORS = [
@@ -198,7 +181,7 @@ export default function TableroCotizaciones({
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      background: dotColorForEstado(estado),
+                      background: colorHexEstado(estado),
                       flexShrink: 0,
                     }}
                   />

@@ -79,22 +79,6 @@ export async function createTask(input: CreateTaskInput): Promise<ClickUpTask> {
   }
 }
 
-/**
- * Resuelve el id del campo personalizado "Proyecto" en la lista Cotizaciones
- * del sprint actual. Devuelve null si no se puede resolver.
- */
-export async function getProyectoFieldId(): Promise<string | null> {
-  if (!clickUpConfigured()) return null;
-  try {
-    const listId = await resolveCotizacionesListId();
-    if (!listId) return null;
-    const { fields } = await listFields(listId);
-    return findProyectoField(fields)?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // ── Resoluciones genéricas para campos personalizados ──────────────────────
 
 /**
@@ -568,63 +552,3 @@ export async function listFields(listId: string): Promise<{ fields: ClickUpField
   return request(`/list/${listId}/field`);
 }
 
-/**
- * Devuelve las opciones del campo personalizado "Proyecto" en la lista
- * Cotizaciones del sprint actual. Si ClickUp no está configurado o no se
- * puede resolver el sprint, devuelve [].
- */
-function findProyectoField(fields: ClickUpField[]): ClickUpField | null {
-  // Permite nombres con emojis o sufijos. Ej: "🎯 Proyecto", "Proyecto", "Proyecto cliente"
-  return (
-    fields.find(
-      (f) => f.type === "drop_down" && /\bproyecto\b/i.test(f.name)
-    ) ?? null
-  );
-}
-
-export async function getProyectoOptions(): Promise<ClickUpFieldOption[]> {
-  if (!clickUpConfigured()) return [];
-  try {
-    const listId = await resolveCotizacionesListId();
-    if (!listId) return [];
-    const { fields } = await listFields(listId);
-    const proyectoField = findProyectoField(fields);
-    if (!proyectoField?.type_config?.options) return [];
-    return [...proyectoField.type_config.options].sort((a, b) => {
-      const oa = a.orderindex ?? 0;
-      const ob = b.orderindex ?? 0;
-      if (oa !== ob) return oa - ob;
-      return a.name.localeCompare(b.name);
-    });
-  } catch (e) {
-    console.error("[clickup] getProyectoOptions error:", e);
-    return [];
-  }
-}
-
-/**
- * Devuelve un "proyecto" por cada Carpeta (folder) del Space "Desarrollo"
- * (CLICKUP_SPACE_TICKETS_DEV) — el mismo Space donde se generan los tickets
- * de desarrollo, una carpeta por cliente/proyecto. Se usa para poblar el
- * selector de "Proyecto" en el formulario de estimaciones.
- */
-export async function getProyectosDesdeCarpetasDesarrollo(): Promise<
-  { id: string; name: string }[]
-> {
-  const spaceId = process.env.CLICKUP_SPACE_TICKETS_DEV;
-  if (!spaceId || !process.env.CLICKUP_API_KEY) return [];
-  try {
-    const { folders } = await listFolders(spaceId);
-    return folders
-      .filter((f) => !f.archived && !f.hidden)
-      .map((f) => ({ id: f.id, name: f.name, orderindex: f.orderindex ?? 0 }))
-      .sort((a, b) => {
-        if (a.orderindex !== b.orderindex) return a.orderindex - b.orderindex;
-        return a.name.localeCompare(b.name);
-      })
-      .map(({ id, name }) => ({ id, name }));
-  } catch (e) {
-    console.error("[clickup] getProyectosDesdeCarpetasDesarrollo error:", e);
-    return [];
-  }
-}

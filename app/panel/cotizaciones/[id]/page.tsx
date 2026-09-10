@@ -1,28 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
-import Markdown from "@/components/ui/Markdown";
 import InlineHeading from "@/components/ui/InlineHeading";
 import MarcarRevisada from "@/components/ui/MarcarRevisada";
-import AnalisisFinanciero from "@/components/forms/AnalisisFinanciero";
-import EstimacionTempranaEditor from "@/components/forms/EstimacionTempranaEditor";
-import CotizacionEditor, {
-  CotizacionAcciones,
-  CotizacionLog,
-  type CotizacionData,
-} from "@/components/forms/CotizacionEditor";
-import EtapaTempranaPanel from "@/components/forms/EtapaTempranaPanel";
-import EnvioDetalle from "@/components/forms/EnvioDetalle";
-import HorasEnvioCotizacion from "@/components/forms/HorasEnvioCotizacion";
-import InlineTextEditor from "@/components/forms/InlineTextEditor";
-import MontoFijoEditor from "@/components/forms/MontoFijoEditor";
-import SlackMessageEditor from "@/components/forms/SlackMessageEditor";
-import ConceptosCotizacionCard from "@/components/forms/ConceptosCotizacionCard";
-import ProyectoEditor from "@/components/forms/ProyectoEditor";
+import EstimacionForm, {
+  type ExistenteAccion,
+  type ExistenteCotizacion,
+} from "@/app/estimaciones/nueva/EstimacionForm";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
 import { formatFechaLarga as fmtFecha } from "@/lib/dates";
-import { ESTADOS_ESTIMACION_ACTIVA } from "@/lib/estados";
+import { labelEstado, badgeEstado } from "@/lib/estados";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +48,7 @@ type Cotizacion = {
   buffer_porcentaje: number | null;
   envio_pdf_path: string | null;
   envio_pdf_nombre_original: string | null;
+  envio_pdf_titulo: string | null;
   envio_horas_totales: number | null;
   envio_costo_aproximado: number | null;
   envio_estimado_por: string | null;
@@ -70,13 +59,6 @@ type Cotizacion = {
   notas_programador: string | null;
   programadores: { nombre: string; precio_hora: number } | null;
   tareas_estimacion: Tarea[];
-};
-
-type Accion = {
-  id: string;
-  tipo_accion: string;
-  metadata: Record<string, any> | null;
-  created_at: string;
 };
 
 type Concepto = {
@@ -91,25 +73,26 @@ async function getCotizacion(
   id: string
 ): Promise<{
   cotizacion: Cotizacion;
-  acciones: Accion[];
+  acciones: ExistenteAccion[];
   conceptos: Concepto[];
   pdfUrl: string | null;
 } | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
 
-  // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016).
+  // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016 + 0019).
   // Si alguna columna no existe, reintento con menos campos.
   const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at,
      canal_entrada, prioridad, programador_id, notas_programador,
      ia_recomendacion, borrador_correo, contexto_sherlyn,
      jefe_aprobacion_solicitada_at, jefe_aprobacion_recibida_at,
      tipo_precio, monto_fijo, proyecto_clickup_id, proyecto_nombre, estimacion_formulario_id,
-     buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_horas_totales,
+     buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_pdf_titulo, envio_horas_totales,
      envio_costo_aproximado, envio_estimado_por, envio_fecha,
      programadores(nombre, precio_hora),
      tareas_estimacion(id, orden, nombre_limpio, nombre_original, descripcion_limpia, hrs_min, hrs_max)`;
-  const selectNo0016 = selectFull.replace(
+  const selectNo0019 = selectFull.replace(", envio_pdf_titulo", "");
+  const selectNo0016 = selectNo0019.replace(
     /buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_horas_totales,\s*\n\s*envio_costo_aproximado, envio_estimado_por, envio_fecha,\n\s*/,
     ""
   );
@@ -119,6 +102,9 @@ async function getCotizacion(
   const selectNoExtras = selectNo0005.replace("horas_envio, ", "");
 
   let cotResp = await supa.from("cotizaciones").select(selectFull).eq("id", id).maybeSingle();
+  if (cotResp.error && /envio_pdf_titulo/i.test(cotResp.error.message)) {
+    cotResp = await supa.from("cotizaciones").select(selectNo0019).eq("id", id).maybeSingle();
+  }
   if (cotResp.error && /(buffer_porcentaje|envio_pdf_path|envio_horas_totales)/i.test(cotResp.error.message)) {
     cotResp = await supa.from("cotizaciones").select(selectNo0016).eq("id", id).maybeSingle();
   }
@@ -189,43 +175,45 @@ async function getCotizacion(
 
   return {
     cotizacion: data as Cotizacion,
-    acciones: (log as unknown as Accion[]) ?? [],
+    acciones: (log as unknown as ExistenteAccion[]) ?? [],
     conceptos,
     pdfUrl,
   };
 }
 
-
-import { labelEstado, badgeEstado } from "@/lib/estados";
-
-async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
+async function getProgramadores(): Promise<
+  { id: string; nombre: string; precio_hora: number }[]
+> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   try {
     const supa = createSupabaseServiceClient();
     const { data, error } = await supa
       .from("programadores")
-      .select("id, nombre")
+      .select("id, nombre, precio_hora")
       .eq("activo", true)
       .order("nombre");
     if (error) return [];
-    return data ?? [];
+    return (data ?? []).map((p) => ({ ...p, precio_hora: p.precio_hora ?? 0 }));
   } catch {
     return [];
   }
 }
 
-// Proyectos activos del catálogo (no ClickUp).
-async function getProyectosCatalogo(): Promise<{ id: string; nombre: string }[]> {
+// Proyectos activos del catálogo (no ClickUp) — trae también el precio/hora
+// de venta configurado en el proyecto, para el cálculo de "Costo estimado".
+async function getProyectosCatalogo(): Promise<
+  { id: string; nombre: string; precio_hora_venta: number; moneda_hora: "MXN" | "USD" }[]
+> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   try {
     const supa = createSupabaseServiceClient();
     const { data, error } = await supa
       .from("proyectos")
-      .select("id, nombre")
+      .select("id, nombre, precio_hora_venta, moneda_hora")
       .eq("activo", true)
       .order("nombre");
     if (error) return [];
-    return data ?? [];
+    return (data ?? []) as any[];
   } catch {
     return [];
   }
@@ -245,22 +233,43 @@ export default async function CotizacionDetallePage({
   const { cotizacion: it, acciones, conceptos, pdfUrl } = result;
 
   const precio = it.programadores?.precio_hora ?? 0;
-  const costoMin = it.horas_min * precio;
-  const costoMax = it.horas_max * precio;
   const horasEnvio = it.horas_envio ?? Math.round(((it.horas_min + it.horas_max) / 2) * 10) / 10;
-  const etapaTemprana = (ESTADOS_ESTIMACION_ACTIVA as readonly string[]).includes(
-    it.estado
-  );
+  const esFijo = it.tipo_precio === "fijo";
 
-  const editorData: CotizacionData = {
+  // El mensaje de Slack por default (si Johana no lo editó a mano) — mismo
+  // cálculo que hacía la página antes de unificar, ahora resuelto en el
+  // server component para no tener que exportar buildSlackText al cliente.
+  const puntosClaveSlack = it.tareas_estimacion
+    .slice(0, 4)
+    .map((t) => t.nombre_limpio || t.nombre_original);
+  const slackTextFallback = buildSlackText({
+    nombreCotizacion: it.nombre,
+    proyecto: null,
+    programador: it.programadores?.nombre ?? "—",
+    horasEnvio,
+    bufferPct: 0,
+    descripcionCorta: it.contexto_sherlyn?.split(/[.\n]/)[0] ?? it.nombre,
+    puntosClave: puntosClaveSlack,
+    notas: null,
+    clickupUrl: null,
+  });
+
+  const existente: ExistenteCotizacion = {
     id: it.id,
-    nombre: it.nombre,
     estado: it.estado,
-    horas_min: it.horas_min,
-    horas_max: it.horas_max,
-    ia_recomendacion: it.ia_recomendacion,
-    contexto_sherlyn: it.contexto_sherlyn,
-    borrador_correo: it.borrador_correo,
+    tipoPrecio: esFijo ? "fijo" : "horas",
+    nombre: it.nombre,
+    programadorId: it.programador_id,
+    programadorNombre: it.programadores?.nombre ?? null,
+    precioHoraInterno: precio,
+    proyectoId: it.proyecto_clickup_id,
+    proyectoNombre: it.proyecto_nombre,
+    prioridad: (it.prioridad as "alta" | "media" | "baja" | null) ?? null,
+    notasProgramador: it.notas_programador,
+    bufferPorcentaje: it.buffer_porcentaje ?? 0,
+    horasMin: it.horas_min,
+    horasMax: it.horas_max,
+    horasEnvio: it.horas_envio ?? null,
     tareas: it.tareas_estimacion.map((t) => ({
       id: t.id,
       orden: t.orden,
@@ -269,6 +278,21 @@ export default async function CotizacionDetallePage({
       hrs_min: t.hrs_min,
       hrs_max: t.hrs_max,
     })),
+    iaRecomendacion: it.ia_recomendacion,
+    borradorCorreo: it.borrador_correo,
+    precioVentaHora: it.precio_venta_hora,
+    montoFijo: it.monto_fijo,
+    conceptos,
+    envioPdfPath: it.envio_pdf_path,
+    envioPdfNombreOriginal: it.envio_pdf_nombre_original,
+    envioPdfTitulo: it.envio_pdf_titulo ?? null,
+    envioHorasTotales: it.envio_horas_totales,
+    envioCostoAproximado: it.envio_costo_aproximado,
+    envioEstimadoPor: it.envio_estimado_por,
+    envioFecha: it.envio_fecha,
+    pdfUrl,
+    slackText: it.slack_text ?? slackTextFallback,
+    acciones,
   };
 
   return (
@@ -281,283 +305,48 @@ export default async function CotizacionDetallePage({
         Volver
       </Link>
 
-      <header className="space-y-3">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <InlineHeading cotizacionId={it.id} initialValue={it.nombre} />
-          <div className="flex items-center gap-2">
+      <header className="card space-y-3">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0 space-y-1.5">
+            <InlineHeading cotizacionId={it.id} initialValue={it.nombre} />
+            <p className="text-caption text-text-secondary">
+              {it.programadores?.nombre ?? "—"}
+              {it.proyecto_nombre && (
+                <> · <span className="text-text-primary">{it.proyecto_nombre}</span></>
+              )}
+              {" · creada "}{fmtFecha(it.created_at)}
+              {" · por "}
+              {it.canal_entrada === "formulario"
+                ? it.programadores?.nombre ?? "programador"
+                : "Johana"}
+              {it.jefe_aprobacion_recibida_at && (
+                <> · visto bueno de Iván {fmtFecha(it.jefe_aprobacion_recibida_at)}</>
+              )}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <span className={`badge-lg ${badgeEstado(it.estado)}`}>
+              <span className="badge-dot" />
+              {labelEstado(it.estado)}
+            </span>
             {it.prioridad && (
-              <span
-                className={`badge ${
-                  it.prioridad === "alta"
-                    ? "badge-danger"
-                    : it.prioridad === "media"
-                    ? "badge-warning"
-                    : "badge-info"
-                }`}
-              >
+              <span className={`badge-outline badge-outline-${it.prioridad}`}>
+                <span className="badge-dot" />
                 Prioridad {it.prioridad}
               </span>
             )}
-            <span className={`badge ${badgeEstado(it.estado)}`}>
-              {labelEstado(it.estado)}
-            </span>
           </div>
         </div>
-        <p className="text-caption text-text-secondary">
-          {it.programadores?.nombre ?? "—"}
-          {it.proyecto_nombre && (
-            <> · <span className="text-text-primary">{it.proyecto_nombre}</span></>
-          )}
-          {" · creada "}{fmtFecha(it.created_at)}
-          {" · por "}
-          {it.canal_entrada === "formulario"
-            ? it.programadores?.nombre ?? "programador"
-            : "Johana"}
-          {it.jefe_aprobacion_recibida_at && (
-            <> · visto bueno de Iván {fmtFecha(it.jefe_aprobacion_recibida_at)}</>
-          )}
-        </p>
       </header>
 
       <MarcarRevisada cotizacionId={it.id} />
 
-      {/* En etapa temprana todavía no se manda nada a Slack ni hay que
-          archivar/eliminar desde aquí — Enviar a aprobación ya vive en
-          EtapaTempranaPanel, justo abajo. */}
-      {!etapaTemprana && (
-        <CotizacionAcciones
-          cotizacionId={it.id}
-          estado={it.estado}
-          horasEnvio={horasEnvio}
-          precioHora={precio}
-        />
-      )}
-
-      {etapaTemprana && (
-        <EtapaTempranaPanel
-          cotizacionId={it.id}
-          bufferPct={it.buffer_porcentaje ?? 0}
-          horasMin={it.horas_min}
-          horasMax={it.horas_max}
-        />
-      )}
-
-      {it.envio_pdf_path && (
-        <EnvioDetalle
-          pdfUrl={pdfUrl}
-          pdfNombreOriginal={it.envio_pdf_nombre_original}
-          horasTotales={it.envio_horas_totales}
-          costoAproximado={it.envio_costo_aproximado}
-          estimadoPor={it.envio_estimado_por}
-          fecha={it.envio_fecha}
-        />
-      )}
-
-      {/* 1. Resumen — varía según tipo (horas vs monto fijo) */}
-      {it.tipo_precio === "fijo" ? (
-        <section className="card space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-heading-2">Resumen</h2>
-            <span className="badge badge-info">Monto fijo</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div>
-              <div className="text-overline text-text-tertiary">Monto total</div>
-              <div className="mt-1 text-heading-1 num-tabular">
-                {(it.monto_fijo ?? 0).toLocaleString("es-MX", {
-                  style: "currency",
-                  currency: "MXN",
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 0,
-                })}{" "}
-                MXN
-              </div>
-              <div className="text-caption text-text-tertiary">
-                Cotización extraordinaria, no se factura por horas.
-              </div>
-            </div>
-            <div>
-              <div className="text-overline text-text-tertiary">Atendido por</div>
-              <div className="mt-1 text-heading-1">
-                {it.programadores?.nombre ?? "—"}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="card space-y-4">
-          <h2 className="text-heading-2">Resumen</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-            <div>
-              <div className="text-overline text-text-tertiary">Horas enviadas</div>
-              <div className="mt-1 text-heading-1 num-tabular">{horasEnvio}h</div>
-              <div className="text-caption text-text-tertiary">
-                rango: {it.horas_min}–{it.horas_max}h
-              </div>
-            </div>
-            <div>
-              <div className="text-overline text-text-tertiary">Precio interno / hr</div>
-              <div className="mt-1 text-heading-1 num-tabular">
-                ${precio.toLocaleString("es-MX")}
-              </div>
-            </div>
-            <div>
-              <div className="text-overline text-text-tertiary">Costo (horas enviadas)</div>
-              <div className="mt-1 text-heading-1 num-tabular">
-                ${(horasEnvio * precio).toLocaleString("es-MX")}
-              </div>
-              <div className="text-caption text-text-tertiary">
-                {horasEnvio}h × ${precio.toLocaleString("es-MX")}/h
-              </div>
-            </div>
-            <div>
-              <div className="text-overline text-text-tertiary">Costo rango</div>
-              <div className="mt-1 text-heading-1 num-tabular">
-                ${costoMin.toLocaleString("es-MX")}–${costoMax.toLocaleString("es-MX")}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* 2. Recomendación IA — en etapa temprana vive dentro de Tareas
-          (CotizacionEditor) en vez de aquí. */}
-      {!etapaTemprana && it.ia_recomendacion && (
-        <section
-          className="card"
-          style={{
-            background: "var(--bg-surface)",
-            borderColor: "var(--border-subtle)",
-          }}
-        >
-          <div className="text-overline text-text-tertiary mb-2">Recomendación IA</div>
-          <Markdown text={it.ia_recomendacion} className="text-body text-text-primary" />
-        </section>
-      )}
-
-      {/* Proyecto — card independiente solo fuera de etapa temprana (en
-          etapa temprana vive dentro de "Datos generales", más abajo). */}
-      {!etapaTemprana && (
-        <ProyectoEditor
-          cotizacionId={it.id}
-          proyectos={proyectos}
-          proyectoIdInicial={it.proyecto_clickup_id ?? null}
-          proyectoNombreInicial={it.proyecto_nombre ?? null}
-        />
-      )}
-
-      {/* 3. Análisis financiero — solo para tipo horas, no en etapa temprana */}
-      {it.tipo_precio !== "fijo" && !etapaTemprana && (
-        <AnalisisFinanciero
-          savePath={`/api/cotizaciones/${it.id}/precio-venta`}
-          precioHoraInterno={precio}
-          precioVentaInicial={it.precio_venta_hora ?? null}
-          horasMin={it.horas_min}
-          horasMax={it.horas_max}
-        />
-      )}
-
-      {/* Editor de la cotización — en etapa temprana es el mismo formulario
-          que se usó para crearla (Datos generales, Tareas, Resumen+Buffer,
-          todo en un solo Guardar). Fuera de etapa temprana, el editor de
-          tareas simple de siempre. */}
-      {it.tipo_precio !== "fijo" && etapaTemprana && (
-        <EstimacionTempranaEditor
-          cotizacionId={it.id}
-          programadores={programadores}
-          proyectos={proyectos}
-          programadorIdInicial={it.programador_id}
-          proyectoIdInicial={it.proyecto_clickup_id ?? null}
-          notasInicial={it.notas_programador ?? null}
-          bufferInicial={it.buffer_porcentaje ?? 0}
-          prioridadInicial={(it.prioridad as "alta" | "media" | "baja") ?? "media"}
-          tareasIniciales={it.tareas_estimacion.map((t) => ({
-            id: t.id,
-            orden: t.orden,
-            nombre_limpio: t.nombre_limpio ?? t.nombre_original,
-            descripcion_limpia: t.descripcion_limpia,
-            hrs_min: t.hrs_min,
-            hrs_max: t.hrs_max,
-          }))}
-          iaRecomendacion={it.ia_recomendacion}
-        />
-      )}
-      {it.tipo_precio !== "fijo" && !etapaTemprana && (
-        <CotizacionEditor cotizacion={editorData} />
-      )}
-
-      {/* 4. Horas a enviar — solo para tipo horas */}
-      {it.tipo_precio !== "fijo" && (
-        <HorasEnvioCotizacion
-          cotizacionId={it.id}
-          horasMin={it.horas_min}
-          horasMax={it.horas_max}
-          horasEnvioActual={it.horas_envio ?? null}
-        />
-      )}
-
-      {/* Conceptos / monto — solo para cotizaciones fijas */}
-      {it.tipo_precio === "fijo" &&
-        (conceptos.length > 0 ? (
-          <ConceptosCotizacionCard
-            cotizacionId={it.id}
-            conceptosIniciales={conceptos}
-            montoTotal={it.monto_fijo ?? 0}
-          />
-        ) : (
-          <MontoFijoEditor
-            cotizacionId={it.id}
-            montoActual={it.monto_fijo ?? null}
-          />
-        ))}
-
-      {/* 6. Borrador correo — no aplica en etapa temprana */}
-      {!etapaTemprana && (
-        <InlineTextEditor
-          cotizacionId={it.id}
-          field="borrador_correo"
-          label="Borrador de correo al cliente"
-          initialValue={it.borrador_correo}
-          rows={8}
-          placeholder="Cuerpo del correo que Sherlyn mandará al cliente."
-          iaTipo="correo"
-          iaContexto={
-            it.tipo_precio === "fijo"
-              ? `Cotización: ${it.nombre} · Monto total: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN`
-              : `Cotización: ${it.nombre} · Horas: ${it.horas_min}–${it.horas_max}h`
-          }
-        />
-      )}
-
-      {/* 7. Mensaje al jefe (Slack) — editable + IA */}
-      <SlackMessageEditor
-        cotizacionId={it.id}
-        slackText={
-          it.slack_text ??
-          buildSlackText({
-            nombreCotizacion: it.nombre,
-            proyecto: null,
-            programador: it.programadores?.nombre ?? "—",
-            horasEnvio: horasEnvio,
-            bufferPct: 0,
-            descripcionCorta:
-              it.contexto_sherlyn?.split(/[.\n]/)[0] ?? it.nombre,
-            puntosClave: it.tareas_estimacion
-              .slice(0, 4)
-              .map((t) => t.nombre_limpio || t.nombre_original),
-            notas: null,
-            clickupUrl: null,
-          })
-        }
-        iaContexto={
-          it.tipo_precio === "fijo"
-            ? `Cotización: ${it.nombre} · Monto: $${(it.monto_fijo ?? 0).toLocaleString("es-MX")} MXN · Atendido por: ${it.programadores?.nombre ?? "—"}`
-            : `Cotización: ${it.nombre} · Horas enviadas: ${horasEnvio}h · Programador: ${it.programadores?.nombre ?? "—"}`
-        }
+      <EstimacionForm
+        programadores={programadores}
+        proyectos={proyectos}
+        modoAdmin
+        existente={existente}
       />
-
-      {/* 8 / 9. Historial */}
-      <CotizacionLog acciones={acciones} />
     </>
   );
 }

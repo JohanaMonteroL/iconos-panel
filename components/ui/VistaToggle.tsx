@@ -19,7 +19,8 @@ export default function VistaToggle({ vista, conBoard = true }: Props) {
 
   function set(v: Vista) {
     const params = new URLSearchParams(sp.toString());
-    if (v === "lista") params.delete("vista");
+    // "board" es la vista por defecto (sin ?vista= en la URL) en desktop.
+    if (v === "board") params.delete("vista");
     else params.set("vista", v);
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);

@@ -42,14 +42,27 @@ export default function EnviarPdfModal({
   const costoAproximado = Math.round(horasEnvio * precioHora * 100) / 100;
   const inputRef = useRef<HTMLInputElement>(null);
   const [archivo, setArchivo] = useState<File | null>(null);
+  const [nombreDocumento, setNombreDocumento] = useState("");
+  const [nombreEditadoAMano, setNombreEditadoAMano] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cerrar = () => {
     if (enviando) return;
     setArchivo(null);
+    setNombreDocumento("");
+    setNombreEditadoAMano(false);
     setError(null);
     onClose();
+  };
+
+  const elegirArchivo = (f: File | null) => {
+    setArchivo(f);
+    // Si Johana no ha escrito su propio nombre, lo prellenamos con el
+    // nombre del archivo (sin extensión) para que no tenga que repetirlo.
+    if (f && !nombreEditadoAMano) {
+      setNombreDocumento(f.name.replace(/\.pdf$/i, ""));
+    }
   };
 
   const enviar = async () => {
@@ -62,6 +75,9 @@ export default function EnviarPdfModal({
     try {
       const form = new FormData();
       form.append("file", archivo);
+      if (nombreDocumento.trim()) {
+        form.append("nombre_documento", nombreDocumento.trim());
+      }
       const res = await fetch(`/api/cotizaciones/${cotizacionId}/enviar-pdf`, {
         method: "POST",
         body: form,
@@ -72,6 +88,8 @@ export default function EnviarPdfModal({
         return;
       }
       setArchivo(null);
+      setNombreDocumento("");
+      setNombreEditadoAMano(false);
       onEnviado();
     } catch {
       setError("Error de red");
@@ -122,11 +140,29 @@ export default function EnviarPdfModal({
             ref={inputRef}
             type="file"
             accept="application/pdf"
-            onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+            onChange={(e) => elegirArchivo(e.target.files?.[0] ?? null)}
             className="input"
             style={{ paddingTop: 8 }}
           />
           <span className="field-hint">Un solo archivo, máximo 15 MB.</span>
+        </div>
+
+        <div>
+          <label className="field-label">Nombre del documento</label>
+          <input
+            type="text"
+            className="input"
+            value={nombreDocumento}
+            onChange={(e) => {
+              setNombreDocumento(e.target.value);
+              setNombreEditadoAMano(true);
+            }}
+            placeholder="Ej: Cotización — Sistema de Nómina"
+          />
+          <span className="field-hint">
+            Cómo se va a llamar este documento en el historial. Si lo dejas
+            vacío, se usa el nombre del archivo.
+          </span>
         </div>
 
         <div

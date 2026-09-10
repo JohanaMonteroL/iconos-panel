@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Clock, DollarSign, User } from "lucide-react";
+import { Clock, DollarSign, User, FileText, ExternalLink } from "lucide-react";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import VistaToggle from "@/components/ui/VistaToggle";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -7,6 +7,7 @@ import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { labelEstado, badgeEstado, ORDEN_FLUJO_COTIZACION } from "@/lib/estados";
 import FiltrosCotizaciones from "./FiltrosCotizaciones";
 import CrearMenu from "./CrearMenu";
+import TableroCotizaciones from "./TableroCotizaciones";
 
 type Vista = "lista" | "cuadricula" | "board";
 
@@ -147,20 +148,31 @@ async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
   return (data ?? []) as any[];
 }
 
+// Nombres para el filtro "Proyecto" — vienen del catálogo de Proyectos
+// (activos), no de texto libre en cotizaciones. Así el nombre siempre
+// coincide con el proyecto real y su color de etiqueta.
 async function getProyectos(): Promise<string[]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   const supa = createSupabaseServiceClient();
   const { data } = await supa
-    .from("cotizaciones")
-    .select("proyecto_nombre")
-    .not("proyecto_nombre", "is", null)
-    .limit(1000);
-  if (!data) return [];
-  const set = new Set<string>();
-  for (const r of data as any[]) {
-    if (r.proyecto_nombre) set.add(r.proyecto_nombre);
+    .from("proyectos")
+    .select("nombre")
+    .eq("activo", true)
+    .order("nombre", { ascending: true });
+  return ((data ?? []) as any[]).map((r) => r.nombre);
+}
+
+// Mapa nombre (lowercase) -> color, para pintar la etiqueta de proyecto en
+// las tarjetas con el mismo color elegido en el catálogo.
+async function getColoresProyecto(): Promise<Record<string, string>> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return {};
+  const supa = createSupabaseServiceClient();
+  const { data } = await supa.from("proyectos").select("nombre, color");
+  const mapa: Record<string, string> = {};
+  for (const r of (data ?? []) as any[]) {
+    if (r.nombre) mapa[String(r.nombre).trim().toLowerCase()] = r.color;
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  return mapa;
 }
 
 function fmtMxn(n: number): string {
@@ -195,7 +207,7 @@ export default async function CotizacionesPage({
       ? "lista"
       : null;
   // Vista mostrada en el toggle (refleja desktop). Mobile usa cuadrícula por defecto.
-  const vista: Vista = vistaExplicita ?? "lista";
+  const vista: Vista = vistaExplicita ?? "board";
   const filtros: Filtros = {
     archivadas: searchParams.archivadas === "1",
     q: searchParams.q ?? null,
@@ -206,11 +218,55 @@ export default async function CotizacionesPage({
     hasta: searchParams.hasta ?? null,
   };
 
-  const [items, programadores, proyectos] = await Promise.all([
+  const [items, programadores, proyectos, coloresProyecto] = await Promise.all([
     getCotizaciones(filtros),
     getProgramadores(),
     getProyectos(),
+    getColoresProyecto(),
   ]);
+
+  const pipelineFijo = items
+    .filter((it) => it.tipo_precio === "fijo" && it.monto_fijo != null)
+    .reduce((acc, it) => acc + Number(it.monto_fijo), 0);
+
+  const ESTADOS_EN_PROCESO = ["por_estimar", "pendiente_revision_interna", "esperando_aprobacion", "cambios_solicitados"];
+  const ESTADOS_EN_CURSO = ["enviada", "aprobada", "en_desarrollo"];
+  const ESTADOS_POR_COBRAR = ["en_espera_de_cobro", "pendiente_por_cobrar"];
+
+  const kpis = [
+    {
+      label: "Cotizaciones activas",
+      value: String(items.length),
+      icon: FileText,
+      iconBg: "#DBEAFE",
+      iconFg: "#1D4ED8",
+      sub: "sin archivar",
+    },
+    {
+      label: "En revisión interna",
+      value: String(items.filter((it) => ESTADOS_EN_PROCESO.includes(it.estado)).length),
+      icon: Clock,
+      iconBg: "#FEF3C7",
+      iconFg: "#B45309",
+      sub: "antes de enviarse al cliente",
+    },
+    {
+      label: "En curso con cliente",
+      value: String(items.filter((it) => ESTADOS_EN_CURSO.includes(it.estado)).length),
+      icon: ExternalLink,
+      iconBg: "#DCFCE7",
+      iconFg: "#15803D",
+      sub: "enviadas, aprobadas o en desarrollo",
+    },
+    {
+      label: "Pipeline (monto fijo)",
+      value: fmtMxn(pipelineFijo),
+      icon: DollarSign,
+      iconBg: "#EDE9FE",
+      iconFg: "#6D28D9",
+      sub: `${items.filter((it) => ESTADOS_POR_COBRAR.includes(it.estado)).length} por cobrar`,
+    },
+  ];
 
   return (
     <>
@@ -230,19 +286,34 @@ export default async function CotizacionesPage({
         </div>
       </header>
 
-      <div className="segmented inline-flex gap-1 p-1 rounded-lg">
-        <Link
-          href={`/panel/cotizaciones${searchParams.q ? `?q=${searchParams.q}` : ""}`}
-          className={`btn-sm ${!filtros.archivadas ? "btn-primary" : "btn-ghost"}`}
-        >
-          Activas
-        </Link>
-        <Link
-          href="/panel/cotizaciones?archivadas=1"
-          className={`btn-sm ${filtros.archivadas ? "btn-primary" : "btn-ghost"}`}
-        >
-          Historial
-        </Link>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
+        {kpis.map((k) => (
+          <div key={k.label} className="card card-hover">
+            <div className="flex items-center gap-2">
+              <span
+                className="grid place-items-center flex-shrink-0"
+                style={{ width: 27, height: 27, borderRadius: "50%", background: k.iconBg, color: k.iconFg }}
+              >
+                <k.icon size={13.5} strokeWidth={1.9} />
+              </span>
+              <span className="text-caption" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                {k.label}
+              </span>
+            </div>
+            <div
+              className="num-tabular"
+              style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-1.1px", lineHeight: 1.1, marginTop: 13 }}
+            >
+              {k.value}
+            </div>
+            <div
+              className="text-caption num-tabular"
+              style={{ color: "var(--text-tertiary)", marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}
+            >
+              {k.sub}
+            </div>
+          </div>
+        ))}
       </div>
 
       <FiltrosCotizaciones
@@ -257,7 +328,11 @@ export default async function CotizacionesPage({
         </div>
       ) : vistaExplicita ? (
         vistaExplicita === "board" ? (
-          <TableroCotizaciones items={items} />
+          <TableroCotizaciones
+            columnas={ORDEN_FLUJO_COTIZACION.filter((e) => e !== "archivada")}
+            itemsIniciales={items}
+            coloresProyecto={coloresProyecto}
+          />
         ) : vistaExplicita === "cuadricula" ? (
           <CuadriculaCotizaciones items={items} />
         ) : (
@@ -269,57 +344,15 @@ export default async function CotizacionesPage({
             <CuadriculaCotizaciones items={items} />
           </div>
           <div className="hidden md:block">
-            <ListaCotizaciones items={items} />
+            <TableroCotizaciones
+              columnas={ORDEN_FLUJO_COTIZACION.filter((e) => e !== "archivada")}
+              itemsIniciales={items}
+              coloresProyecto={coloresProyecto}
+            />
           </div>
         </>
       )}
     </>
-  );
-}
-
-function TableroCotizaciones({ items }: { items: Row[] }) {
-  const columnas = ORDEN_FLUJO_COTIZACION.filter((e) => e !== "archivada");
-  const porEstado = new Map<string, Row[]>();
-  for (const e of columnas) porEstado.set(e, []);
-  for (const it of items) {
-    if (!porEstado.has(it.estado)) porEstado.set(it.estado, []);
-    porEstado.get(it.estado)!.push(it);
-  }
-
-  return (
-    <div className="overflow-x-auto pb-2">
-      <div className="flex gap-4" style={{ minWidth: "max-content" }}>
-        {columnas.map((estado) => {
-          const cards = porEstado.get(estado) ?? [];
-          return (
-            <div key={estado} className="w-[280px] shrink-0 space-y-3">
-              <div className="flex items-center justify-between gap-2 px-1">
-                <span className={`badge ${badgeEstado(estado)}`}>
-                  {labelEstado(estado)}
-                </span>
-                <span className="text-caption text-text-tertiary num-tabular">
-                  {cards.length}
-                </span>
-              </div>
-              <div className="space-y-3">
-                {cards.length === 0 ? (
-                  <div
-                    className="rounded-[12px] p-4 text-caption text-text-tertiary text-center"
-                    style={{
-                      border: "1px dashed var(--border-subtle)",
-                    }}
-                  >
-                    Sin cotizaciones
-                  </div>
-                ) : (
-                  cards.map((it) => <TarjetaCotizacion key={it.id} it={it} />)
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

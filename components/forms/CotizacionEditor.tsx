@@ -3,19 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Save,
-  CheckCircle2,
-  Edit3,
-  X,
-  RefreshCcw,
-  Plus,
-  Trash2,
-  ChevronUp,
   ChevronDown,
+  RefreshCcw,
   Archive,
   Ticket,
   FileStack,
   Layers,
+  Trash2,
+  Check,
+  CheckCircle2,
 } from "lucide-react";
 import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
 import Modal from "@/components/ui/Modal";
@@ -25,322 +21,6 @@ import {
   labelEstado,
   badgeEstado,
 } from "@/lib/estados";
-
-export type CotizacionTarea = {
-  id?: string;
-  orden: number;
-  nombre_limpio: string;
-  descripcion_limpia: string | null;
-  hrs_min: number;
-  hrs_max: number;
-};
-
-export type CotizacionData = {
-  id: string;
-  nombre: string;
-  estado: string;
-  horas_min: number;
-  horas_max: number;
-  ia_recomendacion: string | null;
-  contexto_sherlyn: string | null;
-  borrador_correo: string | null;
-  tareas: CotizacionTarea[];
-};
-
-type Props = {
-  cotizacion: CotizacionData;
-};
-
-export default function CotizacionEditor({ cotizacion }: Props) {
-  const router = useRouter();
-
-  const [editing, setEditing] = useState(false);
-  const [tareas, setTareas] = useState<CotizacionTarea[]>(cotizacion.tareas);
-  const [comentario, setComentario] = useState("");
-
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
-
-  // Las horas a cobrar (horas_min/horas_max) se manejan en una card aparte
-  // afuera del editor, así que aquí solo sumamos las tareas para mostrar
-  // referencia y para que el save mande horas consistentes con las tareas.
-  const totalMin = tareas.reduce((s, t) => s + (t.hrs_min || 0), 0);
-  const totalMax = tareas.reduce((s, t) => s + (t.hrs_max || 0), 0);
-
-  const cancelar = () => {
-    setEditing(false);
-    setTareas(cotizacion.tareas);
-    setComentario("");
-    setError(null);
-    setWarning(null);
-  };
-
-  const guardar = async () => {
-    setSaving(true);
-    setError(null);
-    setWarning(null);
-    try {
-      const res = await fetch(`/api/cotizaciones/${cotizacion.id}/editar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          // Horas vienen de la suma de las tareas. El rango y el buffer se
-          // editan en cards aparte (HorasEnvioCotizacion).
-          horas_min: totalMin,
-          horas_max: totalMax,
-          tareas: tareas.map((t, i) => ({
-            orden: i,
-            nombre_limpio: t.nombre_limpio,
-            descripcion_limpia: t.descripcion_limpia,
-            hrs_min: t.hrs_min,
-            hrs_max: t.hrs_max,
-          })),
-          comentario: comentario.trim() || undefined,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Error al guardar");
-        return;
-      }
-      setEditing(false);
-      router.refresh();
-    } catch {
-      setError("Error de red");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateTarea = (i: number, patch: Partial<CotizacionTarea>) =>
-    setTareas(tareas.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
-  const removeTarea = (i: number) =>
-    setTareas(tareas.filter((_, idx) => idx !== i));
-  const addTarea = () =>
-    setTareas([
-      ...tareas,
-      {
-        orden: tareas.length,
-        nombre_limpio: "",
-        descripcion_limpia: "",
-        hrs_min: 0,
-        hrs_max: 0,
-      },
-    ]);
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= tareas.length) return;
-    const copia = [...tareas];
-    [copia[i], copia[j]] = [copia[j], copia[i]];
-    setTareas(copia);
-  };
-
-  // ── Vista de lectura ───────────────────────────────────────────────────
-  if (!editing) {
-    return (
-      <>
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-heading-2">Tareas ({cotizacion.tareas.length})</h2>
-            <button onClick={() => setEditing(true)} className="btn-secondary btn-sm">
-              <Edit3 size={14} strokeWidth={1.75} />
-              <span>Editar</span>
-            </button>
-          </div>
-          <ul className="space-y-3">
-            {cotizacion.tareas.map((t) => (
-              <li key={t.id ?? t.orden} className="card card-tight space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-body-medium">{t.nombre_limpio}</h3>
-                  <span className="text-caption text-text-tertiary num-tabular whitespace-nowrap">
-                    {t.hrs_min}–{t.hrs_max} h
-                  </span>
-                </div>
-                {t.descripcion_limpia && (
-                  <p className="text-body text-text-secondary whitespace-pre-wrap">
-                    {t.descripcion_limpia}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {/* Contexto Sherlyn y Borrador correo viven como cards editables
-            independientes en la página de detalle, no aquí. */}
-      </>
-    );
-  }
-
-  // ── Vista de edición ───────────────────────────────────────────────────
-  return (
-    <>
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-heading-2">Tareas ({tareas.length})</h2>
-          <div className="flex items-center gap-3">
-            <span className="badge badge-warning">Sin guardar</span>
-            <span className="text-caption text-text-secondary num-tabular">
-              Total: {totalMin}–{totalMax} h
-            </span>
-          </div>
-        </div>
-        <ul className="space-y-3">
-          {tareas.map((t, i) => (
-            <li
-              key={t.id ?? i}
-              className="rounded-[12px] border overflow-hidden"
-              style={{
-                background: "var(--bg-elevated)",
-                borderColor: "var(--border-subtle)",
-              }}
-            >
-              <div
-                className="flex items-center justify-between px-5 py-3 border-b"
-                style={{
-                  background: "var(--bg-surface)",
-                  borderColor: "var(--border-subtle)",
-                }}
-              >
-                <div className="text-overline text-text-tertiary">Tarea {i + 1}</div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => move(i, -1)}
-                    disabled={i === 0}
-                    className="btn-icon btn-sm btn-ghost"
-                    aria-label="Subir"
-                  >
-                    <ChevronUp size={16} strokeWidth={1.75} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => move(i, 1)}
-                    disabled={i === tareas.length - 1}
-                    className="btn-icon btn-sm btn-ghost"
-                    aria-label="Bajar"
-                  >
-                    <ChevronDown size={16} strokeWidth={1.75} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeTarea(i)}
-                    className="btn-icon btn-sm btn-ghost"
-                    aria-label="Eliminar"
-                  >
-                    <Trash2 size={16} strokeWidth={1.75} />
-                  </button>
-                </div>
-              </div>
-              <div className="p-5 space-y-4">
-                <div>
-                  <label className="field-label">Nombre</label>
-                  <input
-                    className="input"
-                    value={t.nombre_limpio}
-                    onChange={(e) => updateTarea(i, { nombre_limpio: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="field-label">Descripción</label>
-                  <textarea
-                    className="textarea min-h-[100px]"
-                    rows={4}
-                    value={t.descripcion_limpia ?? ""}
-                    onChange={(e) =>
-                      updateTarea(i, { descripcion_limpia: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="field-label">Horas mín</label>
-                    <input
-                      className="input num-tabular"
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      value={t.hrs_min}
-                      onChange={(e) =>
-                        updateTarea(i, { hrs_min: Number(e.target.value) || 0 })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="field-label">Horas máx</label>
-                    <input
-                      className="input num-tabular"
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      value={t.hrs_max}
-                      onChange={(e) =>
-                        updateTarea(i, { hrs_max: Number(e.target.value) || 0 })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <button type="button" onClick={addTarea} className="btn-secondary">
-          <Plus size={16} strokeWidth={1.75} />
-          <span>Añadir tarea</span>
-        </button>
-      </section>
-
-      {/* Las secciones de horas/buffer/análisis financiero/selector de
-          horas se renderizan como cards independientes en la página de
-          detalle, fuera de este editor — para que sigan el mismo patrón
-          visual que el procesado de estimaciones. */}
-
-      {/* Contexto Sherlyn y Borrador correo se editan en cards aparte. */}
-
-      <section className="card" style={{ background: "var(--bg-surface)" }}>
-        <label className="field-label">Comentario sobre estos cambios (opcional)</label>
-        <input
-          className="input"
-          value={comentario}
-          onChange={(e) => setComentario(e.target.value)}
-          placeholder="Ej. Cliente pidió ajustar pruebas y agregar capacitación"
-        />
-        <p className="field-hint">Queda registrado en el historial de la cotización.</p>
-      </section>
-
-      <div className="space-y-3">
-        {error && (
-          <p className="text-caption" style={{ color: "var(--state-error)" }}>
-            {error}
-          </p>
-        )}
-        {warning && (
-          <div
-            className="card card-tight text-caption"
-            style={{
-              background: "var(--bg-surface)",
-              borderColor: "var(--state-warning)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            ⚠️ {warning}
-          </div>
-        )}
-        <div className="flex flex-wrap gap-3">
-          <button onClick={guardar} disabled={saving} className="btn-primary">
-            <Save size={16} strokeWidth={1.75} />
-            <span>{saving ? "Guardando…" : "Guardar cambios"}</span>
-          </button>
-          <button onClick={cancelar} disabled={saving} className="btn-ghost">
-            <X size={16} strokeWidth={1.75} />
-            <span>Cancelar</span>
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
 
 // ─── Acciones rápidas para vista de lectura ─────────────────────────────
 
@@ -465,7 +145,7 @@ export function CotizacionAcciones({
   return (
     <section className="card space-y-3">
       <h2 className="text-heading-2">Acciones</h2>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-2.5">
         <button
           disabled={working !== null}
           onClick={() => {
@@ -473,11 +153,12 @@ export function CotizacionAcciones({
             setComentarioEstado("");
             setCambioEstadoAbierto(true);
           }}
-          className="btn-primary"
+          className={`estado-trigger ${badgeEstado(estado)}`}
           title="Mover esta cotización a cualquier otro estado del flujo"
         >
-          <CheckCircle2 size={16} strokeWidth={1.75} />
-          <span>Cambiar estado</span>
+          <span className="estado-trigger-dot" />
+          <span>{labelEstado(estado)}</span>
+          <ChevronDown size={14} strokeWidth={2.25} />
         </button>
 
         <button
@@ -495,7 +176,7 @@ export function CotizacionAcciones({
             setNotaCambios("");
             setNotificarUpdateAbierto(true);
           }}
-          className="btn-primary"
+          className="btn-secondary"
           title="Avisa al jefe que la cotización tuvo cambios y debe revisarla otra vez"
         >
           <RefreshCcw size={16} strokeWidth={1.75} />
@@ -526,7 +207,7 @@ export function CotizacionAcciones({
           <button
             disabled={working !== null}
             onClick={() => setModal("archivar")}
-            className="btn-ghost"
+            className="btn-secondary"
           >
             <Archive size={16} strokeWidth={1.75} />
             <span>Archivar</span>
@@ -536,7 +217,7 @@ export function CotizacionAcciones({
         <button
           disabled={working !== null}
           onClick={() => setModal("eliminar")}
-          className="btn-ghost"
+          className="btn-secondary"
           style={{ color: "var(--state-error)" }}
         >
           <Trash2 size={16} strokeWidth={1.75} />
@@ -610,26 +291,35 @@ export function CotizacionAcciones({
             <div className="text-overline text-text-tertiary mb-1">
               Estado actual
             </div>
-            <span className={`badge ${badgeEstado(estado)}`}>
+            <span className={`badge-lg ${badgeEstado(estado)}`}>
+              <span className="badge-dot" />
               {labelEstado(estado)}
             </span>
           </div>
 
           <div>
             <label className="field-label">Nuevo estado *</label>
-            <select
-              className="input"
-              value={nuevoEstado}
-              onChange={(e) => setNuevoEstado(e.target.value)}
-            >
-              <option value="">— Elige uno —</option>
-              {ORDEN_FLUJO_COTIZACION.map((e) => (
-                <option key={e} value={e} disabled={e === estado}>
-                  {labelEstado(e)}
-                  {e === estado ? "  (actual)" : ""}
-                </option>
-              ))}
-            </select>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+              {ORDEN_FLUJO_COTIZACION.map((e) => {
+                const esActual = e === estado;
+                const seleccionado = nuevoEstado === e;
+                return (
+                  <button
+                    key={e}
+                    type="button"
+                    disabled={esActual}
+                    onClick={() => setNuevoEstado(e)}
+                    className={`estado-chip ${badgeEstado(e)} ${
+                      seleccionado ? "is-selected" : ""
+                    }`}
+                    title={esActual ? "Estado actual" : `Cambiar a "${labelEstado(e)}"`}
+                  >
+                    {seleccionado && <Check size={13} strokeWidth={2.5} />}
+                    <span>{labelEstado(e)}</span>
+                  </button>
+                );
+              })}
+            </div>
             <span className="field-hint">
               Puedes moverla a cualquier estado del flujo.{" "}
               {nuevoEstado === "enviada" &&
@@ -651,21 +341,20 @@ export function CotizacionAcciones({
 
           {nuevoEstado && nuevoEstado !== estado && (
             <div
-              className="rounded-[10px] p-3 text-caption"
+              className="flex items-center flex-wrap gap-2 rounded-[10px] p-3 text-caption"
               style={{
                 background: "var(--bg-surface)",
                 border: "1px solid var(--border-default)",
               }}
             >
-              Vas a cambiar de{" "}
+              <span>Vas a cambiar de</span>
               <span className={`badge ${badgeEstado(estado)}`}>
                 {labelEstado(estado)}
-              </span>{" "}
-              a{" "}
+              </span>
+              <span>a</span>
               <span className={`badge ${badgeEstado(nuevoEstado)}`}>
                 {labelEstado(nuevoEstado)}
               </span>
-              .
             </div>
           )}
         </div>

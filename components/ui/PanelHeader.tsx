@@ -6,7 +6,6 @@ import ThemeToggle from "./ThemeToggle";
 
 const TITLES: { prefix: string; label: string; icon: LucideIcon }[] = [
   { prefix: "/panel/cotizaciones/nueva", label: "Cotización rápida", icon: FileText },
-  { prefix: "/panel/cotizaciones-v2", label: "Cotizaciones (nueva vista)", icon: FileText },
   { prefix: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText },
   { prefix: "/panel/proyectos/nuevo", label: "Nuevo proyecto", icon: Briefcase },
   { prefix: "/panel/proyectos", label: "Proyectos", icon: Briefcase },

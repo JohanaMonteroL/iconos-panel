@@ -1,7 +1,7 @@
 import EstimacionForm from "./EstimacionForm";
 import PublicHeader from "@/components/ui/PublicHeader";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProyectosDesdeCarpetasDesarrollo } from "@/lib/clickup/client";
+import { getProyectosActivos } from "@/lib/proyectos/catalogo";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +24,10 @@ async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
 }
 
 export default async function NuevaEstimacionPage() {
+  const supa = createSupabaseServerClient();
   const [programadores, proyectos] = await Promise.all([
     getProgramadores(),
-    getProyectosDesdeCarpetasDesarrollo(),
+    getProyectosActivos(supa),
   ]);
 
   return (
@@ -59,7 +60,7 @@ export default async function NuevaEstimacionPage() {
           ) : (
             <EstimacionForm
               programadores={programadores}
-              proyectos={proyectos.map((p) => ({ id: p.id, nombre: p.name }))}
+              proyectos={proyectos}
             />
           )}
         </div>

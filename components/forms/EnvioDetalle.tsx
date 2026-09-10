@@ -1,9 +1,10 @@
-import { FileText, User, Clock, DollarSign, CalendarDays } from "lucide-react";
+import { FileText, User, Clock, DollarSign, CalendarDays, ExternalLink } from "lucide-react";
 import { formatFechaLarga } from "@/lib/dates";
 
 type Props = {
   pdfUrl: string | null;
   pdfNombreOriginal: string | null;
+  pdfTitulo: string | null;
   horasTotales: number | null;
   costoAproximado: number | null;
   estimadoPor: string | null;
@@ -27,11 +28,13 @@ function fmtMxn(n: number): string {
 export default function EnvioDetalle({
   pdfUrl,
   pdfNombreOriginal,
+  pdfTitulo,
   horasTotales,
   costoAproximado,
   estimadoPor,
   fecha,
 }: Props) {
+  const nombreMostrado = pdfTitulo || pdfNombreOriginal || "Documento enviado";
   return (
     <section
       className="rounded-[12px] overflow-hidden"
@@ -42,7 +45,7 @@ export default function EnvioDetalle({
         style={{ background: "var(--bg-surface)", borderColor: "var(--border-subtle)" }}
       >
         <FileText size={16} strokeWidth={1.75} className="text-text-secondary" />
-        <h2 className="text-heading-2">Detalle del envío</h2>
+        <h2 className="text-heading-2">{nombreMostrado}</h2>
       </div>
 
       <div className="p-5 space-y-4">
@@ -84,10 +87,24 @@ export default function EnvioDetalle({
             href={pdfUrl}
             target="_blank"
             rel="noreferrer"
-            className="btn-secondary"
+            className="flex items-center gap-3 rounded-[10px] p-3 transition-colors hover:bg-[var(--bg-surface)]"
+            style={{ border: "1px solid var(--border-subtle)", textDecoration: "none" }}
           >
-            <FileText size={16} strokeWidth={1.75} />
-            <span>Ver PDF{pdfNombreOriginal ? ` — ${pdfNombreOriginal}` : ""}</span>
+            <span
+              className="flex items-center justify-center rounded-[8px] shrink-0"
+              style={{ width: 40, height: 40, background: "#FEE2E2", color: "#DC2626" }}
+            >
+              <FileText size={18} strokeWidth={1.75} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-body-medium truncate">
+                {pdfNombreOriginal ?? "cotizacion.pdf"}
+              </span>
+              <span className="block text-caption text-text-tertiary">
+                PDF · Ver documento en pestaña nueva
+              </span>
+            </span>
+            <ExternalLink size={16} strokeWidth={1.75} className="text-text-tertiary shrink-0" />
           </a>
         ) : (
           <p className="text-caption text-text-tertiary">
