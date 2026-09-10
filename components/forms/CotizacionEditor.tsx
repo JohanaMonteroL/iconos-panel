@@ -41,7 +41,6 @@ export type CotizacionData = {
   estado: string;
   horas_min: number;
   horas_max: number;
-  clickup_ticket_id: string | null;
   ia_recomendacion: string | null;
   contexto_sherlyn: string | null;
   borrador_correo: string | null;
@@ -105,7 +104,6 @@ export default function CotizacionEditor({ cotizacion }: Props) {
         setError(json.error || "Error al guardar");
         return;
       }
-      if (json.clickup_warning) setWarning(json.clickup_warning);
       setEditing(false);
       router.refresh();
     } catch {
@@ -417,7 +415,6 @@ export function CotizacionAcciones({
         setMsg(json.error || "No se pudo cambiar el estado");
         return;
       }
-      if (json.clickup_warning) setWarning(json.clickup_warning);
       router.refresh();
     } catch {
       setMsg("Error de red");
@@ -634,8 +631,7 @@ export function CotizacionAcciones({
               ))}
             </select>
             <span className="field-hint">
-              Puedes moverla a cualquier estado del flujo. Al guardar también
-              se actualiza el carril en ClickUp si tiene ticket.{" "}
+              Puedes moverla a cualquier estado del flujo.{" "}
               {nuevoEstado === "enviada" &&
                 "Para \"Enviada\" te vamos a pedir el PDF que se le mandó al cliente."}
             </span>
@@ -863,9 +859,6 @@ const LABEL_ACCION: Record<string, string> = {
   creada_desde_estimacion: "Cotización creada desde estimación",
   creada_desde_formulario: "Estimación recibida del formulario",
   creada_manual: "Estimación creada manualmente",
-  ticket_clickup_creado: "Ticket de ClickUp creado",
-  ticket_clickup_creado_retry: "Ticket de ClickUp creado (reintento)",
-  sync_clickup_manual: "↻ Sincronizado con ClickUp",
   editada: "Cotización editada",
   estado_por_estimar: "📝 Por estimar",
   estado_pendiente_revision_interna: "📋 Revisión interna",

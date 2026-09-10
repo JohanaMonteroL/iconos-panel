@@ -19,7 +19,6 @@ import MontoFijoEditor from "@/components/forms/MontoFijoEditor";
 import SlackMessageEditor from "@/components/forms/SlackMessageEditor";
 import ConceptosCotizacionCard from "@/components/forms/ConceptosCotizacionCard";
 import ProyectoEditor from "@/components/forms/ProyectoEditor";
-import { getProyectoOptions } from "@/lib/clickup/client";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
 import { formatFechaLarga as fmtFecha } from "@/lib/dates";
@@ -49,7 +48,6 @@ type Cotizacion = {
   precio_venta_hora: number | null;
   slack_text: string | null;
   created_at: string;
-  clickup_ticket_id: string | null;
   ia_recomendacion: string | null;
   borrador_correo: string | null;
   contexto_sherlyn: string | null;
@@ -102,7 +100,7 @@ async function getCotizacion(
 
   // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016).
   // Si alguna columna no existe, reintento con menos campos.
-  const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at, clickup_ticket_id,
+  const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at,
      canal_entrada, prioridad, programador_id, notas_programador,
      ia_recomendacion, borrador_correo, contexto_sherlyn,
      jefe_aprobacion_solicitada_at, jefe_aprobacion_recibida_at,
@@ -216,19 +214,35 @@ async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
   }
 }
 
+// Proyectos activos del catálogo (no ClickUp).
+async function getProyectosCatalogo(): Promise<{ id: string; nombre: string }[]> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+  try {
+    const supa = createSupabaseServiceClient();
+    const { data, error } = await supa
+      .from("proyectos")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("nombre");
+    if (error) return [];
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export default async function CotizacionDetallePage({
   params,
 }: {
   params: { id: string };
 }) {
-  const [result, proyectosRaw, programadores] = await Promise.all([
+  const [result, proyectos, programadores] = await Promise.all([
     getCotizacion(params.id),
-    getProyectoOptions().catch(() => []),
+    getProyectosCatalogo(),
     getProgramadores(),
   ]);
   if (!result) notFound();
   const { cotizacion: it, acciones, conceptos, pdfUrl } = result;
-  const proyectos = proyectosRaw.map((p) => ({ id: p.id, nombre: p.name }));
 
   const precio = it.programadores?.precio_hora ?? 0;
   const costoMin = it.horas_min * precio;
@@ -244,7 +258,6 @@ export default async function CotizacionDetallePage({
     estado: it.estado,
     horas_min: it.horas_min,
     horas_max: it.horas_max,
-    clickup_ticket_id: it.clickup_ticket_id,
     ia_recomendacion: it.ia_recomendacion,
     contexto_sherlyn: it.contexto_sherlyn,
     borrador_correo: it.borrador_correo,
@@ -279,7 +292,7 @@ export default async function CotizacionDetallePage({
                     ? "badge-danger"
                     : it.prioridad === "media"
                     ? "badge-warning"
-                    : "badge-neutral"
+                    : "badge-info"
                 }`}
               >
                 Prioridad {it.prioridad}
@@ -533,9 +546,7 @@ export default async function CotizacionDetallePage({
               .slice(0, 4)
               .map((t) => t.nombre_limpio || t.nombre_original),
             notas: null,
-            clickupUrl: it.clickup_ticket_id
-              ? `https://app.clickup.com/t/${it.clickup_ticket_id}`
-              : null,
+            clickupUrl: null,
           })
         }
         iaContexto={

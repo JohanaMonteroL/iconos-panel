@@ -27,6 +27,13 @@ const PRIORIDADES: { value: Prioridad; label: string }[] = [
   { value: "alta", label: "Alta" },
 ];
 
+// Azul = baja, amarillo = media, rojo = alta — mismo esquema en todo el sistema.
+const PRIORIDAD_COLOR: Record<Prioridad, { bg: string; fg: string }> = {
+  baja: { bg: "#DBEAFE", fg: "#1D4ED8" },
+  media: { bg: "#FEF3C7", fg: "#B45309" },
+  alta: { bg: "#FEE2E2", fg: "#DC2626" },
+};
+
 type Props = {
   cotizacionId: string;
   programadores: Programador[];
@@ -191,23 +198,33 @@ export default function EstimacionTempranaEditor({
           <div>
             <label className="field-label">Prioridad</label>
             <div className="flex gap-2 h-[38px] items-center">
-              {PRIORIDADES.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => setPrioridad(p.value)}
-                  className={prioridad === p.value ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
-                >
-                  {p.label}
-                </button>
-              ))}
+              {PRIORIDADES.map((p) => {
+                const activa = prioridad === p.value;
+                const c = PRIORIDAD_COLOR[p.value];
+                return (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setPrioridad(p.value)}
+                    className="btn-sm"
+                    style={{
+                      background: activa ? c.bg : "transparent",
+                      color: activa ? c.fg : "var(--text-secondary)",
+                      border: `1px solid ${activa ? c.bg : "var(--border-default)"}`,
+                      fontWeight: activa ? 600 : 500,
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="md:col-span-2">
             <label className="field-label">
               Proyecto {proyectos.length === 0 && (
-                <span className="text-text-tertiary font-normal">(sin ClickUp configurado)</span>
+                <span className="text-text-tertiary font-normal">(sin proyectos activos)</span>
               )}
             </label>
             <ProyectoSearch

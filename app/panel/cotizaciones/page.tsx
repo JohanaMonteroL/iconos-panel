@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Clock, ExternalLink, DollarSign, User } from "lucide-react";
+import { Clock, DollarSign, User } from "lucide-react";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import VistaToggle from "@/components/ui/VistaToggle";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -20,7 +20,6 @@ type Row = {
   horas_max: number;
   horas_envio?: number | null;
   created_at: string;
-  clickup_ticket_id: string | null;
   programador_id: string | null;
   programadores: { nombre: string } | null;
   proyecto_nombre?: string | null;
@@ -58,7 +57,7 @@ async function getCotizaciones(filtros: Filtros): Promise<Row[]> {
   const supa = createSupabaseServiceClient();
 
   const selCompleto =
-    "id, nombre, estado, horas_min, horas_max, horas_envio, created_at, clickup_ticket_id, programador_id, tipo_precio, monto_fijo, proyecto_nombre, estimacion_formulario_id, programadores(nombre)";
+    "id, nombre, estado, horas_min, horas_max, horas_envio, created_at, programador_id, tipo_precio, monto_fijo, proyecto_nombre, estimacion_formulario_id, programadores(nombre)";
   const selSinProy = selCompleto.replace(", proyecto_nombre", "");
   const selSinFijo = selSinProy.replace(", tipo_precio, monto_fijo", "");
   const selBasico = selSinFijo.replace(", horas_envio", "");
@@ -379,12 +378,6 @@ function ListaCotizaciones({ items }: { items: Row[] }) {
                         {it.horas_min}–{it.horas_max}h
                       </span>
                     )}
-                    {it.clickup_ticket_id && (
-                      <span className="inline-flex items-center gap-1">
-                        <ExternalLink size={11} strokeWidth={1.5} />
-                        ClickUp
-                      </span>
-                    )}
                     {/* En mobile el programador/proyecto/fecha también aquí */}
                     <span className="md:hidden">
                       {it.programadores?.nombre ?? "—"}
@@ -473,12 +466,6 @@ function TarjetaCotizacion({ it }: { it: Row }) {
           <span className="num-tabular inline-flex items-center gap-1.5">
             <Clock size={12} strokeWidth={1.5} />
             {it.horas_min}–{it.horas_max} h
-          </span>
-        )}
-        {it.clickup_ticket_id && (
-          <span className="inline-flex items-center gap-1.5">
-            <ExternalLink size={12} strokeWidth={1.5} />
-            ClickUp
           </span>
         )}
       </div>

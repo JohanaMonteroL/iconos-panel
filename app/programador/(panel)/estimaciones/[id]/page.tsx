@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ExternalLink, Send } from "lucide-react";
+import { ChevronLeft, Send } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { requireProgramador } from "@/lib/programador/auth";
 import { formatFechaLarga } from "@/lib/dates";
@@ -38,7 +38,6 @@ type CotizacionDetalle = {
   horas_min: number;
   horas_max: number;
   horas_envio: number | null;
-  clickup_ticket_id: string | null;
   jefe_aprobacion_recibida_at: string | null;
   tareas_estimacion: TareaRow[];
 };
@@ -53,7 +52,7 @@ async function getCotizacion(
     .select(
       `id, created_at, estado, programador_id, nombre, nombre_original,
        proyecto_nombre, notas_programador, buffer_porcentaje,
-       horas_min, horas_max, horas_envio, clickup_ticket_id,
+       horas_min, horas_max, horas_envio,
        jefe_aprobacion_recibida_at,
        tareas_estimacion(orden, nombre_original, nombre_limpio, descripcion_original, descripcion_limpia, hrs_min, hrs_max)`
     )
@@ -87,9 +86,6 @@ export default async function EstimacionDetallePage({
   const nombreOriginal = cot.nombre_original || cot.nombre || "(sin nombre)";
   const nombreFinal = cot.nombre || nombreOriginal;
   const buffer = cot.buffer_porcentaje ?? 0;
-  const clickupUrl = cot.clickup_ticket_id
-    ? `https://app.clickup.com/t/${cot.clickup_ticket_id}`
-    : null;
   const totOrig = totales(cot.tareas_estimacion);
 
   const tareasFinales = cot.tareas_estimacion.map((t) => ({
@@ -198,13 +194,6 @@ export default async function EstimacionDetallePage({
           </div>
         )}
       </section>
-
-      {clickupUrl && (
-        <a href={clickupUrl} target="_blank" rel="noreferrer" className="btn-secondary">
-          <ExternalLink size={16} strokeWidth={1.75} />
-          <span>Abrir ticket de ClickUp</span>
-        </a>
-      )}
 
       {/* Tareas — con toggle entre final (limpia/enviada) y original */}
       <section className="space-y-3">

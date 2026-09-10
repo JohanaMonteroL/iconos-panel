@@ -86,6 +86,7 @@ export async function POST(
 
   revalidatePath(`/panel/cotizaciones/${params.id}`);
   revalidatePath("/panel/cotizaciones");
+  revalidatePath("/panel/cotizaciones-v2");
   revalidatePath("/panel");
 
   return NextResponse.json({ ok: true });

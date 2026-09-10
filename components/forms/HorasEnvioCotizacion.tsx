@@ -82,18 +82,11 @@ export default function HorasEnvioCotizacion({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      if (json.clickup_warning) {
-        setMsg({
-          tipo: "warn",
-          texto: `Guardado, pero ClickUp: ${json.clickup_warning}`,
-        });
-      } else {
-        setMsg({
-          tipo: "ok",
-          texto: `Horas actualizadas a ${json.horas_envio}h y ClickUp sincronizado.`,
-        });
-        setTimeout(() => setMsg(null), 3500);
-      }
+      setMsg({
+        tipo: "ok",
+        texto: `Horas actualizadas a ${json.horas_envio}h.`,
+      });
+      setTimeout(() => setMsg(null), 3500);
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });

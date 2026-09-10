@@ -126,7 +126,6 @@ export default function NuevaCotizacionFijaForm({
       }
 
       const ws: string[] = [];
-      if (json.clickup_warning) ws.push(`ClickUp: ${json.clickup_warning}`);
       if (json.slack_warning) ws.push(`Slack: ${json.slack_warning}`);
 
       if (ws.length > 0) {

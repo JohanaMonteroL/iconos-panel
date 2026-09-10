@@ -2,19 +2,38 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Send } from "lucide-react";
+import {
+  Sparkles,
+  Send,
+  Save,
+  FilePlus2,
+  FileText,
+  ListChecks,
+  Calculator,
+  DollarSign,
+  Clock,
+  CheckCheck,
+  Folder,
+} from "lucide-react";
 import TareasTabla, { TareaRow, filaVacia } from "@/components/forms/TareasTabla";
 import ProyectoSearch from "@/components/forms/ProyectoSearch";
 import BufferSelector from "@/components/forms/BufferSelector";
 import TotalesFlotantes from "@/components/forms/TotalesFlotantes";
 import ResumenEstimacion from "@/components/forms/ResumenEstimacion";
+import EnviarPdfModal from "@/components/forms/EnviarPdfModal";
 import Modal from "@/components/ui/Modal";
 import Markdown from "@/components/ui/Markdown";
 import { totalesPERT, aplicarBuffer } from "@/lib/pert";
 
 type Programador = { id: string; nombre: string; precio_hora?: number };
-type Proyecto = { id: string; nombre: string };
+type Proyecto = {
+  id: string;
+  nombre: string;
+  precio_hora_venta?: number;
+  moneda_hora?: "MXN" | "USD";
+};
 type Prioridad = "alta" | "media" | "baja";
+type HorasEnvioTipo = "min" | "pert" | "max" | "custom";
 
 const PRIORIDADES: { value: Prioridad; label: string }[] = [
   { value: "baja", label: "Baja" },
@@ -22,12 +41,58 @@ const PRIORIDADES: { value: Prioridad; label: string }[] = [
   { value: "alta", label: "Alta" },
 ];
 
+// Azul = baja, amarillo = media, rojo = alta — mismo esquema en todo el sistema
+// (badges de prioridad en el detalle, aquí en la creación/edición temprana).
+const PRIORIDAD_COLOR: Record<Prioridad, { bg: string; fg: string }> = {
+  baja: { bg: "#DBEAFE", fg: "#1D4ED8" },
+  media: { bg: "#FEF3C7", fg: "#B45309" },
+  alta: { bg: "#FEE2E2", fg: "#DC2626" },
+};
+
+function SectionTitle({
+  icon: Icon,
+  bg,
+  fg,
+  children,
+}: {
+  icon: React.ElementType;
+  bg: string;
+  fg: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span
+        className="grid place-items-center flex-shrink-0"
+        style={{ width: 27, height: 27, borderRadius: "50%", background: bg, color: fg }}
+      >
+        <Icon size={13.5} strokeWidth={1.9} />
+      </span>
+      <h2 className="text-heading-2">{children}</h2>
+    </div>
+  );
+}
+
+function fmtMoneda(n: number, moneda: string): string {
+  try {
+    return new Intl.NumberFormat("es-MX", {
+      style: "currency",
+      currency: moneda || "MXN",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `$${n.toLocaleString("es-MX")} ${moneda}`;
+  }
+}
+
 type Props = {
   programadores: Programador[];
   proyectos?: Proyecto[];
-  // Modo admin (Johana crea desde /panel/cotizaciones): agrega prioridad y
-  // una tarjeta de costo estimado, y al terminar te lleva al detalle en vez
-  // de mostrar la pantalla de "enviada" (pensada para el programador).
+  // Modo admin (Johana crea desde /panel/cotizaciones): agrega prioridad,
+  // costo estimado (con el precio/hora del proyecto), horas a enviar, y
+  // guarda directo sin notificar a nadie — sin la pantalla de "enviada"
+  // pensada para el programador.
   modoAdmin?: boolean;
 };
 
@@ -44,6 +109,8 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
   const [rows, setRows] = useState<TareaRow[]>([filaVacia()]);
   const [bufferPct, setBufferPct] = useState(0);
   const [prioridad, setPrioridad] = useState<Prioridad>("media");
+  const [horasEnvioTipo, setHorasEnvioTipo] = useState<HorasEnvioTipo>("pert");
+  const [horasEnvioCustom, setHorasEnvioCustom] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [ok, setOk] = useState(false);
@@ -52,6 +119,14 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
   const [validando, setValidando] = useState(false);
   const [opinionIA, setOpinionIA] = useState<string | null>(null);
   const [opinionErr, setOpinionErr] = useState<string | null>(null);
+
+  // ── Admin: tabs, y las dos rutas de creación (aprobación / enviada) ──
+  const [tab, setTab] = useState<"desglose" | "documentos">("desglose");
+  const [creando, setCreando] = useState<"aprobacion" | "enviada" | null>(null);
+  const [modalAprobacionAbierto, setModalAprobacionAbierto] = useState(false);
+  const [slackPreview, setSlackPreview] = useState("");
+  const [modalPdfAbierto, setModalPdfAbierto] = useState(false);
+  const [cotizacionCreadaId, setCotizacionCreadaId] = useState<string | null>(null);
 
   const totales = useMemo(
     () =>
@@ -70,8 +145,30 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
   );
 
   const programadorSeleccionado = programadores.find((p) => p.id === programadorId);
-  const precioHora = programadorSeleccionado?.precio_hora ?? 0;
+  const proyectoSeleccionado = proyectos.find((p) => p.id === proyectoId);
+  // El costo estimado (lo que se le cobraría al cliente) usa el precio/hora
+  // configurado en el PROYECTO, no el costo interno del estimador.
+  const precioHora = proyectoSeleccionado?.precio_hora_venta ?? 0;
+  const monedaHora = proyectoSeleccionado?.moneda_hora ?? "MXN";
   const costoEstimado = Math.round(totalesConBuffer.totalEsperado * precioHora * 100) / 100;
+
+  const horasEnvioPert = useMemo(
+    () => Math.round(((totales.totalMin + totales.totalMax) / 2) * 10) / 10,
+    [totales]
+  );
+  const horasEnvioValor = useMemo(() => {
+    if (horasEnvioTipo === "min") return totales.totalMin;
+    if (horasEnvioTipo === "max") return totales.totalMax;
+    if (horasEnvioTipo === "pert") return horasEnvioPert;
+    const n = Number(horasEnvioCustom);
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : 0;
+  }, [horasEnvioTipo, horasEnvioCustom, totales, horasEnvioPert]);
+
+  // Precio total = horas que realmente se van a enviar (no el PERT+buffer)
+  // por el precio de venta configurado en el proyecto.
+  const precioTotalEnvio = Math.round(horasEnvioValor * precioHora * 100) / 100;
+
+  const tareasValidas = rows.filter((r) => r.nombre.trim() !== "");
 
   if (ok) {
     return (
@@ -91,11 +188,10 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
       programador_id: programadorId,
       nombre_solicitud: nombre.trim(),
       notas: notas.trim() || undefined,
-      proyecto_clickup_id: proyectoId || undefined,
       proyecto_nombre: proyecto?.nombre,
       buffer_porcentaje: bufferPct,
       prioridad,
-      tareas: rows.map((r) => ({
+      tareas: tareasValidas.map((r) => ({
         nombre: r.nombre.trim(),
         descripcion: r.descripcion.trim(),
         hrs_min: Number(r.hrs_min) || 0,
@@ -131,11 +227,10 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
     }
   };
 
-  // El submit del form abre el modal de confirmación (no envía aún)
+  // ── Flujo programador: submit abre modal de confirmación (no envía aún) ──
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    // Validación mínima antes de abrir el modal
     const localErrors: Record<string, string> = {};
     if (!programadorId) localErrors.programador_id = "Selecciona un estimador.";
     if (!nombre.trim()) localErrors.nombre_solicitud = "Pon un nombre.";
@@ -159,7 +254,6 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
     setConfirmAbierto(true);
   };
 
-  // Envío real, disparado desde el modal
   const enviar = async () => {
     setErrors({});
     setSending(true);
@@ -179,11 +273,7 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
         return;
       }
       setConfirmAbierto(false);
-      if (modoAdmin) {
-        router.push(`/panel/cotizaciones/${json.id}`);
-      } else {
-        setOk(true);
-      }
+      setOk(true);
     } catch {
       setErrors({ __form: "Error de red. Intenta de nuevo." });
       setConfirmAbierto(false);
@@ -192,13 +282,263 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
     }
   };
 
+  // ── Flujo admin: guarda directo, sin modal ni notificación ──
+  const guardarAdmin = async (comoBorrador: boolean) => {
+    setErrors({});
+    const localErrors: Record<string, string> = {};
+    if (!programadorId) localErrors.programador_id = "Selecciona un estimador.";
+    if (!nombre.trim()) localErrors.nombre_solicitud = "Pon un nombre.";
+    if (!comoBorrador) {
+      if (tareasValidas.length === 0) localErrors.tareas = "Añade al menos una tarea.";
+      tareasValidas.forEach((r, i) => {
+        const min = Number(r.hrs_min);
+        const max = Number(r.hrs_max);
+        if (!Number.isFinite(min) || min < 0) localErrors[`tareas.${i}.hrs_min`] = "Inválido.";
+        if (!Number.isFinite(max) || max < 0) localErrors[`tareas.${i}.hrs_max`] = "Inválido.";
+        if (Number.isFinite(min) && Number.isFinite(max) && max < min)
+          localErrors[`tareas.${i}.hrs_max`] = "Máx debe ser ≥ mín.";
+      });
+    }
+    if (Object.keys(localErrors).length > 0) {
+      setErrors(localErrors);
+      return;
+    }
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/estimaciones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...buildPayload(),
+          guardar_borrador: comoBorrador,
+          notificar: false,
+          horas_envio_tipo: tareasValidas.length > 0 ? horasEnvioTipo : undefined,
+          horas_envio_custom:
+            tareasValidas.length > 0 && horasEnvioTipo === "custom"
+              ? Number(horasEnvioCustom) || 0
+              : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        const map: Record<string, string> = {};
+        (json.errors ?? []).forEach((e: any) => (map[e.path] = e.message));
+        if (!json.errors) map.__form = json.error ?? "No se pudo guardar.";
+        setErrors(map);
+        return;
+      }
+      router.push(`/panel/cotizaciones/${json.id}`);
+    } catch {
+      setErrors({ __form: "Error de red. Intenta de nuevo." });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ── Validación compartida por "Enviar a aprobación" y "Crear en enviada
+  // al cliente" — ambas requieren datos completos y al menos una tarea. ──
+  const validarParaCrear = (): boolean => {
+    setErrors({});
+    const localErrors: Record<string, string> = {};
+    if (!programadorId) localErrors.programador_id = "Selecciona un estimador.";
+    if (!nombre.trim()) localErrors.nombre_solicitud = "Pon un nombre.";
+    if (tareasValidas.length === 0) localErrors.tareas = "Añade al menos una tarea.";
+    tareasValidas.forEach((r, i) => {
+      const min = Number(r.hrs_min);
+      const max = Number(r.hrs_max);
+      if (!Number.isFinite(min) || min < 0) localErrors[`tareas.${i}.hrs_min`] = "Inválido.";
+      if (!Number.isFinite(max) || max < 0) localErrors[`tareas.${i}.hrs_max`] = "Inválido.";
+      if (Number.isFinite(min) && Number.isFinite(max) && max < min)
+        localErrors[`tareas.${i}.hrs_max`] = "Máx debe ser ≥ mín.";
+    });
+    if (Object.keys(localErrors).length > 0) {
+      setErrors(localErrors);
+      return false;
+    }
+    return true;
+  };
+
+  // Crea el registro directo en la base (misma ruta que "Guardar como
+  // borrador"/"Crear" de siempre) y devuelve su id, para que las dos rutas
+  // nuevas (Slack / PDF) sigan operando sobre un id real ya existente.
+  const crearCotizacionAdmin = async (): Promise<string | null> => {
+    try {
+      const res = await fetch("/api/estimaciones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...buildPayload(),
+          guardar_borrador: false,
+          notificar: false,
+          horas_envio_tipo: horasEnvioTipo,
+          horas_envio_custom:
+            horasEnvioTipo === "custom" ? Number(horasEnvioCustom) || 0 : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        const map: Record<string, string> = {};
+        (json.errors ?? []).forEach((e: any) => (map[e.path] = e.message));
+        if (!json.errors) map.__form = json.error ?? "No se pudo crear.";
+        setErrors(map);
+        return null;
+      }
+      return json.id as string;
+    } catch {
+      setErrors({ __form: "Error de red. Intenta de nuevo." });
+      return null;
+    }
+  };
+
+  const abrirEnviarAprobacion = () => {
+    if (!validarParaCrear()) return;
+    const proyectoNombre = proyectoSeleccionado?.nombre ?? "Sin proyecto";
+    const estimadorNombre = programadorSeleccionado?.nombre ?? "—";
+    const lineasNotas = notas.trim() ? `\nNotas: ${notas.trim()}` : "";
+    setSlackPreview(
+      `📋 *${nombre.trim()}*\nProyecto: ${proyectoNombre}\nEstimador: ${estimadorNombre}\nPrioridad: ${prioridad}\nHoras a enviar: ${horasEnvioValor}h${lineasNotas}`
+    );
+    setModalAprobacionAbierto(true);
+  };
+
+  const confirmarEnviarAprobacion = async () => {
+    setCreando("aprobacion");
+    try {
+      const id = await crearCotizacionAdmin();
+      if (!id) {
+        setModalAprobacionAbierto(false);
+        return;
+      }
+      await fetch(`/api/cotizaciones/${id}/cambiar-estado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado: "esperando_aprobacion" }),
+      });
+      const r2 = await fetch(`/api/cotizaciones/${id}/reenviar-slack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!r2.ok) {
+        const j2 = await r2.json();
+        setErrors({
+          __form:
+            j2.error ||
+            'Se creó, pero no se pudo enviar el mensaje a Slack. Usa "Reenviar Slack" desde el detalle.',
+        });
+      }
+      setModalAprobacionAbierto(false);
+      router.push(`/panel/cotizaciones/${id}`);
+    } finally {
+      setCreando(null);
+    }
+  };
+
+  const abrirCrearEnviada = async () => {
+    if (!validarParaCrear()) return;
+    setCreando("enviada");
+    try {
+      const id = await crearCotizacionAdmin();
+      if (!id) return;
+      setCotizacionCreadaId(id);
+      setTab("documentos");
+      setModalPdfAbierto(true);
+    } finally {
+      setCreando(null);
+    }
+  };
+
   return (
-    <div className={modoAdmin ? "grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start" : undefined}>
-    <form onSubmit={onSubmit} className="space-y-8 pb-32">
+    <div className="space-y-4">
+    {modoAdmin && (
+      <header className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-2">
+          <h1 className="text-display">Crear estimación</h1>
+          <p className="text-body text-text-secondary">
+            No se manda ninguna notificación — tú decides cuándo avanzarla.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => guardarAdmin(true)}
+            disabled={sending || creando !== null}
+            className="btn-secondary"
+          >
+            <Save size={16} strokeWidth={1.75} />
+            <span>{sending ? "Guardando…" : "Guardar como borrador"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={abrirEnviarAprobacion}
+            disabled={sending || creando !== null || tareasValidas.length === 0}
+            className="btn-secondary"
+          >
+            <Send size={16} strokeWidth={1.75} />
+            <span>{creando === "aprobacion" ? "Enviando…" : "Enviar a aprobación"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={abrirCrearEnviada}
+            disabled={sending || creando !== null || tareasValidas.length === 0}
+            className="btn-primary"
+          >
+            <CheckCheck size={16} strokeWidth={1.75} />
+            <span>{creando === "enviada" ? "Creando…" : "Crear en enviada al cliente"}</span>
+          </button>
+        </div>
+      </header>
+    )}
+
+    {modoAdmin && errors.__form && (
+      <p className="text-caption" style={{ color: "var(--state-error)" }}>
+        {errors.__form}
+      </p>
+    )}
+
+    <div className={modoAdmin ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start" : undefined}>
+    <form onSubmit={modoAdmin ? (e) => e.preventDefault() : onSubmit} className="space-y-6 pb-32">
       {/* Bloque 1: Datos generales */}
       <section className="card space-y-5">
-        <h2 className="text-heading-2">Datos generales</h2>
+        <SectionTitle icon={FileText} bg="#DBEAFE" fg="#1D4ED8">
+          Datos generales
+        </SectionTitle>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className="field-label">Nombre de la cotización *</label>
+            <input
+              className="input"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Ej. Soporte pasarela de pagos Pollo Loco"
+            />
+            {errors.nombre_solicitud && (
+              <span className="field-hint" style={{ color: "var(--state-error)" }}>
+                {errors.nombre_solicitud}
+              </span>
+            )}
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="field-label">
+              Proyecto {proyectos.length === 0 && (
+                <span className="text-text-tertiary font-normal">(sin proyectos activos)</span>
+              )}
+            </label>
+            <ProyectoSearch
+              proyectos={proyectos}
+              value={proyectoId}
+              onChange={setProyectoId}
+              disabled={proyectos.length === 0}
+            />
+            <span className="field-hint">
+              {proyectos.length > 0
+                ? `${proyectos.length} proyectos activos — escribe para filtrar`
+                : "Créalos desde el catálogo de Proyectos"}
+            </span>
+          </div>
+
           <div>
             <label className="field-label">Estimador *</label>
             <select
@@ -223,61 +563,65 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           {modoAdmin && (
             <div>
               <label className="field-label">Prioridad</label>
-              <div className="flex gap-2">
-                {PRIORIDADES.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => setPrioridad(p.value)}
-                    className={prioridad === p.value ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+              <div className="flex gap-2 h-[38px] items-center">
+                {PRIORIDADES.map((p) => {
+                  const activa = prioridad === p.value;
+                  const c = PRIORIDAD_COLOR[p.value];
+                  return (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setPrioridad(p.value)}
+                      className="btn-sm"
+                      style={{
+                        background: activa ? c.bg : "transparent",
+                        color: activa ? c.fg : "var(--text-secondary)",
+                        border: `1px solid ${activa ? c.bg : "var(--border-default)"}`,
+                        fontWeight: activa ? 600 : 500,
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
-
-          <div>
-            <label className="field-label">
-              Proyecto {proyectos.length === 0 && (
-                <span className="text-text-tertiary font-normal">(sin ClickUp configurado)</span>
-              )}
-            </label>
-            <ProyectoSearch
-              proyectos={proyectos}
-              value={proyectoId}
-              onChange={setProyectoId}
-              disabled={proyectos.length === 0}
-            />
-            <span className="field-hint">
-              {proyectos.length > 0
-                ? `${proyectos.length} proyectos de ClickUp — escribe para filtrar`
-                : "Cuando se configure ClickUp aparecerán los proyectos aquí"}
-            </span>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="field-label">Nombre de la cotización *</label>
-            <input
-              className="input"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej. Soporte pasarela de pagos Pollo Loco"
-            />
-            {errors.nombre_solicitud && (
-              <span className="field-hint" style={{ color: "var(--state-error)" }}>
-                {errors.nombre_solicitud}
-              </span>
-            )}
-          </div>
         </div>
       </section>
 
+      {modoAdmin && (
+        <div className="flex gap-1 border-b" style={{ borderColor: "var(--border-subtle)" }}>
+          {(
+            [
+              { value: "desglose", label: "Desglose de estimación" },
+              { value: "documentos", label: "Documentos" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setTab(t.value)}
+              className="px-4 py-2.5 text-body-medium"
+              style={{
+                borderBottom: `2px solid ${tab === t.value ? "var(--accent)" : "transparent"}`,
+                color: tab === t.value ? "var(--text-primary)" : "var(--text-secondary)",
+                marginBottom: -1,
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div hidden={modoAdmin && tab !== "desglose"} className="space-y-6">
       {/* Bloque 2: Tareas */}
-      <section className="space-y-4">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-heading-2">Tareas y horas</h2>
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between">
+          <SectionTitle icon={ListChecks} bg="#FEF3C7" fg="#B45309">
+            Tareas y horas
+          </SectionTitle>
           <span className="text-caption text-text-tertiary">
             El esperado se calcula automáticamente
           </span>
@@ -292,7 +636,9 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
 
       {/* Bloque 3: Totales + Buffer */}
       <section className="card space-y-6">
-        <h2 className="text-heading-2">Resumen</h2>
+        <SectionTitle icon={Calculator} bg="#DCFCE7" fg="#15803D">
+          Resumen
+        </SectionTitle>
 
         <div>
           <div className="text-overline text-text-tertiary mb-3">Horas originales</div>
@@ -371,23 +717,28 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
         </p>
       </section>
 
-      {/* Bloque 4: Notas */}
-      <section className="card">
-        <label className="field-label">Notas generales</label>
-        <span className="field-hint mb-2">Opcional — supuestos o advertencias globales</span>
-        <textarea
-          className="textarea min-h-[100px] mt-2"
-          rows={4}
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-        />
-      </section>
+      {/* Bloque 4: Notas — solo aquí para el programador; en modo admin vive
+          en el panel lateral, debajo del costo estimado. */}
+      {!modoAdmin && (
+        <section className="card">
+          <label className="field-label">Notas generales</label>
+          <span className="field-hint mb-2">Opcional — supuestos o advertencias globales</span>
+          <textarea
+            className="textarea min-h-[100px] mt-2"
+            rows={4}
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+          />
+        </section>
+      )}
 
       {/* Bloque 5: Validación IA */}
       <section className="card space-y-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-heading-2">¿Las horas tienen sentido?</h2>
+          <div className="min-w-0 space-y-2">
+            <SectionTitle icon={Sparkles} bg="#EDE9FE" fg="#6D28D9">
+              ¿Las horas tienen sentido?
+            </SectionTitle>
             <p className="text-caption text-text-secondary mt-1">
               Pide a la IA una segunda opinión antes de enviar. No envía la estimación.
             </p>
@@ -420,79 +771,113 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           </div>
         )}
       </section>
-
-      {/* Submit */}
-      <div>
-        {errors.__form && (
-          <p
-            className="text-caption text-center mb-3"
-            style={{ color: "var(--state-error)" }}
-          >
-            {errors.__form}
-          </p>
-        )}
-        <button type="submit" disabled={sending} className="btn-primary w-full">
-          <Send size={16} strokeWidth={1.75} />
-          <span>Revisar y enviar</span>
-        </button>
-        <p className="text-caption text-text-tertiary text-center mt-3">
-          Te mostraremos un resumen antes de enviar. Una vez enviada no podrás editarla.
-        </p>
       </div>
 
-      <Modal
-        open={confirmAbierto}
-        onClose={() => !sending && setConfirmAbierto(false)}
-        title="Confirmar envío"
-        size="lg"
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setConfirmAbierto(false)}
-              disabled={sending}
-              className="btn-secondary"
+      {modoAdmin && (
+        <div hidden={tab !== "documentos"} className="space-y-6">
+          <section className="card space-y-4">
+            <SectionTitle icon={Folder} bg="#DBEAFE" fg="#1D4ED8">
+              Documentos
+            </SectionTitle>
+            <p className="text-caption text-text-secondary">
+              Sube el PDF que se le mandó al cliente. Al subirlo, la cotización
+              pasa a <strong className="text-text-primary">Enviada al cliente</strong>.
+            </p>
+            {cotizacionCreadaId ? (
+              <button
+                type="button"
+                onClick={() => setModalPdfAbierto(true)}
+                className="btn-primary"
+              >
+                <FileText size={16} strokeWidth={1.75} />
+                <span>Subir PDF de la cotización</span>
+              </button>
+            ) : (
+              <p className="text-caption text-text-tertiary">
+                Primero crea o guarda esta cotización — luego podrás subir el PDF
+                aquí o desde la ficha de la cotización.
+              </p>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* Submit — solo flujo del programador; el admin usa los botones del panel lateral */}
+      {!modoAdmin && (
+        <div>
+          {errors.__form && (
+            <p
+              className="text-caption text-center mb-3"
+              style={{ color: "var(--state-error)" }}
             >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={enviar}
-              disabled={sending}
-              className="btn-primary"
-            >
-              <Send size={16} strokeWidth={1.75} />
-              <span>{sending ? "Enviando…" : "Confirmar y enviar"}</span>
-            </button>
-          </>
-        }
-      >
-        <ResumenEstimacion
-          programador={
-            programadores.find((p) => p.id === programadorId)?.nombre ?? "—"
-          }
-          proyecto={proyectos.find((p) => p.id === proyectoId)?.nombre}
-          nombreSolicitud={nombre.trim()}
-          notas={notas.trim() || undefined}
-          tareas={rows.map((r) => ({
-            nombre: r.nombre.trim(),
-            descripcion: r.descripcion.trim(),
-            hrs_min: Number(r.hrs_min) || 0,
-            hrs_max: Number(r.hrs_max) || 0,
-          }))}
-          bufferPct={bufferPct}
-          totales={totales}
-          totalesConBuffer={totalesConBuffer}
-        />
-        {errors.__form && (
-          <p
-            className="text-caption mt-4 text-center"
-            style={{ color: "var(--state-error)" }}
-          >
-            {errors.__form}
+              {errors.__form}
+            </p>
+          )}
+          <button type="submit" disabled={sending} className="btn-primary w-full">
+            <Send size={16} strokeWidth={1.75} />
+            <span>Revisar y enviar</span>
+          </button>
+          <p className="text-caption text-text-tertiary text-center mt-3">
+            Te mostraremos un resumen antes de enviar. Una vez enviada no podrás editarla.
           </p>
-        )}
-      </Modal>
+        </div>
+      )}
+
+      {!modoAdmin && (
+        <Modal
+          open={confirmAbierto}
+          onClose={() => !sending && setConfirmAbierto(false)}
+          title="Confirmar envío"
+          size="lg"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmAbierto(false)}
+                disabled={sending}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={enviar}
+                disabled={sending}
+                className="btn-primary"
+              >
+                <Send size={16} strokeWidth={1.75} />
+                <span>{sending ? "Enviando…" : "Confirmar y enviar"}</span>
+              </button>
+            </>
+          }
+        >
+          <ResumenEstimacion
+            programador={
+              programadores.find((p) => p.id === programadorId)?.nombre ?? "—"
+            }
+            proyecto={proyectos.find((p) => p.id === proyectoId)?.nombre}
+            nombreSolicitud={nombre.trim()}
+            notas={notas.trim() || undefined}
+            tareas={rows.map((r) => ({
+              nombre: r.nombre.trim(),
+              descripcion: r.descripcion.trim(),
+              hrs_min: Number(r.hrs_min) || 0,
+              hrs_max: Number(r.hrs_max) || 0,
+            }))}
+            bufferPct={bufferPct}
+            totales={totales}
+            totalesConBuffer={totalesConBuffer}
+          />
+          {errors.__form && (
+            <p
+              className="text-caption mt-4 text-center"
+              style={{ color: "var(--state-error)" }}
+            >
+              {errors.__form}
+            </p>
+          )}
+        </Modal>
+      )}
 
       {!modoAdmin && (
         <TotalesFlotantes
@@ -511,7 +896,9 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
     {modoAdmin && (
       <aside className="lg:sticky lg:top-6 space-y-4">
         <div className="card space-y-4">
-          <h2 className="text-heading-2">Costo estimado</h2>
+          <SectionTitle icon={DollarSign} bg="#EDE9FE" fg="#6D28D9">
+            Costo estimado
+          </SectionTitle>
           <div>
             <div className="text-overline text-text-tertiary">Estimador</div>
             <div className="text-body-medium mt-1">
@@ -519,10 +906,13 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
             </div>
           </div>
           <div>
-            <div className="text-overline text-text-tertiary">Precio por hora</div>
+            <div className="text-overline text-text-tertiary">Precio por hora (proyecto)</div>
             <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
-              ${precioHora.toLocaleString("es-MX")}
+              {proyectoSeleccionado ? fmtMoneda(precioHora, monedaHora) : "—"}
             </div>
+            {!proyectoSeleccionado && (
+              <div className="text-caption text-text-tertiary">Selecciona un proyecto</div>
+            )}
           </div>
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
             <div className="text-overline text-text-tertiary">
@@ -538,14 +928,152 @@ export default function EstimacionForm({ programadores, proyectos = [], modoAdmi
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
             <div className="text-overline text-text-tertiary">Costo total estimado</div>
             <div className="mt-1 num-tabular" style={{ fontSize: 27, fontWeight: 700 }}>
-              ${costoEstimado.toLocaleString("es-MX")}
+              {fmtMoneda(costoEstimado, monedaHora)}
             </div>
             <div className="text-caption text-text-tertiary">
-              {totalesConBuffer.totalEsperado}h × ${precioHora.toLocaleString("es-MX")}/h
+              {totalesConBuffer.totalEsperado}h × {fmtMoneda(precioHora, monedaHora)}/h
             </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">Precio total (horas a enviar)</div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 27, fontWeight: 700 }}>
+              {fmtMoneda(precioTotalEnvio, monedaHora)}
+            </div>
+            <div className="text-caption text-text-tertiary">
+              {horasEnvioValor}h × {fmtMoneda(precioHora, monedaHora)}/h
+            </div>
+          </div>
+
+          {/* Notas — debajo del costo estimado, como se pidió */}
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <label className="field-label">Notas</label>
+            <textarea
+              className="textarea"
+              rows={3}
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
+              placeholder="Opcional — supuestos o advertencias"
+            />
+          </div>
+        </div>
+
+        {/* Horas a enviar — se elige desde la creación, no hasta después */}
+        <div className="card space-y-3">
+          <SectionTitle icon={Clock} bg="#DBEAFE" fg="#1D4ED8">
+            Horas a enviar
+          </SectionTitle>
+          <p className="text-caption text-text-secondary">
+            El número que verá el jefe/cliente más adelante. No cambia las horas de las tareas.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(["min", "pert", "max"] as HorasEnvioTipo[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setHorasEnvioTipo(t)}
+                className={`btn-sm whitespace-nowrap ${horasEnvioTipo === t ? "btn-primary" : "btn-secondary"}`}
+              >
+                {t === "min"
+                  ? `Mín · ${totales.totalMin}h`
+                  : t === "pert"
+                  ? `PERT · ${horasEnvioPert}h`
+                  : `Máx · ${totales.totalMax}h`}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setHorasEnvioTipo("custom")}
+              className={`btn-sm whitespace-nowrap ${horasEnvioTipo === "custom" ? "btn-primary" : "btn-secondary"}`}
+            >
+              Personalizado
+            </button>
+          </div>
+          {horasEnvioTipo === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                inputMode="decimal"
+                className="input input-sm num-tabular text-center w-24"
+                value={horasEnvioCustom}
+                onChange={(e) => setHorasEnvioCustom(e.target.value)}
+                placeholder="hrs"
+              />
+              <span className="text-caption text-text-secondary">horas</span>
+            </div>
+          )}
+          <div className="text-caption text-text-secondary num-tabular">
+            Quedará en <strong className="text-text-primary font-semibold">{horasEnvioValor}h</strong>.
           </div>
         </div>
       </aside>
+    )}
+    </div>
+
+    {modoAdmin && (
+      <Modal
+        open={modalAprobacionAbierto}
+        onClose={() => !creando && setModalAprobacionAbierto(false)}
+        title="Enviar a aprobación"
+        size="md"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setModalAprobacionAbierto(false)}
+              disabled={creando !== null}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmarEnviarAprobacion}
+              disabled={creando !== null}
+              className="btn-primary"
+            >
+              <Send size={16} strokeWidth={1.75} />
+              <span>{creando === "aprobacion" ? "Enviando…" : "Confirmar y enviar"}</span>
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-body text-text-secondary">
+            Este mensaje se enviará a Iván por Slack para pedir su aprobación:
+          </p>
+          <div
+            className="rounded-[10px] p-4 text-body whitespace-pre-wrap"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+            }}
+          >
+            {slackPreview}
+          </div>
+          {errors.__form && (
+            <p className="text-caption" style={{ color: "var(--state-error)" }}>
+              {errors.__form}
+            </p>
+          )}
+        </div>
+      </Modal>
+    )}
+
+    {modoAdmin && (
+      <EnviarPdfModal
+        cotizacionId={cotizacionCreadaId ?? ""}
+        open={modalPdfAbierto}
+        onClose={() => setModalPdfAbierto(false)}
+        onEnviado={() => {
+          setModalPdfAbierto(false);
+          if (cotizacionCreadaId) router.push(`/panel/cotizaciones/${cotizacionCreadaId}`);
+        }}
+        horasEnvio={horasEnvioValor}
+        precioHora={programadorSeleccionado?.precio_hora ?? 0}
+      />
     )}
     </div>
   );

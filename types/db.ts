@@ -76,7 +76,6 @@ export type Cotizacion = {
   slack_text: string | null;
   prioridad: Prioridad | null;
   estado: EstadoCotizacion;
-  clickup_ticket_id: string | null;
   jira_ticket_ids: string[] | null;
   estimacion_formulario_id: string | null;
   ia_recomendacion: string | null;

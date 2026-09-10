@@ -4,7 +4,7 @@
 // que existía antes.
 
 import Link from "next/link";
-import { Plus, Clock, ExternalLink, FileCheck } from "lucide-react";
+import { Plus, Clock, FileCheck } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { requireProgramador } from "@/lib/programador/auth";
 import { formatFechaCorta } from "@/lib/dates";
@@ -23,7 +23,6 @@ type CotizacionRow = {
   horas_max: number;
   horas_envio: number | null;
   buffer_porcentaje: number | null;
-  clickup_ticket_id: string | null;
   tareas_estimacion: { id: string }[] | null;
 };
 
@@ -36,7 +35,7 @@ async function getData(
   let q = supa
     .from("cotizaciones")
     .select(
-      "id, created_at, estado, nombre, proyecto_nombre, horas_min, horas_max, horas_envio, buffer_porcentaje, clickup_ticket_id, tareas_estimacion(id)"
+      "id, created_at, estado, nombre, proyecto_nombre, horas_min, horas_max, horas_envio, buffer_porcentaje, tareas_estimacion(id)"
     )
     .eq("programador_id", programadorId)
     .order("created_at", { ascending: false })
@@ -102,9 +101,6 @@ export default async function MisEstimacionesPage({
           {items.map((it) => {
             const numTareas = it.tareas_estimacion?.length ?? 0;
             const buffer = it.buffer_porcentaje ?? 0;
-            const clickupUrl = it.clickup_ticket_id
-              ? `https://app.clickup.com/t/${it.clickup_ticket_id}`
-              : null;
 
             return (
               <li key={it.id}>
@@ -155,12 +151,6 @@ export default async function MisEstimacionesPage({
 
                   <div className="flex items-center justify-between text-caption text-text-tertiary">
                     <span>{formatFechaCorta(it.created_at)}</span>
-                    {clickupUrl && (
-                      <span className="inline-flex items-center gap-1">
-                        <ExternalLink size={12} strokeWidth={1.5} />
-                        Ticket creado
-                      </span>
-                    )}
                   </div>
                 </Link>
               </li>

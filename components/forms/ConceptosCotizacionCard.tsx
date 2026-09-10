@@ -78,12 +78,8 @@ export default function ConceptosCotizacionCard({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      if (json.clickup_warning) {
-        setMsg({ tipo: "warn", texto: `Guardado. ClickUp: ${json.clickup_warning}` });
-      } else {
-        setMsg({ tipo: "ok", texto: "Conceptos actualizados" });
-        setTimeout(() => setMsg(null), 2500);
-      }
+      setMsg({ tipo: "ok", texto: "Conceptos actualizados" });
+      setTimeout(() => setMsg(null), 2500);
       setEditing(false);
       router.refresh();
     } catch {

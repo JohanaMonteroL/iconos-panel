@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, X, SlidersHorizontal } from "lucide-react";
 import {
   ORDEN_FLUJO_COTIZACION,
@@ -28,6 +28,7 @@ export default function FiltrosCotizaciones({
   actuales,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useSearchParams();
   const [q, setQ] = useState(actuales.q ?? "");
   const [abierto, setAbierto] = useState(false);
@@ -37,7 +38,7 @@ export default function FiltrosCotizaciones({
     if (valor) next.set(campo, valor);
     else next.delete(campo);
     const qs = next.toString();
-    router.push(`/panel/cotizaciones${qs ? `?${qs}` : ""}`);
+    router.push(`${pathname}${qs ? `?${qs}` : ""}`);
   };
 
   // Debounce búsqueda
@@ -51,7 +52,7 @@ export default function FiltrosCotizaciones({
   const limpiar = () => {
     setQ("");
     const archParam = actuales.archivadas ? "?archivadas=1" : "";
-    router.push(`/panel/cotizaciones${archParam}`);
+    router.push(`${pathname}${archParam}`);
   };
 
   const tieneFiltros =

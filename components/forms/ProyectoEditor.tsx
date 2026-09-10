@@ -51,12 +51,8 @@ export default function ProyectoEditor({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      if (json.clickup_warning) {
-        setMsg({ tipo: "warn", texto: `Guardado. ClickUp: ${json.clickup_warning}` });
-      } else {
-        setMsg({ tipo: "ok", texto: "Proyecto actualizado y ClickUp sincronizado" });
-        setTimeout(() => setMsg(null), 2500);
-      }
+      setMsg({ tipo: "ok", texto: "Proyecto actualizado" });
+      setTimeout(() => setMsg(null), 2500);
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });
@@ -93,12 +89,11 @@ export default function ProyectoEditor({
       </div>
       <div className="p-5 space-y-3">
         <p className="text-caption text-text-secondary">
-          Cambiar el proyecto también actualiza el campo &quot;Proyecto&quot; del ticket
-          en ClickUp.
+          Se toma del catálogo de Proyectos (solo activos).
         </p>
         {proyectos.length === 0 ? (
           <p className="text-caption text-text-tertiary">
-            Sin proyectos disponibles. Verifica la configuración de ClickUp.
+            Sin proyectos activos. Crea uno desde el catálogo de Proyectos.
           </p>
         ) : (
           <ProyectoSearch

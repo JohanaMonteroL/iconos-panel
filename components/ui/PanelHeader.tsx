@@ -1,12 +1,15 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Bell, Home, FileText, Settings, type LucideIcon } from "lucide-react";
+import { Bell, Home, FileText, Settings, Briefcase, type LucideIcon } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 
 const TITLES: { prefix: string; label: string; icon: LucideIcon }[] = [
   { prefix: "/panel/cotizaciones/nueva", label: "Cotización rápida", icon: FileText },
+  { prefix: "/panel/cotizaciones-v2", label: "Cotizaciones (nueva vista)", icon: FileText },
   { prefix: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText },
+  { prefix: "/panel/proyectos/nuevo", label: "Nuevo proyecto", icon: Briefcase },
+  { prefix: "/panel/proyectos", label: "Proyectos", icon: Briefcase },
   { prefix: "/panel/tickets/nuevo", label: "Nuevo ticket", icon: FileText },
   { prefix: "/panel/tickets/desde-cotizacion", label: "Ticket desde cotización", icon: FileText },
   { prefix: "/panel/tickets", label: "Tickets", icon: FileText },
