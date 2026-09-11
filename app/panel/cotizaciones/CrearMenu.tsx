@@ -76,7 +76,7 @@ export default function CrearMenu() {
             <span>
               <span className="text-body-medium block">Crear estimación</span>
               <span className="text-caption text-text-tertiary block">
-                Tareas y horas — se crea en "Revisión interna"
+                Tareas y horas — se crea en &quot;Revisión interna&quot;
               </span>
             </span>
           </Link>

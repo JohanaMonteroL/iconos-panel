@@ -139,7 +139,8 @@ export async function POST(
   // La columna envio_pdf_titulo puede no existir todavía si la migración
   // 0019 no se ha corrido — reintenta sin ella para no bloquear el envío.
   if (updErr && /envio_pdf_titulo/i.test(updErr.message)) {
-    const { envio_pdf_titulo, ...sinTitulo } = datosEnvio;
+    const sinTitulo = { ...datosEnvio };
+    delete sinTitulo.envio_pdf_titulo;
     ({ error: updErr } = await supa
       .from("cotizaciones")
       .update(sinTitulo)
