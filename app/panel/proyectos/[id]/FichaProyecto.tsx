@@ -20,6 +20,10 @@ export type ProyectoData = {
   emoji: string;
   notas: string | null;
   activo: boolean;
+  soporte_activo: boolean;
+  soporte_tipo: "fijo" | "variable" | null;
+  soporte_horas_fijas: number | null;
+  soporte_tarifa_hora: number | null;
 };
 
 function Campo({

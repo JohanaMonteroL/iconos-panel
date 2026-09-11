@@ -4,25 +4,45 @@ import { ChevronLeft } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { DatosGeneralesCard, NotasCard, EstadoCard, type ProyectoData } from "./FichaProyecto";
 import ContactosFacturacion, { type ContactoFacturacion } from "./ContactosFacturacion";
+import SoporteCard from "./SoporteCard";
 
 export const dynamic = "force-dynamic";
+
+const SELECT_BASE =
+  "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, notas, activo";
+const SELECT_FULL = `${SELECT_BASE}, emoji, soporte_activo, soporte_tipo, soporte_horas_fijas, soporte_tarifa_hora`;
+const SELECT_SIN_SOPORTE = `${SELECT_BASE}, emoji`;
 
 async function getProyecto(id: string): Promise<ProyectoData | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
   let { data, error }: { data: any; error: any } = await supa
     .from("proyectos")
-    .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, notas, activo")
+    .select(SELECT_FULL)
     .eq("id", id)
     .maybeSingle();
+  // Degradación si la migración 0023 (columnas de soporte) todavía no se corrió.
+  if (error && /soporte_(activo|tipo|horas_fijas|tarifa_hora)/i.test(error.message)) {
+    ({ data, error } = await supa
+      .from("proyectos")
+      .select(SELECT_SIN_SOPORTE)
+      .eq("id", id)
+      .maybeSingle());
+  }
   // Degradación si la migración de `emoji` todavía no se corrió.
   if (error && /emoji/i.test(error.message)) {
     ({ data, error } = await supa
       .from("proyectos")
-      .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, notas, activo")
+      .select(SELECT_BASE)
       .eq("id", id)
       .maybeSingle());
-    if (data) (data as any).emoji = "";
+  }
+  if (data) {
+    if (!("emoji" in data)) data.emoji = "";
+    if (!("soporte_activo" in data)) data.soporte_activo = false;
+    if (!("soporte_tipo" in data)) data.soporte_tipo = null;
+    if (!("soporte_horas_fijas" in data)) data.soporte_horas_fijas = null;
+    if (!("soporte_tarifa_hora" in data)) data.soporte_tarifa_hora = null;
   }
   return (data as ProyectoData) ?? null;
 }
@@ -85,6 +105,7 @@ export default async function ProyectoDetallePage({
       </div>
 
       <EstadoCard proyecto={proyecto} />
+      <SoporteCard proyecto={proyecto} />
     </>
   );
 }

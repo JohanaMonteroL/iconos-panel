@@ -187,7 +187,7 @@ export default function NuevaCotizacionFijaForm({
             />
             <span className="field-hint">
               {proyectos.length > 0
-                ? `${proyectos.length} proyectos en ClickUp — escribe para filtrar`
+                ? `${proyectos.length} proyectos activos`
                 : "Cuando se configure ClickUp aparecerán aquí"}
             </span>
           </div>

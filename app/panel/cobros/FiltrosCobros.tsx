@@ -1,35 +1,29 @@
 "use client";
 
+// Mismos filtros que Cotizaciones (FiltrosCotizaciones.tsx) — buscar,
+// estado, proyecto, fecha (rápida o personalizada) y orden — adaptados a
+// Cobros: no hay "programador" aquí, y el estado es el del Período
+// (ORDEN_FLUJO_COBRO_PERIODO), no el de una cotización.
+
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, X, SlidersHorizontal } from "lucide-react";
-import {
-  ORDEN_FLUJO_COTIZACION,
-  ESTADOS_YA_EN_COBROS,
-  labelEstado,
-} from "@/lib/estados";
+import { ORDEN_FLUJO_COBRO_PERIODO, labelEstadoPeriodo } from "@/lib/estados/cobros";
 
 type Props = {
-  programadores: { id: string; nombre: string }[];
   proyectos: string[]; // nombres únicos
   actuales: {
     q: string | null;
     estado: string | null;
-    programador: string | null;
     proyecto: string | null;
     desde: string | null;
     hasta: string | null;
-    archivadas: boolean;
-    rango?: string | null;
-    orden?: string | null;
+    rango: string | null;
+    orden: string | null;
   };
 };
 
-export default function FiltrosCotizaciones({
-  programadores,
-  proyectos,
-  actuales,
-}: Props) {
+export default function FiltrosCobros({ proyectos, actuales }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -44,7 +38,6 @@ export default function FiltrosCotizaciones({
     router.push(`${pathname}${qs ? `?${qs}` : ""}`);
   };
 
-  // Debounce búsqueda
   useEffect(() => {
     if ((q ?? "") === (actuales.q ?? "")) return;
     const t = setTimeout(() => update("q", q.trim() || null), 250);
@@ -54,14 +47,12 @@ export default function FiltrosCotizaciones({
 
   const limpiar = () => {
     setQ("");
-    const archParam = actuales.archivadas ? "?archivadas=1" : "";
-    router.push(`${pathname}${archParam}`);
+    router.push(pathname);
   };
 
   const tieneFiltros =
     !!actuales.q ||
     !!actuales.estado ||
-    !!actuales.programador ||
     !!actuales.proyecto ||
     !!actuales.desde ||
     !!actuales.hasta ||
@@ -73,8 +64,6 @@ export default function FiltrosCotizaciones({
     const next = new URLSearchParams(params.toString());
     if (valor) next.set("rango", valor);
     else next.delete("rango");
-    // Un rango rápido manda sobre desde/hasta capturados a mano; al elegir
-    // "Personalizado" (o "Todas") se limpian para no arrastrar fechas viejas.
     if (valor !== "personalizado") {
       next.delete("desde");
       next.delete("hasta");
@@ -86,14 +75,11 @@ export default function FiltrosCotizaciones({
   return (
     <section className="card card-tight space-y-3">
       <div className="flex items-center gap-2">
-        <div
-          className="input flex items-center gap-2 flex-1"
-          style={{ padding: "0 12px" }}
-        >
+        <div className="input flex items-center gap-2 flex-1" style={{ padding: "0 12px" }}>
           <Search size={14} strokeWidth={1.75} className="text-text-tertiary" />
           <input
             className="flex-1 bg-transparent outline-none border-0"
-            placeholder="Buscar por nombre…"
+            placeholder="Buscar por etiqueta o título…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -117,17 +103,13 @@ export default function FiltrosCotizaciones({
           <SlidersHorizontal size={14} strokeWidth={1.75} />
         </button>
         {tieneFiltros && (
-          <button
-            type="button"
-            onClick={limpiar}
-            className="btn-ghost btn-sm whitespace-nowrap"
-          >
+          <button type="button" onClick={limpiar} className="btn-ghost btn-sm whitespace-nowrap">
             Limpiar
           </button>
         )}
       </div>
 
-      <div className={`${abierto ? "grid" : "hidden"} md:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3`}>
+      <div className={`${abierto ? "grid" : "hidden"} md:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3`}>
         <div>
           <label className="field-label">Estado</label>
           <select
@@ -136,32 +118,9 @@ export default function FiltrosCotizaciones({
             onChange={(e) => update("estado", e.target.value || null)}
           >
             <option value="">Todos</option>
-            {ORDEN_FLUJO_COTIZACION.map((e) => (
+            {ORDEN_FLUJO_COBRO_PERIODO.map((e) => (
               <option key={e} value={e}>
-                {labelEstado(e)}
-              </option>
-            ))}
-            <optgroup label="Ya en Cobros">
-              {ESTADOS_YA_EN_COBROS.map((e) => (
-                <option key={e} value={e}>
-                  {labelEstado(e)}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </div>
-
-        <div>
-          <label className="field-label">Programador</label>
-          <select
-            className="input"
-            value={actuales.programador ?? ""}
-            onChange={(e) => update("programador", e.target.value || null)}
-          >
-            <option value="">Todos</option>
-            {programadores.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nombre}
+                {labelEstadoPeriodo(e)}
               </option>
             ))}
           </select>
@@ -217,7 +176,6 @@ export default function FiltrosCotizaciones({
                 onChange={(e) => update("desde", e.target.value || null)}
               />
             </div>
-
             <div>
               <label className="field-label">Hasta</label>
               <input

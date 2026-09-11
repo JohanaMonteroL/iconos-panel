@@ -12,6 +12,7 @@ import {
   Trash2,
   Check,
   CheckCircle2,
+  DollarSign,
 } from "lucide-react";
 import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
 import Modal from "@/components/ui/Modal";
@@ -129,6 +130,18 @@ export function CotizacionAcciones({
           >
             <Ticket size={16} strokeWidth={1.75} />
             <span>Generar tickets</span>
+          </button>
+        )}
+
+        {estado === "en_desarrollo" && (
+          <button
+            disabled={working !== null}
+            onClick={() => cambiarEstado("en_espera_de_cobro")}
+            className="btn-secondary"
+            title="Crea el Cobro correspondiente en la sección Cobros"
+          >
+            <DollarSign size={16} strokeWidth={1.75} />
+            <span>{working === "en_espera_de_cobro" ? "Enviando…" : "Enviar a Cobros"}</span>
           </button>
         )}
 

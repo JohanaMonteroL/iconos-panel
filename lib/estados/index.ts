@@ -96,6 +96,15 @@ export function colorHexEstado(estado: string | null | undefined): string {
 // Orden lógico del flujo (de inicial a final). Útil para selectors.
 // Incluye "archivada" al final (housekeeping, no es parte del flujo visual
 // principal) — quien construya un tablero kanban debe filtrarla.
+//
+// "en_espera_de_cobro" / "pendiente_por_cobrar" / "cobrada" ya NO están
+// aquí — desde que existe Cobros (tabla separada), la vida de una
+// cotización termina en "en_desarrollo" y ese seguimiento de cobranza pasa
+// a vivir en Cobros. Los 3 valores siguen en ESTADOS_COTIZACION/
+// ESTADO_LABEL/ESTADO_BADGE de arriba (no se quitan de ahí) para no romper
+// el historial de cotizaciones viejas ni el log de acciones, y
+// cambiar-estado sigue aceptando "en_espera_de_cobro" como destino válido
+// (es el disparador que crea el Cobro).
 export const ORDEN_FLUJO_COTIZACION: EstadoCotizacion[] = [
   "por_estimar",
   "pendiente_revision_interna",
@@ -104,10 +113,7 @@ export const ORDEN_FLUJO_COTIZACION: EstadoCotizacion[] = [
   "enviada",
   "aprobada",
   "en_desarrollo",
-  "en_espera_de_cobro",
-  "pendiente_por_cobrar",
   "rechazada",
-  "cobrada",
   "archivada",
 ];
 
@@ -116,4 +122,17 @@ export const ORDEN_FLUJO_COTIZACION: EstadoCotizacion[] = [
 export const ESTADOS_ESTIMACION_ACTIVA: EstadoCotizacion[] = [
   "por_estimar",
   "pendiente_revision_interna",
+];
+
+// Los 3 estados que "ya viven en Cobros" — no forman parte del flujo
+// visual principal (no están en ORDEN_FLUJO_COTIZACION: no aparecen en el
+// picker de "Cambiar estado" ni tienen columna en el kanban), pero siguen
+// siendo estados reales de cotizaciones ya facturadas/en cobranza. Se
+// ofrecen aparte como opciones adicionales en el filtro de "Estado" de la
+// lista de Cotizaciones, para poder encontrarlas y seguir editando su
+// desglose/tareas sin tener que conocer su id.
+export const ESTADOS_YA_EN_COBROS: EstadoCotizacion[] = [
+  "en_espera_de_cobro",
+  "pendiente_por_cobrar",
+  "cobrada",
 ];

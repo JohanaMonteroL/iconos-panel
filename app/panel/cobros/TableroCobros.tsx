@@ -1,80 +1,56 @@
 "use client";
 
 // Tablero kanban con drag & drop: arrastrar una tarjeta a otra columna
-// llama al mismo endpoint que ya usa el detalle de la cotización
-// (/api/cotizaciones/[id]/cambiar-estado) para cambiar `estado`.
+// llama a /api/cobros/periodos/[id]/cambiar-estado — mismo patrón exacto
+// que TableroCotizaciones.tsx (que sigue manejando el tablero de
+// Cotizaciones, sin tocar).
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { labelEstado, colorHexEstado } from "@/lib/estados";
+import { labelEstadoPeriodo, colorHexEstadoPeriodo, labelOrigenCobro } from "@/lib/estados/cobros";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { textoContrastante } from "@/lib/proyectos/colores";
-import { montoCotizacion } from "@/lib/cotizaciones/calculos";
+import { estadoFactura } from "@/lib/cobros/calculos";
+import { FileCheck2, FileWarning, ExternalLink } from "lucide-react";
 
 type Row = {
   id: string;
-  nombre: string;
   estado: string;
-  horas_min: number;
-  horas_max: number;
-  horas_envio?: number | null;
-  precio_venta_hora?: number | null;
+  etiqueta: string;
+  monto: number;
+  moneda: string;
   created_at: string;
-  programador_id: string | null;
-  programadores: { nombre: string } | null;
-  proyecto_nombre?: string | null;
-  proyecto_clickup_id?: string | null;
-  tipo_precio?: string | null;
-  monto_fijo?: number | null;
+  cobro_id: string;
+  origen: string;
+  titulo: string;
+  proyecto_id: string | null;
+  cotizacion_id: string | null;
+  factura_pdf_path: string | null;
+  factura_xml_path: string | null;
 };
 
-function fmtMxn(n: number): string {
+function fmtMonto(n: number, moneda: string): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
-    currency: "MXN",
+    currency: moneda === "USD" ? "USD" : "MXN",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
 }
 
-const AVATAR_COLORS = [
-  { bg: "#DBEAFE", fg: "#1D4ED8" },
-  { bg: "#DCFCE7", fg: "#15803D" },
-  { bg: "#FEF3C7", fg: "#B45309" },
-  { bg: "#FCE7F3", fg: "#BE185D" },
-  { bg: "#EDE9FE", fg: "#6D28D9" },
-];
-
-function avatarColor(nombre: string) {
-  let h = 0;
-  for (let i = 0; i < nombre.length; i++) h = (h * 31 + nombre.charCodeAt(i)) | 0;
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
-
-function iniciales(nombre: string | null | undefined): string {
-  if (!nombre) return "—";
-  const partes = nombre.trim().split(/\s+/);
-  return ((partes[0]?.[0] ?? "") + (partes[1]?.[0] ?? "")).toUpperCase();
-}
-
-// La API bloquea llegar a "enviada" por este camino: ese estado exige subir
-// antes el PDF que se mandó al cliente (flujo aparte). Lo reflejamos aquí
-// para no dejar caer la tarjeta y luego revertirla con un error confuso.
-const ESTADOS_NO_ARRASTRABLES = new Set(["enviada"]);
-
-export default function TableroCotizaciones({
+export default function TableroCobros({
   columnas,
   itemsIniciales,
   coloresProyecto = {},
   emojisProyecto = {},
-  precioHoraVentaProyecto = {},
+  nombresProyecto = {},
 }: {
   columnas: string[];
   itemsIniciales: Row[];
   coloresProyecto?: Record<string, string>;
   emojisProyecto?: Record<string, string>;
-  precioHoraVentaProyecto?: Record<string, number>;
+  nombresProyecto?: Record<string, string>;
 }) {
   const router = useRouter();
   const [items, setItems] = useState(itemsIniciales);
@@ -97,20 +73,13 @@ export default function TableroCotizaciones({
     const actual = items.find((it) => it.id === id);
     if (!actual || actual.estado === nuevoEstado) return;
 
-    if (ESTADOS_NO_ARRASTRABLES.has(nuevoEstado)) {
-      setError(
-        `Para marcar "${labelEstado(nuevoEstado)}" primero sube el PDF que se mandó al cliente, desde el detalle de la cotización.`
-      );
-      return;
-    }
-
     setError(null);
     const estadoAnterior = actual.estado;
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: nuevoEstado } : it)));
     setPendingIds((prev) => new Set(prev).add(id));
 
     try {
-      const res = await fetch(`/api/cotizaciones/${id}/cambiar-estado`, {
+      const res = await fetch(`/api/cobros/periodos/${id}/cambiar-estado`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ estado: nuevoEstado }),
@@ -157,15 +126,7 @@ export default function TableroCotizaciones({
         <div className="flex gap-3.5" style={{ minWidth: "max-content" }}>
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
-            const totalColumna = cards.reduce(
-              (acc, it) =>
-                acc +
-                (montoCotizacion(
-                  it,
-                  it.proyecto_clickup_id ? precioHoraVentaProyecto[it.proyecto_clickup_id] : undefined
-                ) ?? 0),
-              0
-            );
+            const totalColumna = cards.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
             const isOver = overEstado === estado;
             return (
               <div
@@ -195,16 +156,16 @@ export default function TableroCotizaciones({
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      background: colorHexEstado(estado),
+                      background: colorHexEstadoPeriodo(estado),
                       flexShrink: 0,
                     }}
                   />
                   <span className="text-body-medium flex-1 truncate" style={{ fontSize: 13 }}>
-                    {labelEstado(estado)}
+                    {labelEstadoPeriodo(estado)}
                   </span>
                   <span className="text-caption text-text-tertiary num-tabular">{cards.length}</span>
                   {totalColumna > 0 && (
-                    <span className="badge badge-neutral num-tabular">{fmtMxn(totalColumna)}</span>
+                    <span className="badge badge-neutral num-tabular">{fmtMonto(totalColumna, "MXN")}</span>
                   )}
                 </div>
 
@@ -214,18 +175,16 @@ export default function TableroCotizaciones({
                       className="rounded-[12px] p-4 text-caption text-text-tertiary text-center"
                       style={{ border: "1px dashed var(--border-default)" }}
                     >
-                      Sin cotizaciones
+                      Sin períodos
                     </div>
                   ) : (
                     cards.map((it) => (
-                      <TarjetaCotizacion
+                      <TarjetaPeriodo
                         key={it.id}
                         it={it}
-                        colorProyecto={it.proyecto_clickup_id ? coloresProyecto[it.proyecto_clickup_id] : undefined}
-                        emojiProyecto={it.proyecto_clickup_id ? emojisProyecto[it.proyecto_clickup_id] : undefined}
-                        precioHoraVentaProyecto={
-                          it.proyecto_clickup_id ? precioHoraVentaProyecto[it.proyecto_clickup_id] : undefined
-                        }
+                        colorProyecto={it.proyecto_id ? coloresProyecto[it.proyecto_id] : undefined}
+                        emojiProyecto={it.proyecto_id ? emojisProyecto[it.proyecto_id] : undefined}
+                        nombreProyecto={it.proyecto_id ? nombresProyecto[it.proyecto_id] : undefined}
                         dragging={dragId === it.id}
                         pending={pendingIds.has(it.id)}
                         onDragStart={(e) => {
@@ -250,11 +209,11 @@ export default function TableroCotizaciones({
   );
 }
 
-function TarjetaCotizacion({
+function TarjetaPeriodo({
   it,
   colorProyecto,
   emojiProyecto,
-  precioHoraVentaProyecto,
+  nombreProyecto,
   dragging,
   pending,
   onDragStart,
@@ -263,16 +222,13 @@ function TarjetaCotizacion({
   it: Row;
   colorProyecto?: string;
   emojiProyecto?: string;
-  precioHoraVentaProyecto?: number;
+  nombreProyecto?: string;
   dragging: boolean;
   pending: boolean;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
-  const fijo = it.tipo_precio === "fijo";
-  const dev = it.programadores?.nombre ?? null;
-  const color = avatarColor(dev ?? it.id);
-  const precioTotalTarjeta = montoCotizacion(it, precioHoraVentaProyecto);
+  const factura = estadoFactura(it);
 
   return (
     <div
@@ -289,17 +245,28 @@ function TarjetaCotizacion({
         transition: "box-shadow 180ms ease, transform 180ms ease, opacity 120ms ease",
       }}
     >
-      <Link href={`/panel/cotizaciones/${it.id}`} className="block space-y-0" draggable={false}>
+      <Link href={`/panel/cobros/${it.id}`} className="block space-y-0" draggable={false}>
         <div className="flex items-start justify-between gap-2">
           <span className="text-body-medium break-words flex-1 min-w-0" style={{ fontSize: 15, lineHeight: 1.35 }}>
-            {it.nombre}
+            {it.etiqueta}
           </span>
-          <span className="badge badge-neutral shrink-0" style={{ fontSize: 10 }}>
-            {fijo ? "Fijo" : "Por horas"}
+          <span
+            className="badge shrink-0"
+            style={{
+              fontSize: 10,
+              background: it.origen === "soporte" ? "#CCFBF1" : "#E0E7FF",
+              color: it.origen === "soporte" ? "#0D9488" : "#4F46E5",
+            }}
+          >
+            {labelOrigenCobro(it.origen)}
           </span>
         </div>
 
-        {it.proyecto_nombre && (
+        <p className="text-caption text-text-tertiary truncate" style={{ margin: "2px 0 8px" }}>
+          {it.titulo}
+        </p>
+
+        {nombreProyecto && (
           <div style={{ margin: "4px 0 10px" }}>
             <span
               className="inline-block text-caption truncate"
@@ -313,45 +280,45 @@ function TarjetaCotizacion({
               }}
             >
               {emojiProyecto ? `${emojiProyecto} ` : ""}
-              {it.proyecto_nombre}
+              {nombreProyecto}
             </span>
           </div>
         )}
 
-        {precioTotalTarjeta != null && (
-          <div className="flex items-center gap-3" style={{ color: "var(--text-secondary)" }}>
-            <span className="num-tabular" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>
-              {fmtMxn(precioTotalTarjeta)}
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-3" style={{ color: "var(--text-secondary)" }}>
+          <span className="num-tabular" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>
+            {fmtMonto(Number(it.monto) || 0, it.moneda)}
+          </span>
+        </div>
 
         <div
           className="flex items-center justify-between"
           style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}
         >
           <span className="flex items-center gap-1.5 text-caption" style={{ color: "var(--text-secondary)" }}>
-            <span
-              className="grid place-items-center"
-              style={{
-                width: 21,
-                height: 21,
-                borderRadius: "50%",
-                background: color.bg,
-                color: color.fg,
-                fontSize: 9,
-                fontWeight: 600,
-              }}
-            >
-              {iniciales(dev)}
-            </span>
-            {dev ?? "Sin asignar"}
+            {factura === "completa" ? (
+              <FileCheck2 size={13} strokeWidth={1.75} style={{ color: "var(--state-success)" }} />
+            ) : (
+              <FileWarning size={13} strokeWidth={1.75} style={{ color: "var(--text-tertiary)" }} />
+            )}
+            Factura: {factura}
           </span>
           <span className="text-caption num-tabular" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
             {fmtFecha(it.created_at)}
           </span>
         </div>
       </Link>
+
+      {it.cotizacion_id && (
+        <Link
+          href={`/panel/cotizaciones/${it.cotizacion_id}`}
+          className="inline-flex items-center gap-1 text-caption hover:underline"
+          style={{ color: "var(--text-tertiary)", marginTop: 8 }}
+        >
+          <ExternalLink size={11} strokeWidth={1.75} />
+          Cotización de origen
+        </Link>
+      )}
     </div>
   );
 }

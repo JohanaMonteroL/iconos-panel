@@ -18,6 +18,7 @@ type Row = {
   emoji: string;
   activo: boolean;
   created_at: string;
+  soporte_activo: boolean;
 };
 
 function fmtCostoHora(n: number | null, moneda: string): string {
@@ -36,8 +37,14 @@ async function getProyectos(filtros: { q: string | null; todos: boolean }): Prom
   };
 
   let { data, error }: { data: any; error: any } = await construir(
-    "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, activo, created_at"
+    "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, activo, created_at, soporte_activo"
   );
+  // Degradación si la migración de soporte (0023) todavía no se corrió.
+  if (error && /soporte_activo/i.test(error.message)) {
+    ({ data, error } = await construir(
+      "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, activo, created_at"
+    ));
+  }
   // Degradación si la migración de `emoji` todavía no se corrió.
   if (error && /emoji/i.test(error.message)) {
     ({ data, error } = await construir(
@@ -48,7 +55,7 @@ async function getProyectos(filtros: { q: string | null; todos: boolean }): Prom
     console.error("[proyectos] error:", error);
     return [];
   }
-  return (data ?? []) as Row[];
+  return ((data ?? []) as any[]).map((r) => ({ ...r, soporte_activo: !!r.soporte_activo })) as Row[];
 }
 
 export default async function ProyectosPage({
@@ -110,7 +117,7 @@ export default async function ProyectosPage({
         >
           {/* Header (desktop) */}
           <li
-            className="hidden md:grid md:grid-cols-[1.3fr_1.1fr_0.8fr_1.2fr_100px_110px] gap-3 px-4 py-2.5 text-overline text-text-tertiary"
+            className="hidden md:grid md:grid-cols-[1.3fr_1.1fr_0.8fr_1.2fr_100px_90px_110px] gap-3 px-4 py-2.5 text-overline text-text-tertiary"
             style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border-faint)" }}
           >
             <div>Nombre</div>
@@ -118,13 +125,14 @@ export default async function ProyectosPage({
             <div>RFC</div>
             <div>Correo / Teléfono</div>
             <div style={{ textAlign: "right" }}>Costo/hora</div>
+            <div style={{ textAlign: "right" }}>Soporte</div>
             <div style={{ textAlign: "right" }}>Estado</div>
           </li>
           {items.map((p, i) => (
             <li key={p.id} style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-faint)" }}>
               <Link
                 href={`/panel/proyectos/${p.id}`}
-                className="grid grid-cols-1 md:grid-cols-[1.3fr_1.1fr_0.8fr_1.2fr_100px_110px] gap-2 px-4 py-3 items-center hover:bg-[color:var(--bg-surface)] transition-colors"
+                className="grid grid-cols-1 md:grid-cols-[1.3fr_1.1fr_0.8fr_1.2fr_100px_90px_110px] gap-2 px-4 py-3 items-center hover:bg-[color:var(--bg-surface)] transition-colors"
               >
                 <div className="min-w-0 flex items-start gap-2">
                   <span
@@ -166,6 +174,11 @@ export default async function ProyectosPage({
                   style={{ textAlign: "right" }}
                 >
                   {fmtCostoHora(p.precio_hora_venta, p.moneda_hora)}
+                </div>
+                <div className="flex md:block" style={{ justifyContent: "flex-end" }}>
+                  {p.soporte_activo && (
+                    <span className="badge badge-success">Soporte</span>
+                  )}
                 </div>
                 <div className="flex md:block" style={{ justifyContent: "flex-end" }}>
                   <span className={`badge ${p.activo ? "badge-success" : "badge-neutral"}`}>

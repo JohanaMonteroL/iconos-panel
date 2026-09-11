@@ -25,7 +25,7 @@ import ResumenEstimacion from "@/components/forms/ResumenEstimacion";
 import EnviarPdfModal from "@/components/forms/EnviarPdfModal";
 import Modal from "@/components/ui/Modal";
 import Markdown from "@/components/ui/Markdown";
-import { totalesPERT, aplicarBuffer } from "@/lib/pert";
+import { totalesPERT, aplicarBuffer, distribuirHorasProporcional } from "@/lib/pert";
 import {
   CotizacionAcciones,
   ComunicacionAcciones,
@@ -319,6 +319,22 @@ export default function EstimacionForm({
     () => aplicarBuffer(totales, bufferPct),
     [totales, bufferPct]
   );
+
+  const hayHorasEnviadasGuardadas = !!existente?.tareas.some((t) => t.hrsEnviadas != null);
+  // Cotizaciones viejas tienen "horas_envio" (el total que se cotizó/cobró)
+  // pero nunca pasaron por "Guardar horas" en esta pantalla, así que el
+  // acomodo por tarea (hrs_enviadas) nunca se guardó. En vez de esconder el
+  // resumen y mostrar solo el borrador editable de siempre, calculamos ese
+  // acomodo al vuelo (mismo criterio proporcional que usa el guardado real)
+  // nada más para mostrarlo — no se persiste hasta que ella de verdad
+  // guarde horas.
+  const horasEnviadasCalculadas = useMemo(() => {
+    if (hayHorasEnviadasGuardadas || !existente || existente.horasEnvio == null) return null;
+    return distribuirHorasProporcional(
+      existente.tareas.map((t) => ({ hrs_min: t.hrs_min, hrs_max: t.hrs_max })),
+      existente.horasEnvio
+    );
+  }, [hayHorasEnviadasGuardadas, existente]);
 
   const programadorSeleccionado = programadores.find((p) => p.id === programadorId);
   const proyectoSeleccionado = proyectos.find((p) => p.id === proyectoId);
@@ -837,7 +853,7 @@ export default function EstimacionForm({
       ];
 
   const mostrarDesglose = !existente || !esFijo;
-  const hayHorasEnviadas = !!existente?.tareas.some((t) => t.hrsEnviadas != null);
+  const hayHorasEnviadas = hayHorasEnviadasGuardadas || horasEnviadasCalculadas != null;
 
   return (
     <div className="space-y-4">
@@ -935,7 +951,7 @@ export default function EstimacionForm({
             />
             <span className="field-hint">
               {proyectos.length > 0
-                ? `${proyectos.length} proyectos activos — escribe para filtrar`
+                ? `${proyectos.length} proyectos activos`
                 : "Créalos desde el catálogo de Proyectos"}
             </span>
           </div>
@@ -1050,13 +1066,20 @@ export default function EstimacionForm({
           </button>
         </div>
         <TareasEnviadas
-          tareas={existente!.tareas.map((t) => ({
+          tareas={existente!.tareas.map((t, i) => ({
             nombre_limpio: t.nombre_limpio,
             hrs_min: t.hrs_min,
             hrs_max: t.hrs_max,
-            hrsEnviadas: t.hrsEnviadas,
+            hrsEnviadas: hayHorasEnviadasGuardadas ? t.hrsEnviadas : horasEnviadasCalculadas?.[i] ?? null,
           }))}
         />
+        {!hayHorasEnviadasGuardadas && (
+          <p className="text-caption text-text-tertiary">
+            Esta cotización no tiene un acomodo de horas guardado por tarea — este reparto es
+            calculado proporcionalmente sobre las {existente!.horasEnvio}h enviadas en total. Usa
+            &quot;Guardar horas&quot; (abajo) para dejarlo fijo.
+          </p>
+        )}
       </section>
       ) : (
       <>
