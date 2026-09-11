@@ -131,7 +131,8 @@ export async function POST(req: NextRequest) {
   let { data, error } = await supa.from("proyectos").insert(nuevoProyecto).select("id").single();
   // Degradación si la migración de `emoji` todavía no se corrió.
   if (error && /emoji/i.test(error.message)) {
-    const { emoji: _omitido, ...sinEmoji } = nuevoProyecto;
+    const sinEmoji = { ...nuevoProyecto };
+    delete sinEmoji.emoji;
     ({ data, error } = await supa.from("proyectos").insert(sinEmoji).select("id").single());
   }
 

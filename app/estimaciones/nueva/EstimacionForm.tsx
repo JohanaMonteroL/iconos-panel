@@ -6,7 +6,6 @@ import {
   Sparkles,
   Send,
   Save,
-  FilePlus2,
   FileText,
   ListChecks,
   Calculator,
