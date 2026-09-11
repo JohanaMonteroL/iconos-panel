@@ -15,6 +15,7 @@ type Row = {
   precio_hora_venta: number | null;
   moneda_hora: string;
   color: string;
+  emoji: string;
   activo: boolean;
   created_at: string;
 };
@@ -27,16 +28,22 @@ function fmtCostoHora(n: number | null, moneda: string): string {
 async function getProyectos(filtros: { q: string | null; todos: boolean }): Promise<Row[]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   const supa = createSupabaseServiceClient();
-  let q = supa
-    .from("proyectos")
-    .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, activo, created_at")
-    .order("nombre", { ascending: true })
-    .limit(500);
+  const construir = (sel: string) => {
+    let qb = supa.from("proyectos").select(sel).order("nombre", { ascending: true }).limit(500);
+    if (!filtros.todos) qb = qb.eq("activo", true);
+    if (filtros.q) qb = qb.ilike("nombre", `%${filtros.q}%`);
+    return qb;
+  };
 
-  if (!filtros.todos) q = q.eq("activo", true);
-  if (filtros.q) q = q.ilike("nombre", `%${filtros.q}%`);
-
-  const { data, error } = await q;
+  let { data, error }: { data: any; error: any } = await construir(
+    "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, activo, created_at"
+  );
+  // Degradación si la migración de `emoji` todavía no se corrió.
+  if (error && /emoji/i.test(error.message)) {
+    ({ data, error } = await construir(
+      "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, activo, created_at"
+    ));
+  }
   if (error) {
     console.error("[proyectos] error:", error);
     return [];
@@ -124,7 +131,10 @@ export default async function ProyectosPage({
                     style={{ width: 9, height: 9, borderRadius: "50%", background: p.color, flexShrink: 0, marginTop: 5 }}
                   />
                   <div className="min-w-0">
-                    <div className="text-body-medium text-text-primary break-words">{p.nombre}</div>
+                    <div className="text-body-medium text-text-primary break-words">
+                      {p.emoji ? `${p.emoji} ` : ""}
+                      {p.nombre}
+                    </div>
                     <div className="text-caption text-text-tertiary md:hidden mt-0.5">
                       {p.contacto_principal}
                     </div>

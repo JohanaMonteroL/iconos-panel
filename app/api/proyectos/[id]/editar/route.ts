@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { esColorProyectoValido } from "@/lib/proyectos/colores";
+import { esEmojiProyectoValido } from "@/lib/proyectos/emojis";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,7 @@ type Body = {
   precio_hora_venta?: number | null;
   moneda_hora?: "MXN" | "USD";
   color?: string;
+  emoji?: string;
   notas?: string | null;
 };
 
@@ -71,13 +73,30 @@ export async function POST(
     }
     patch.color = body.color;
   }
+  if (body.emoji !== undefined) {
+    if (!esEmojiProyectoValido(body.emoji)) {
+      return NextResponse.json({ error: "Emoji inválido" }, { status: 422 });
+    }
+    patch.emoji = body.emoji;
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
   }
 
   const supa = createSupabaseServiceClient();
-  const { error } = await supa.from("proyectos").update(patch).eq("id", params.id);
+  let { error } = await supa.from("proyectos").update(patch).eq("id", params.id);
+  // Degradación si la migración de `emoji` todavía no se corrió.
+  if (error && /emoji/i.test(error.message) && "emoji" in patch) {
+    const { emoji: _omitido, ...sinEmoji } = patch;
+    if (Object.keys(sinEmoji).length === 0) {
+      return NextResponse.json(
+        { error: "La migración de emoji no se ha aplicado todavía" },
+        { status: 503 }
+      );
+    }
+    ({ error } = await supa.from("proyectos").update(sinEmoji).eq("id", params.id));
+  }
   if (error) {
     console.error("[proyectos] error editando:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -32,3 +32,18 @@ export const COLOR_PROYECTO_DEFAULT = "#6B7280";
 export function esColorProyectoValido(valor: string): boolean {
   return COLORES_PROYECTO.some((c) => c.valor.toLowerCase() === valor.toLowerCase());
 }
+
+/**
+ * Color de texto (negro o blanco) legible sobre un fondo `hex` dado —
+ * fórmula YIQ estándar. Para etiquetas de proyecto con relleno de color
+ * (fondo = color del proyecto, texto elegido según contraste).
+ */
+export function textoContrastante(hex: string): string {
+  const limpio = hex.replace("#", "");
+  const valido = /^[0-9a-fA-F]{6}$/.test(limpio) ? limpio : "6b7280";
+  const r = parseInt(valido.slice(0, 2), 16);
+  const g = parseInt(valido.slice(2, 4), 16);
+  const b = parseInt(valido.slice(4, 6), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 155 ? "#18181B" : "#FFFFFF";
+}

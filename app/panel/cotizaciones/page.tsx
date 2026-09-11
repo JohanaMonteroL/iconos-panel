@@ -20,10 +20,12 @@ type Row = {
   horas_min: number;
   horas_max: number;
   horas_envio?: number | null;
+  precio_venta_hora?: number | null;
   created_at: string;
   programador_id: string | null;
   programadores: { nombre: string } | null;
   proyecto_nombre?: string | null;
+  proyecto_clickup_id?: string | null;
   tipo_precio?: string | null;
   monto_fijo?: number | null;
   estimacion_formulario_id?: string | null;
@@ -58,8 +60,9 @@ async function getCotizaciones(filtros: Filtros): Promise<Row[]> {
   const supa = createSupabaseServiceClient();
 
   const selCompleto =
-    "id, nombre, estado, horas_min, horas_max, horas_envio, created_at, programador_id, tipo_precio, monto_fijo, proyecto_nombre, estimacion_formulario_id, programadores(nombre)";
-  const selSinProy = selCompleto.replace(", proyecto_nombre", "");
+    "id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, created_at, programador_id, tipo_precio, monto_fijo, proyecto_nombre, proyecto_clickup_id, estimacion_formulario_id, programadores(nombre)";
+  const selSinPrecioVenta = selCompleto.replace(", precio_venta_hora", "");
+  const selSinProy = selSinPrecioVenta.replace(", proyecto_nombre, proyecto_clickup_id", "");
   const selSinFijo = selSinProy.replace(", tipo_precio, monto_fijo", "");
   const selBasico = selSinFijo.replace(", horas_envio", "");
 
@@ -94,6 +97,9 @@ async function getCotizaciones(filtros: Filtros): Promise<Row[]> {
   };
 
   let resp: any = await intentar(selCompleto);
+  if (resp.error && /precio_venta_hora/i.test(resp.error.message)) {
+    resp = await intentar(selSinPrecioVenta);
+  }
   if (resp.error && /proyecto_nombre/i.test(resp.error.message)) {
     resp = await intentar(selSinProy);
   }
@@ -162,17 +168,32 @@ async function getProyectos(): Promise<string[]> {
   return ((data ?? []) as any[]).map((r) => r.nombre);
 }
 
-// Mapa nombre (lowercase) -> color, para pintar la etiqueta de proyecto en
-// las tarjetas con el mismo color elegido en el catálogo.
-async function getColoresProyecto(): Promise<Record<string, string>> {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return {};
+// Mapa id de proyecto -> color/emoji, para pintar la etiqueta de proyecto
+// en las tarjetas con lo elegido en el catálogo — EN VIVO, no desde el
+// texto libre `proyecto_nombre` (que es un snapshot tomado al asignar el
+// proyecto y no se actualiza solo si luego cambias el emoji/color en el
+// catálogo). Por id: `cotizaciones.proyecto_clickup_id` ya guarda el id
+// real del proyecto del catálogo cuando se eligió desde ProyectoSearch.
+async function getInfoProyectos(): Promise<{
+  coloresProyecto: Record<string, string>;
+  emojisProyecto: Record<string, string>;
+}> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { coloresProyecto: {}, emojisProyecto: {} };
   const supa = createSupabaseServiceClient();
-  const { data } = await supa.from("proyectos").select("nombre, color");
-  const mapa: Record<string, string> = {};
-  for (const r of (data ?? []) as any[]) {
-    if (r.nombre) mapa[String(r.nombre).trim().toLowerCase()] = r.color;
+  let { data, error }: { data: any; error: any } = await supa
+    .from("proyectos")
+    .select("id, color, emoji");
+  if (error && /emoji/i.test(error.message)) {
+    ({ data, error } = await supa.from("proyectos").select("id, color"));
   }
-  return mapa;
+  const coloresProyecto: Record<string, string> = {};
+  const emojisProyecto: Record<string, string> = {};
+  for (const r of (data ?? []) as any[]) {
+    if (!r.id) continue;
+    coloresProyecto[r.id] = r.color;
+    if (r.emoji) emojisProyecto[r.id] = r.emoji;
+  }
+  return { coloresProyecto, emojisProyecto };
 }
 
 function fmtMxn(n: number): string {
@@ -218,11 +239,11 @@ export default async function CotizacionesPage({
     hasta: searchParams.hasta ?? null,
   };
 
-  const [items, programadores, proyectos, coloresProyecto] = await Promise.all([
+  const [items, programadores, proyectos, { coloresProyecto, emojisProyecto }] = await Promise.all([
     getCotizaciones(filtros),
     getProgramadores(),
     getProyectos(),
-    getColoresProyecto(),
+    getInfoProyectos(),
   ]);
 
   const pipelineFijo = items
@@ -332,6 +353,7 @@ export default async function CotizacionesPage({
             columnas={ORDEN_FLUJO_COTIZACION.filter((e) => e !== "archivada")}
             itemsIniciales={items}
             coloresProyecto={coloresProyecto}
+            emojisProyecto={emojisProyecto}
           />
         ) : vistaExplicita === "cuadricula" ? (
           <CuadriculaCotizaciones items={items} />
@@ -348,6 +370,7 @@ export default async function CotizacionesPage({
               columnas={ORDEN_FLUJO_COTIZACION.filter((e) => e !== "archivada")}
               itemsIniciales={items}
               coloresProyecto={coloresProyecto}
+              emojisProyecto={emojisProyecto}
             />
           </div>
         </>

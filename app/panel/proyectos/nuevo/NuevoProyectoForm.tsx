@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import CostoHoraField, { type Moneda } from "../CostoHoraField";
 import ColorPicker from "../ColorPicker";
+import EmojiPicker from "../EmojiPicker";
 import { COLOR_PROYECTO_DEFAULT } from "@/lib/proyectos/colores";
+import { EMOJI_PROYECTO_DEFAULT } from "@/lib/proyectos/emojis";
 
 type ContactoDraft = { key: string; correo: string; nombre: string };
 
@@ -20,6 +22,7 @@ export default function NuevoProyectoForm() {
   const [costoHora, setCostoHora] = useState("");
   const [monedaHora, setMonedaHora] = useState<Moneda>("MXN");
   const [color, setColor] = useState(COLOR_PROYECTO_DEFAULT);
+  const [emoji, setEmoji] = useState(EMOJI_PROYECTO_DEFAULT);
   const [notas, setNotas] = useState("");
   const [contactosFacturacion, setContactosFacturacion] = useState<ContactoDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +64,7 @@ export default function NuevoProyectoForm() {
           precio_hora_venta: costoHora.trim() ? Number(costoHora) : 0,
           moneda_hora: monedaHora,
           color,
+          emoji,
           notas: notas.trim() || null,
           contactos_facturacion: contactosFacturacion
             .filter((c) => c.correo.trim())
@@ -162,6 +166,10 @@ export default function NuevoProyectoForm() {
           <div>
             <label className="field-label">Color de etiqueta</label>
             <ColorPicker valor={color} onChange={setColor} />
+          </div>
+          <div>
+            <label className="field-label">Emoji</label>
+            <EmojiPicker valor={emoji} onChange={setEmoji} />
           </div>
         </div>
 

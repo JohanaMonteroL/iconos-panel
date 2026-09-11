@@ -2,13 +2,17 @@
 //
 // Cambia el número de horas que verá el jefe en el mensaje de Slack y que
 // quedan registradas como "horas_envio" en la cotización. Permite elegir
-// entre min / pert / max / personalizado. Después regenera slack_text.
+// entre min / pert / max / personalizado (min/pert/max ya incluyen el
+// buffer vigente). Después regenera slack_text Y acomoda ese total
+// proporcionalmente entre las tareas (hrs_enviadas) — reemplaza cualquier
+// acomodo anterior, no se versiona.
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildSlackText } from "@/lib/slack/format";
+import { aplicarBuffer, distribuirHorasProporcional } from "@/lib/pert";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -44,9 +48,9 @@ export async function POST(
   const { data: cot, error: cotErr } = await supa
     .from("cotizaciones")
     .select(
-      `id, nombre, horas_min, horas_max, contexto_sherlyn,
+      `id, nombre, horas_min, horas_max, buffer_porcentaje, contexto_sherlyn,
        programadores(nombre),
-       tareas_estimacion(orden, nombre_limpio, descripcion_limpia, hrs_min, hrs_max)`
+       tareas_estimacion(id, orden, nombre_limpio, descripcion_limpia, hrs_min, hrs_max)`
     )
     .eq("id", params.id)
     .maybeSingle();
@@ -54,12 +58,21 @@ export async function POST(
     return NextResponse.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
 
+  // Mín/PERT/Máx incluyen el buffer vigente (Personalizado no — ahí Johana
+  // ya escribe el número exacto que quiere mandar).
+  const horasMinRaw = Number(cot.horas_min) || 0;
+  const horasMaxRaw = Number(cot.horas_max) || 0;
+  const pertRaw = Math.round(((horasMinRaw + horasMaxRaw) / 2) * 10) / 10;
+  const conBuffer = aplicarBuffer(
+    { totalMin: horasMinRaw, totalMax: horasMaxRaw, totalEsperado: pertRaw },
+    Number((cot as any).buffer_porcentaje) || 0
+  );
+
   // Calcular horas_envio según el tipo elegido
   let horasEnvio = 0;
-  if (tipo === "min") horasEnvio = Number(cot.horas_min) || 0;
-  else if (tipo === "max") horasEnvio = Number(cot.horas_max) || 0;
-  else if (tipo === "pert")
-    horasEnvio = Math.round(((Number(cot.horas_min) + Number(cot.horas_max)) / 2) * 10) / 10;
+  if (tipo === "min") horasEnvio = conBuffer.totalMin;
+  else if (tipo === "max") horasEnvio = conBuffer.totalMax;
+  else if (tipo === "pert") horasEnvio = conBuffer.totalEsperado;
   else if (tipo === "custom") {
     const c = Number(body?.custom);
     if (!Number.isFinite(c) || c <= 0) {
@@ -101,11 +114,34 @@ export async function POST(
     .from("cotizaciones")
     .update({
       horas_envio: horasEnvio,
+      horas_envio_tipo: tipo,
       slack_text: slackTextNuevo,
     })
     .eq("id", params.id);
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
+  }
+
+  // Acomodar ese total proporcionalmente entre las tareas (hrs_enviadas) —
+  // reemplaza cualquier acomodo anterior. Actualiza cada fila por separado
+  // (no upsert: un upsert por columnas parciales exige igual todas las
+  // columnas NOT NULL de la tabla, aunque el conflicto resuelva en update).
+  // Si la columna todavía no existe (migración 0020 pendiente), no bloquea
+  // el resto del guardado.
+  if (tareasOrdenadas.length > 0) {
+    const horasPorTarea = distribuirHorasProporcional(tareasOrdenadas, horasEnvio);
+    const resultados = await Promise.all(
+      tareasOrdenadas.map((t: any, i: number) =>
+        supa
+          .from("tareas_estimacion")
+          .update({ hrs_enviadas: horasPorTarea[i] ?? 0 })
+          .eq("id", t.id)
+      )
+    );
+    const tareasErr = resultados.find((r) => r.error)?.error;
+    if (tareasErr && !/hrs_enviadas/i.test(tareasErr.message)) {
+      return NextResponse.json({ error: tareasErr.message }, { status: 500 });
+    }
   }
 
   // Log

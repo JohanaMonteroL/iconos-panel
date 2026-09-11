@@ -41,12 +41,8 @@ export function CotizacionAcciones({
   const router = useRouter();
   const [working, setWorking] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
   const [modal, setModal] = useState<null | "archivar" | "eliminar">(null);
   const [generarTicketsAbierto, setGenerarTicketsAbierto] = useState(false);
-  const [notificarUpdateAbierto, setNotificarUpdateAbierto] = useState(false);
-  const [notaCambios, setNotaCambios] = useState("");
   const [cambioEstadoAbierto, setCambioEstadoAbierto] = useState(false);
   const [nuevoEstado, setNuevoEstado] = useState<string>("");
   const [comentarioEstado, setComentarioEstado] = useState("");
@@ -78,8 +74,6 @@ export function CotizacionAcciones({
   ) => {
     setWorking(nuevo);
     setMsg(null);
-    setSuccess(null);
-    setWarning(null);
     try {
       const res = await fetch(`/api/cotizaciones/${cotizacionId}/cambiar-estado`, {
         method: "POST",
@@ -95,45 +89,6 @@ export function CotizacionAcciones({
         setMsg(json.error || "No se pudo cambiar el estado");
         return;
       }
-      router.refresh();
-    } catch {
-      setMsg("Error de red");
-    } finally {
-      setWorking(null);
-    }
-  };
-
-  const reenviarSlack = async (opts?: {
-    comoActualizacion?: boolean;
-    notaCambios?: string;
-  }) => {
-    setWorking(opts?.comoActualizacion ? "notify-update" : "resend-slack");
-    setMsg(null);
-    setSuccess(null);
-    setWarning(null);
-    try {
-      const res = await fetch(
-        `/api/cotizaciones/${cotizacionId}/reenviar-slack`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            como_actualizacion: !!opts?.comoActualizacion,
-            nota_cambios: opts?.notaCambios ?? null,
-          }),
-        }
-      );
-      const json = await res.json();
-      if (!res.ok) {
-        setMsg(json.error || "No se pudo reenviar");
-        return;
-      }
-      setSuccess(
-        opts?.comoActualizacion
-          ? "✓ Notificación de actualización enviada al jefe"
-          : "✓ Mensaje reenviado al canal admin"
-      );
-      setTimeout(() => setSuccess(null), 3000);
       router.refresh();
     } catch {
       setMsg("Error de red");
@@ -159,32 +114,6 @@ export function CotizacionAcciones({
           <span className="estado-trigger-dot" />
           <span>{labelEstado(estado)}</span>
           <ChevronDown size={14} strokeWidth={2.25} />
-        </button>
-
-        <button
-          disabled={working !== null}
-          onClick={() => reenviarSlack()}
-          className="btn-secondary"
-        >
-          <RefreshCcw size={16} strokeWidth={1.75} />
-          <span>{working === "resend-slack" ? "Reenviando…" : "Reenviar Slack"}</span>
-        </button>
-
-        <button
-          disabled={working !== null}
-          onClick={() => {
-            setNotaCambios("");
-            setNotificarUpdateAbierto(true);
-          }}
-          className="btn-secondary"
-          title="Avisa al jefe que la cotización tuvo cambios y debe revisarla otra vez"
-        >
-          <RefreshCcw size={16} strokeWidth={1.75} />
-          <span>
-            {working === "notify-update"
-              ? "Enviando…"
-              : "Notificar actualización al jefe"}
-          </span>
         </button>
 
         {(estado === "enviada" ||
@@ -224,19 +153,9 @@ export function CotizacionAcciones({
           <span>Eliminar permanente</span>
         </button>
       </div>
-      {success && (
-        <p className="text-caption" style={{ color: "var(--state-success)" }}>
-          {success}
-        </p>
-      )}
       {msg && (
         <p className="text-caption" style={{ color: "var(--state-error)" }}>
           {msg}
-        </p>
-      )}
-      {warning && (
-        <p className="text-caption" style={{ color: "var(--state-warning)" }}>
-          ⚠️ {warning}
         </p>
       )}
 
@@ -361,70 +280,6 @@ export function CotizacionAcciones({
       </Modal>
 
       <Modal
-        open={notificarUpdateAbierto}
-        onClose={() => working !== "notify-update" && setNotificarUpdateAbierto(false)}
-        title="Notificar actualización al jefe"
-        size="md"
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setNotificarUpdateAbierto(false)}
-              disabled={working === "notify-update"}
-              className="btn-secondary"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await reenviarSlack({
-                  comoActualizacion: true,
-                  notaCambios: notaCambios.trim() || undefined,
-                });
-                setNotificarUpdateAbierto(false);
-              }}
-              disabled={working === "notify-update"}
-              className="btn-primary"
-            >
-              <RefreshCcw size={14} strokeWidth={1.75} />
-              <span>
-                {working === "notify-update"
-                  ? "Enviando…"
-                  : "Enviar al jefe"}
-              </span>
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-body text-text-secondary">
-            Se manda un nuevo mensaje al canal del jefe con un banner que dice{" "}
-            <strong>🔄 Cotización actualizada</strong> arriba, junto con los datos
-            vigentes (horas, tareas, descripción). La cotización vuelve al estado{" "}
-            <strong>Esperando jefe</strong>.
-          </p>
-          <div>
-            <label className="field-label">
-              Nota de los cambios (opcional)
-            </label>
-            <textarea
-              className="textarea min-h-[100px]"
-              rows={4}
-              value={notaCambios}
-              onChange={(e) => setNotaCambios(e.target.value)}
-              placeholder="Ej: ajustamos horas a 60h porque el cliente pidió incluir el módulo de reportes."
-              maxLength={240}
-            />
-            <span className="field-hint">
-              Si la dejas vacía, se manda un mensaje genérico. Si pones algo,
-              aparece resaltado en el banner para que el jefe sepa qué cambió.
-            </span>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
         open={generarTicketsAbierto}
         onClose={() => setGenerarTicketsAbierto(false)}
         title="Generar tickets"
@@ -531,6 +386,169 @@ export function CotizacionAcciones({
           router.refresh();
         }}
       />
+    </section>
+  );
+}
+
+// ─── Acciones de Slack — tab Comunicación ──────────────────────────────
+
+/**
+ * "Reenviar Slack" y "Notificar actualización al jefe" viven en la pestaña
+ * Comunicación (junto al mensaje de Slack que afectan), no en la barra de
+ * Acciones — que se quedó solo con cambios de estado / tickets / archivar.
+ */
+export function ComunicacionAcciones({
+  cotizacionId,
+}: {
+  cotizacionId: string;
+}) {
+  const router = useRouter();
+  const [working, setWorking] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [notificarUpdateAbierto, setNotificarUpdateAbierto] = useState(false);
+  const [notaCambios, setNotaCambios] = useState("");
+
+  const reenviarSlack = async (opts?: {
+    comoActualizacion?: boolean;
+    notaCambios?: string;
+  }) => {
+    setWorking(opts?.comoActualizacion ? "notify-update" : "resend-slack");
+    setMsg(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/cotizaciones/${cotizacionId}/reenviar-slack`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            como_actualizacion: !!opts?.comoActualizacion,
+            nota_cambios: opts?.notaCambios ?? null,
+          }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        setMsg(json.error || "No se pudo reenviar");
+        return;
+      }
+      setSuccess(
+        opts?.comoActualizacion
+          ? "✓ Notificación de actualización enviada al jefe"
+          : "✓ Mensaje reenviado al canal admin"
+      );
+      setTimeout(() => setSuccess(null), 3000);
+      router.refresh();
+    } catch {
+      setMsg("Error de red");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  return (
+    <section className="card space-y-3">
+      <h2 className="text-heading-2">Acciones de Slack</h2>
+      <div className="flex flex-wrap gap-2.5">
+        <button
+          disabled={working !== null}
+          onClick={() => reenviarSlack()}
+          className="btn-secondary"
+        >
+          <RefreshCcw size={16} strokeWidth={1.75} />
+          <span>{working === "resend-slack" ? "Reenviando…" : "Reenviar Slack"}</span>
+        </button>
+
+        <button
+          disabled={working !== null}
+          onClick={() => {
+            setNotaCambios("");
+            setNotificarUpdateAbierto(true);
+          }}
+          className="btn-secondary"
+          title="Avisa al jefe que la cotización tuvo cambios y debe revisarla otra vez"
+        >
+          <RefreshCcw size={16} strokeWidth={1.75} />
+          <span>
+            {working === "notify-update"
+              ? "Enviando…"
+              : "Notificar actualización al jefe"}
+          </span>
+        </button>
+      </div>
+      {success && (
+        <p className="text-caption" style={{ color: "var(--state-success)" }}>
+          {success}
+        </p>
+      )}
+      {msg && (
+        <p className="text-caption" style={{ color: "var(--state-error)" }}>
+          {msg}
+        </p>
+      )}
+
+      <Modal
+        open={notificarUpdateAbierto}
+        onClose={() => working !== "notify-update" && setNotificarUpdateAbierto(false)}
+        title="Notificar actualización al jefe"
+        size="md"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setNotificarUpdateAbierto(false)}
+              disabled={working === "notify-update"}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await reenviarSlack({
+                  comoActualizacion: true,
+                  notaCambios: notaCambios.trim() || undefined,
+                });
+                setNotificarUpdateAbierto(false);
+              }}
+              disabled={working === "notify-update"}
+              className="btn-primary"
+            >
+              <RefreshCcw size={14} strokeWidth={1.75} />
+              <span>
+                {working === "notify-update" ? "Enviando…" : "Enviar al jefe"}
+              </span>
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-body text-text-secondary">
+            Se manda un nuevo mensaje al canal del jefe con un banner que dice{" "}
+            <strong>🔄 Cotización actualizada</strong> arriba, junto con los datos
+            vigentes (horas, tareas, descripción). La cotización vuelve al estado{" "}
+            <strong>Esperando jefe</strong>.
+          </p>
+          <div>
+            <label className="field-label">
+              Nota de los cambios (opcional)
+            </label>
+            <textarea
+              className="textarea min-h-[100px]"
+              rows={4}
+              value={notaCambios}
+              onChange={(e) => setNotaCambios(e.target.value)}
+              placeholder="Ej: ajustamos horas a 60h porque el cliente pidió incluir el módulo de reportes."
+              maxLength={240}
+            />
+            <span className="field-hint">
+              Si la dejas vacía, se manda un mensaje genérico. Si pones algo,
+              aparece resaltado en el banner para que el jefe sepa qué cambió.
+            </span>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { COLOR_PROYECTO_DEFAULT, esColorProyectoValido } from "@/lib/proyectos/colores";
+import { EMOJI_PROYECTO_DEFAULT, esEmojiProyectoValido } from "@/lib/proyectos/emojis";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,7 @@ type CrearProyectoBody = {
   precio_hora_venta?: number | null;
   moneda_hora?: "MXN" | "USD";
   color?: string;
+  emoji?: string;
   notas?: string | null;
   contactos_facturacion?: { correo: string; nombre?: string | null }[];
 };
@@ -38,16 +40,22 @@ export async function GET(req: NextRequest) {
   const todos = url.searchParams.get("todos") === "1";
 
   const supa = createSupabaseServiceClient();
-  let query = supa
-    .from("proyectos")
-    .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, activo, created_at")
-    .order("nombre", { ascending: true })
-    .limit(500);
+  const construir = (sel: string) => {
+    let q2 = supa.from("proyectos").select(sel).order("nombre", { ascending: true }).limit(500);
+    if (!todos) q2 = q2.eq("activo", true);
+    if (q) q2 = q2.ilike("nombre", `%${q}%`);
+    return q2;
+  };
 
-  if (!todos) query = query.eq("activo", true);
-  if (q) query = query.ilike("nombre", `%${q}%`);
-
-  const { data, error } = await query;
+  let { data, error }: { data: any; error: any } = await construir(
+    "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, activo, created_at"
+  );
+  // Degradación si la migración de `emoji` todavía no se corrió.
+  if (error && /emoji/i.test(error.message)) {
+    ({ data, error } = await construir(
+      "id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, activo, created_at"
+    ));
+  }
   if (error) {
     console.error("[proyectos] error listando:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -86,6 +94,10 @@ export async function POST(req: NextRequest) {
   if (!esColorProyectoValido(color)) {
     return NextResponse.json({ error: "Color de etiqueta inválido" }, { status: 422 });
   }
+  const emoji = body.emoji ?? EMOJI_PROYECTO_DEFAULT;
+  if (!esEmojiProyectoValido(emoji)) {
+    return NextResponse.json({ error: "Emoji inválido" }, { status: 422 });
+  }
 
   // Contactos de facturación: filtramos vacíos y validamos formato antes de
   // tocar la base — si alguno está mal, no se crea nada.
@@ -104,21 +116,24 @@ export async function POST(req: NextRequest) {
   }
 
   const supa = createSupabaseServiceClient();
-  const { data, error } = await supa
-    .from("proyectos")
-    .insert({
-      nombre,
-      contacto_principal: contacto,
-      rfc: body.rfc?.trim() || null,
-      correo: body.correo?.trim() || null,
-      telefono: body.telefono?.trim() || null,
-      precio_hora_venta: body.precio_hora_venta ?? 0,
-      moneda_hora: moneda,
-      color,
-      notas: body.notas?.trim() || null,
-    })
-    .select("id")
-    .single();
+  const nuevoProyecto: Record<string, any> = {
+    nombre,
+    contacto_principal: contacto,
+    rfc: body.rfc?.trim() || null,
+    correo: body.correo?.trim() || null,
+    telefono: body.telefono?.trim() || null,
+    precio_hora_venta: body.precio_hora_venta ?? 0,
+    moneda_hora: moneda,
+    color,
+    emoji,
+    notas: body.notas?.trim() || null,
+  };
+  let { data, error } = await supa.from("proyectos").insert(nuevoProyecto).select("id").single();
+  // Degradación si la migración de `emoji` todavía no se corrió.
+  if (error && /emoji/i.test(error.message)) {
+    const { emoji: _omitido, ...sinEmoji } = nuevoProyecto;
+    ({ data, error } = await supa.from("proyectos").insert(sinEmoji).select("id").single());
+  }
 
   if (error || !data) {
     console.error("[proyectos] error creando:", error);

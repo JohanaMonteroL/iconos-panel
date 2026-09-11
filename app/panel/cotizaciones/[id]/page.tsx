@@ -24,6 +24,7 @@ type Tarea = {
   descripcion_limpia: string | null;
   hrs_min: number;
   hrs_max: number;
+  hrs_enviadas: number | null;
 };
 
 type Cotizacion = {
@@ -80,7 +81,7 @@ async function getCotizacion(
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
 
-  // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016 + 0019).
+  // Intento con todos los campos nuevos (migraciones 0004 + 0005 + 0016 + 0019 + 0020).
   // Si alguna columna no existe, reintento con menos campos.
   const selectFull = `id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, slack_text, created_at,
      canal_entrada, prioridad, programador_id, notas_programador,
@@ -90,8 +91,9 @@ async function getCotizacion(
      buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_pdf_titulo, envio_horas_totales,
      envio_costo_aproximado, envio_estimado_por, envio_fecha,
      programadores(nombre, precio_hora),
-     tareas_estimacion(id, orden, nombre_limpio, nombre_original, descripcion_limpia, hrs_min, hrs_max)`;
-  const selectNo0019 = selectFull.replace(", envio_pdf_titulo", "");
+     tareas_estimacion(id, orden, nombre_limpio, nombre_original, descripcion_limpia, hrs_min, hrs_max, hrs_enviadas)`;
+  const selectNo0020 = selectFull.replace(", hrs_enviadas)", ")");
+  const selectNo0019 = selectNo0020.replace(", envio_pdf_titulo", "");
   const selectNo0016 = selectNo0019.replace(
     /buffer_porcentaje, envio_pdf_path, envio_pdf_nombre_original, envio_horas_totales,\s*\n\s*envio_costo_aproximado, envio_estimado_por, envio_fecha,\n\s*/,
     ""
@@ -102,6 +104,9 @@ async function getCotizacion(
   const selectNoExtras = selectNo0005.replace("horas_envio, ", "");
 
   let cotResp = await supa.from("cotizaciones").select(selectFull).eq("id", id).maybeSingle();
+  if (cotResp.error && /hrs_enviadas/i.test(cotResp.error.message)) {
+    cotResp = await supa.from("cotizaciones").select(selectNo0020).eq("id", id).maybeSingle();
+  }
   if (cotResp.error && /envio_pdf_titulo/i.test(cotResp.error.message)) {
     cotResp = await supa.from("cotizaciones").select(selectNo0019).eq("id", id).maybeSingle();
   }
@@ -202,16 +207,23 @@ async function getProgramadores(): Promise<
 // Proyectos activos del catálogo (no ClickUp) — trae también el precio/hora
 // de venta configurado en el proyecto, para el cálculo de "Costo estimado".
 async function getProyectosCatalogo(): Promise<
-  { id: string; nombre: string; precio_hora_venta: number; moneda_hora: "MXN" | "USD" }[]
+  { id: string; nombre: string; precio_hora_venta: number; moneda_hora: "MXN" | "USD"; emoji?: string }[]
 > {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   try {
     const supa = createSupabaseServiceClient();
-    const { data, error } = await supa
+    let { data, error }: { data: any; error: any } = await supa
       .from("proyectos")
-      .select("id, nombre, precio_hora_venta, moneda_hora")
+      .select("id, nombre, precio_hora_venta, moneda_hora, emoji")
       .eq("activo", true)
       .order("nombre");
+    if (error && /emoji/i.test(error.message)) {
+      ({ data, error } = await supa
+        .from("proyectos")
+        .select("id, nombre, precio_hora_venta, moneda_hora")
+        .eq("activo", true)
+        .order("nombre"));
+    }
     if (error) return [];
     return (data ?? []) as any[];
   } catch {
@@ -277,6 +289,7 @@ export default async function CotizacionDetallePage({
       descripcion_limpia: t.descripcion_limpia,
       hrs_min: t.hrs_min,
       hrs_max: t.hrs_max,
+      hrsEnviadas: t.hrs_enviadas ?? null,
     })),
     iaRecomendacion: it.ia_recomendacion,
     borradorCorreo: it.borrador_correo,

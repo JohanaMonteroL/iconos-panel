@@ -26,16 +26,23 @@ async function getProgramadores(): Promise<
 // Proyectos activos del catálogo (no ClickUp) — trae también el costo por
 // hora configurado en el proyecto, para el cálculo de "Costo estimado".
 async function getProyectos(): Promise<
-  { id: string; nombre: string; precio_hora_venta: number; moneda_hora: "MXN" | "USD" }[]
+  { id: string; nombre: string; precio_hora_venta: number; moneda_hora: "MXN" | "USD"; emoji?: string }[]
 > {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
   try {
     const supa = createSupabaseServiceClient();
-    const { data, error } = await supa
+    let { data, error }: { data: any; error: any } = await supa
       .from("proyectos")
-      .select("id, nombre, precio_hora_venta, moneda_hora")
+      .select("id, nombre, precio_hora_venta, moneda_hora, emoji")
       .eq("activo", true)
       .order("nombre");
+    if (error && /emoji/i.test(error.message)) {
+      ({ data, error } = await supa
+        .from("proyectos")
+        .select("id, nombre, precio_hora_venta, moneda_hora")
+        .eq("activo", true)
+        .order("nombre"));
+    }
     if (error) return [];
     return (data ?? []) as any[];
   } catch {

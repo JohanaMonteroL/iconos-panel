@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2 } from "lucide-react";
 import CostoHoraField, { type Moneda } from "../CostoHoraField";
 import ColorPicker from "../ColorPicker";
+import EmojiPicker from "../EmojiPicker";
 
 export type ProyectoData = {
   id: string;
@@ -16,6 +17,7 @@ export type ProyectoData = {
   precio_hora_venta: number | null;
   moneda_hora: Moneda;
   color: string;
+  emoji: string;
   notas: string | null;
   activo: boolean;
 };
@@ -287,6 +289,47 @@ function ColorCampo({ proyectoId, color }: { proyectoId: string; color: string }
   );
 }
 
+/** Emoji del proyecto — picker de opciones curadas, se guarda solo. */
+function EmojiCampo({ proyectoId, emoji }: { proyectoId: string; emoji: string }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = async (nuevoEmoji: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/proyectos/${proyectoId}/editar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: nuevoEmoji }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || "No se pudo guardar");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Error de red");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <label className="field-label">Emoji</label>
+      <EmojiPicker valor={emoji} onChange={guardar} disabled={saving} />
+      {error && (
+        <p className="text-caption mt-1" style={{ color: "var(--state-error)" }}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Card de "Datos generales" — todo excepto notas (va en su propia card). */
 export function DatosGeneralesCard({ proyecto }: { proyecto: ProyectoData }) {
   return (
@@ -334,6 +377,7 @@ export function DatosGeneralesCard({ proyecto }: { proyecto: ProyectoData }) {
         monedaHora={proyecto.moneda_hora}
       />
       <ColorCampo proyectoId={proyecto.id} color={proyecto.color} />
+      <EmojiCampo proyectoId={proyecto.id} emoji={proyecto.emoji} />
     </div>
   );
 }

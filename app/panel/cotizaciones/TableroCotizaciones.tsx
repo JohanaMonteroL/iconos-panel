@@ -7,9 +7,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Clock, DollarSign } from "lucide-react";
 import { labelEstado, colorHexEstado } from "@/lib/estados";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
+import { textoContrastante } from "@/lib/proyectos/colores";
 
 type Row = {
   id: string;
@@ -17,13 +17,29 @@ type Row = {
   estado: string;
   horas_min: number;
   horas_max: number;
+  horas_envio?: number | null;
+  precio_venta_hora?: number | null;
   created_at: string;
   programador_id: string | null;
   programadores: { nombre: string } | null;
   proyecto_nombre?: string | null;
+  proyecto_clickup_id?: string | null;
   tipo_precio?: string | null;
   monto_fijo?: number | null;
 };
+
+// Precio total de la cotización — monto fijo si es tipo "fijo", o
+// horas_envio × precio_venta_hora si es por horas. null si todavía no hay
+// datos suficientes para calcularlo (no se muestra nada en ese caso).
+function precioTotal(it: Row): number | null {
+  if (it.tipo_precio === "fijo") {
+    return it.monto_fijo != null ? Number(it.monto_fijo) : null;
+  }
+  if (it.horas_envio != null && it.precio_venta_hora != null && it.precio_venta_hora > 0) {
+    return Number(it.horas_envio) * Number(it.precio_venta_hora);
+  }
+  return null;
+}
 
 function fmtMxn(n: number): string {
   return n.toLocaleString("es-MX", {
@@ -63,10 +79,12 @@ export default function TableroCotizaciones({
   columnas,
   itemsIniciales,
   coloresProyecto = {},
+  emojisProyecto = {},
 }: {
   columnas: string[];
   itemsIniciales: Row[];
   coloresProyecto?: Record<string, string>;
+  emojisProyecto?: Record<string, string>;
 }) {
   const router = useRouter();
   const [items, setItems] = useState(itemsIniciales);
@@ -149,9 +167,7 @@ export default function TableroCotizaciones({
         <div className="flex gap-3.5" style={{ minWidth: "max-content" }}>
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
-            const totalFijoCol = cards
-              .filter((it) => it.tipo_precio === "fijo" && it.monto_fijo != null)
-              .reduce((acc, it) => acc + Number(it.monto_fijo), 0);
+            const totalColumna = cards.reduce((acc, it) => acc + (precioTotal(it) ?? 0), 0);
             const isOver = overEstado === estado;
             return (
               <div
@@ -189,8 +205,8 @@ export default function TableroCotizaciones({
                     {labelEstado(estado)}
                   </span>
                   <span className="text-caption text-text-tertiary num-tabular">{cards.length}</span>
-                  {totalFijoCol > 0 && (
-                    <span className="badge badge-neutral num-tabular">{fmtMxn(totalFijoCol)}</span>
+                  {totalColumna > 0 && (
+                    <span className="badge badge-neutral num-tabular">{fmtMxn(totalColumna)}</span>
                   )}
                 </div>
 
@@ -207,7 +223,8 @@ export default function TableroCotizaciones({
                       <TarjetaCotizacion
                         key={it.id}
                         it={it}
-                        colorProyecto={it.proyecto_nombre ? coloresProyecto[it.proyecto_nombre.trim().toLowerCase()] : undefined}
+                        colorProyecto={it.proyecto_clickup_id ? coloresProyecto[it.proyecto_clickup_id] : undefined}
+                        emojiProyecto={it.proyecto_clickup_id ? emojisProyecto[it.proyecto_clickup_id] : undefined}
                         dragging={dragId === it.id}
                         pending={pendingIds.has(it.id)}
                         onDragStart={(e) => {
@@ -235,6 +252,7 @@ export default function TableroCotizaciones({
 function TarjetaCotizacion({
   it,
   colorProyecto,
+  emojiProyecto,
   dragging,
   pending,
   onDragStart,
@@ -242,6 +260,7 @@ function TarjetaCotizacion({
 }: {
   it: Row;
   colorProyecto?: string;
+  emojiProyecto?: string;
   dragging: boolean;
   pending: boolean;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -250,6 +269,7 @@ function TarjetaCotizacion({
   const fijo = it.tipo_precio === "fijo";
   const dev = it.programadores?.nombre ?? null;
   const color = avatarColor(dev ?? it.id);
+  const precioTotalTarjeta = precioTotal(it);
 
   return (
     <div
@@ -268,7 +288,7 @@ function TarjetaCotizacion({
     >
       <Link href={`/panel/cotizaciones/${it.id}`} className="block space-y-0" draggable={false}>
         <div className="flex items-start justify-between gap-2">
-          <span className="text-body-medium break-words flex-1 min-w-0" style={{ fontSize: 13, lineHeight: 1.35 }}>
+          <span className="text-body-medium break-words flex-1 min-w-0" style={{ fontSize: 15, lineHeight: 1.35 }}>
             {it.nombre}
           </span>
           <span className="badge badge-neutral shrink-0" style={{ fontSize: 10 }}>
@@ -277,36 +297,31 @@ function TarjetaCotizacion({
         </div>
 
         {it.proyecto_nombre && (
-          <div
-            className="inline-flex items-center gap-1.5 text-caption"
-            style={{ margin: "4px 0 10px", color: colorProyecto ?? "var(--text-tertiary)" }}
-          >
+          <div style={{ margin: "4px 0 10px" }}>
             <span
+              className="inline-block text-caption truncate"
               style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: colorProyecto ?? "var(--text-tertiary)",
-                flexShrink: 0,
+                maxWidth: "100%",
+                padding: "2px 8px",
+                borderRadius: 999,
+                fontWeight: 600,
+                background: colorProyecto ?? "var(--bg-overlay)",
+                color: colorProyecto ? textoContrastante(colorProyecto) : "var(--text-secondary)",
               }}
-            />
-            {it.proyecto_nombre}
+            >
+              {emojiProyecto ? `${emojiProyecto} ` : ""}
+              {it.proyecto_nombre}
+            </span>
           </div>
         )}
 
-        <div className="flex items-center gap-3 text-caption" style={{ color: "var(--text-secondary)" }}>
-          {fijo ? (
-            <span className="num-tabular inline-flex items-center gap-1" style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-              <DollarSign size={12} strokeWidth={1.9} />
-              {it.monto_fijo != null ? fmtMxn(Number(it.monto_fijo)) : "—"}
+        {precioTotalTarjeta != null && (
+          <div className="flex items-center gap-3" style={{ color: "var(--text-secondary)" }}>
+            <span className="num-tabular" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>
+              {fmtMxn(precioTotalTarjeta)}
             </span>
-          ) : (
-            <span className="num-tabular inline-flex items-center gap-1" style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-              <Clock size={12} strokeWidth={1.9} />
-              {it.horas_min}–{it.horas_max}h
-            </span>
-          )}
-        </div>
+          </div>
+        )}
 
         <div
           className="flex items-center justify-between"

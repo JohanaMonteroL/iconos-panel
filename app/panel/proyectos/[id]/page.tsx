@@ -10,11 +10,20 @@ export const dynamic = "force-dynamic";
 async function getProyecto(id: string): Promise<ProyectoData | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
-  const { data } = await supa
+  let { data, error } = await supa
     .from("proyectos")
-    .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, notas, activo")
+    .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, notas, activo")
     .eq("id", id)
     .maybeSingle();
+  // Degradación si la migración de `emoji` todavía no se corrió.
+  if (error && /emoji/i.test(error.message)) {
+    ({ data } = await supa
+      .from("proyectos")
+      .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, notas, activo")
+      .eq("id", id)
+      .maybeSingle());
+    if (data) (data as any).emoji = "";
+  }
   return (data as ProyectoData) ?? null;
 }
 
@@ -58,7 +67,10 @@ export default async function ProyectoDetallePage({
         <span
           style={{ width: 14, height: 14, borderRadius: "50%", background: proyecto.color, flexShrink: 0 }}
         />
-        <h1 className="text-display">{proyecto.nombre}</h1>
+        <h1 className="text-display">
+          {proyecto.emoji ? `${proyecto.emoji} ` : ""}
+          {proyecto.nombre}
+        </h1>
         <span className={`badge ${proyecto.activo ? "badge-success" : "badge-neutral"}`}>
           {proyecto.activo ? "Activo" : "Inactivo"}
         </span>

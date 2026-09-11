@@ -15,8 +15,10 @@ import {
   CheckCheck,
   Folder,
   RefreshCcw,
+  PencilLine,
 } from "lucide-react";
 import TareasTabla, { TareaRow, filaVacia } from "@/components/forms/TareasTabla";
+import TareasEnviadas from "@/components/forms/TareasEnviadas";
 import ProyectoSearch from "@/components/forms/ProyectoSearch";
 import BufferSelector from "@/components/forms/BufferSelector";
 import TotalesFlotantes from "@/components/forms/TotalesFlotantes";
@@ -27,6 +29,7 @@ import Markdown from "@/components/ui/Markdown";
 import { totalesPERT, aplicarBuffer } from "@/lib/pert";
 import {
   CotizacionAcciones,
+  ComunicacionAcciones,
   CotizacionLog,
 } from "@/components/forms/CotizacionEditor";
 import EnvioDetalle from "@/components/forms/EnvioDetalle";
@@ -43,7 +46,15 @@ type Proyecto = {
   nombre: string;
   precio_hora_venta?: number;
   moneda_hora?: "MXN" | "USD";
+  emoji?: string;
 };
+
+// Nombre + emoji, como se guarda en el snapshot de texto libre
+// `cotizaciones.proyecto_nombre` (y se muestra tal cual en listas/tarjetas).
+function nombreProyectoConEmoji(p: Proyecto | null | undefined): string | null {
+  if (!p) return null;
+  return p.emoji ? `${p.nombre} ${p.emoji}` : p.nombre;
+}
 type Prioridad = "alta" | "media" | "baja";
 type HorasEnvioTipo = "min" | "pert" | "max" | "custom";
 
@@ -56,6 +67,10 @@ export type ExistenteTarea = {
   descripcion_limpia: string | null;
   hrs_min: number;
   hrs_max: number;
+  // Horas que se acomodaron proporcionalmente al guardar "Horas a enviar"
+  // (ver POST /api/cotizaciones/[id]/horas-envio). null = nunca se ha
+  // guardado "Horas a enviar" para esta cotización.
+  hrsEnviadas: number | null;
 };
 
 export type ExistenteAccion = {
@@ -237,6 +252,9 @@ export default function EstimacionForm({
       : [filaVacia()]
   );
   const [bufferPct, setBufferPct] = useState(() => existente?.bufferPorcentaje ?? 0);
+  // Si ya existe un acomodo de "horas enviadas" por tarea, por default se
+  // muestra esa vista de solo lectura en vez de la tabla editable.
+  const [verEstimacionOriginal, setVerEstimacionOriginal] = useState(false);
   const [prioridad, setPrioridad] = useState<Prioridad>(
     () => (existente?.prioridad as Prioridad) ?? "media"
   );
@@ -312,19 +330,27 @@ export default function EstimacionForm({
   const precioHoraInterno = programadorSeleccionado?.precio_hora ?? 0;
   const precioHoraVenta = proyectoSeleccionado?.precio_hora_venta ?? 0;
   const monedaHora = proyectoSeleccionado?.moneda_hora ?? "MXN";
-  const costoEstimado =
-    Math.round(totalesConBuffer.totalEsperado * precioHoraInterno * 100) / 100;
 
   // "Horas a enviar" — en creación se basa en el borrador de tareas (aún no
   // hay nada guardado). En edición se basa en las horas YA GUARDADAS de la
   // cotización (igual que hacía HorasEnvioCotizacion antes), para que no se
-  // mueva con cambios sin guardar en la pestaña Desglose.
-  const horasBaseMin = existente ? existente.horasMin : totales.totalMin;
-  const horasBaseMax = existente ? existente.horasMax : totales.totalMax;
-  const horasEnvioPert = useMemo(
-    () => Math.round(((horasBaseMin + horasBaseMax) / 2) * 10) / 10,
-    [horasBaseMin, horasBaseMax]
-  );
+  // mueva con cambios sin guardar en la pestaña Desglose. Mín/PERT/Máx
+  // incluyen el buffer VIGENTE — en edición el guardado (existente.bufferPorcentaje,
+  // no el que esté sin guardar en el selector), en creación el buffer en vivo.
+  const horasEnvioConBuffer = useMemo(() => {
+    const base = existente
+      ? {
+          totalMin: existente.horasMin,
+          totalMax: existente.horasMax,
+          totalEsperado: Math.round(((existente.horasMin + existente.horasMax) / 2) * 10) / 10,
+        }
+      : totales;
+    const bufferVigente = existente ? existente.bufferPorcentaje ?? 0 : bufferPct;
+    return aplicarBuffer(base, bufferVigente);
+  }, [existente, totales, bufferPct]);
+  const horasBaseMin = horasEnvioConBuffer.totalMin;
+  const horasBaseMax = horasEnvioConBuffer.totalMax;
+  const horasEnvioPert = horasEnvioConBuffer.totalEsperado;
   const horasEnvioValor = useMemo(() => {
     if (horasEnvioTipo === "min") return horasBaseMin;
     if (horasEnvioTipo === "max") return horasBaseMax;
@@ -336,6 +362,21 @@ export default function EstimacionForm({
   // Precio total = horas que realmente se van a enviar (no el PERT+buffer)
   // por el precio de venta configurado en el proyecto.
   const precioTotalEnvio = Math.round(horasEnvioValor * precioHoraVenta * 100) / 100;
+  // Costo y margen — misma base de horas que "Precio total" (horasEnvioValor),
+  // para que el % de margen compare manzanas con manzanas.
+  const costoTotalEnviado = Math.round(horasEnvioValor * precioHoraInterno * 100) / 100;
+  const margenPct =
+    precioTotalEnvio > 0
+      ? Math.round(((precioTotalEnvio - costoTotalEnviado) / precioTotalEnvio) * 1000) / 10
+      : null;
+  const colorMargen =
+    margenPct == null
+      ? undefined
+      : margenPct < 0
+      ? "var(--state-error)"
+      : margenPct < 20
+      ? "var(--state-warning)"
+      : "var(--state-success)";
 
   const tareasValidas = rows.filter((r) => r.nombre.trim() !== "");
 
@@ -359,7 +400,7 @@ export default function EstimacionForm({
       programador_id: programadorId,
       nombre_solicitud: nombre.trim(),
       notas: notas.trim() || undefined,
-      proyecto_nombre: proyecto?.nombre,
+      proyecto_nombre: nombreProyectoConEmoji(proyecto),
       buffer_porcentaje: bufferPct,
       prioridad,
       tareas: tareasValidas.map((r) => ({
@@ -564,7 +605,7 @@ export default function EstimacionForm({
 
   const abrirEnviarAprobacion = () => {
     if (!validarParaCrear()) return;
-    const proyectoNombre = proyectoSeleccionado?.nombre ?? "Sin proyecto";
+    const proyectoNombre = nombreProyectoConEmoji(proyectoSeleccionado) ?? "Sin proyecto";
     const estimadorNombre = programadorSeleccionado?.nombre ?? "—";
     const lineasNotas = notas.trim() ? `\nNotas: ${notas.trim()}` : "";
     setSlackPreview(
@@ -639,7 +680,7 @@ export default function EstimacionForm({
         body: JSON.stringify({
           programador_id: programadorId || null,
           proyecto_clickup_id: proyectoId || null,
-          proyecto_nombre: proyecto?.nombre ?? null,
+          proyecto_nombre: nombreProyectoConEmoji(proyecto),
           prioridad,
         }),
       });
@@ -763,7 +804,10 @@ export default function EstimacionForm({
         setHorasEnvioMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      setHorasEnvioMsg({ tipo: "ok", texto: `Horas actualizadas a ${json.horas_envio}h.` });
+      setHorasEnvioMsg({
+        tipo: "ok",
+        texto: `Horas actualizadas a ${json.horas_envio}h. Se acomodaron por tarea.`,
+      });
       setTimeout(() => setHorasEnvioMsg(null), 3500);
       router.refresh();
     } catch {
@@ -794,6 +838,7 @@ export default function EstimacionForm({
       ];
 
   const mostrarDesglose = !existente || !esFijo;
+  const hayHorasEnviadas = !!existente?.tareas.some((t) => t.hrsEnviadas != null);
 
   return (
     <div className="space-y-4">
@@ -990,15 +1035,53 @@ export default function EstimacionForm({
 
       {mostrarDesglose && (
       <div hidden={modoAdmin && tab !== "desglose"} className="space-y-6">
+      {hayHorasEnviadas && !verEstimacionOriginal ? (
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between">
+          <SectionTitle icon={Clock} bg="#FEF3C7" fg="#B45309">
+            Horas enviadas
+          </SectionTitle>
+          <button
+            type="button"
+            onClick={() => setVerEstimacionOriginal(true)}
+            className="btn-secondary btn-sm"
+          >
+            <PencilLine size={14} strokeWidth={1.75} />
+            <span>Ver/editar estimación original</span>
+          </button>
+        </div>
+        <TareasEnviadas
+          tareas={existente!.tareas.map((t) => ({
+            nombre_limpio: t.nombre_limpio,
+            hrs_min: t.hrs_min,
+            hrs_max: t.hrs_max,
+            hrsEnviadas: t.hrsEnviadas,
+          }))}
+        />
+      </section>
+      ) : (
+      <>
       {/* Bloque 2: Tareas */}
       <section className="card space-y-4">
         <div className="flex items-center justify-between">
           <SectionTitle icon={ListChecks} bg="#FEF3C7" fg="#B45309">
             Tareas y horas
           </SectionTitle>
-          <span className="text-caption text-text-tertiary">
-            El esperado se calcula automáticamente
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-caption text-text-tertiary">
+              El esperado se calcula automáticamente
+            </span>
+            {hayHorasEnviadas && (
+              <button
+                type="button"
+                onClick={() => setVerEstimacionOriginal(false)}
+                className="btn-ghost btn-sm"
+              >
+                <Clock size={14} strokeWidth={1.75} />
+                <span>Volver a horas enviadas</span>
+              </button>
+            )}
+          </div>
         </div>
         <TareasTabla rows={rows} onChange={setRows} errors={errors} />
         {errors.tareas && (
@@ -1209,6 +1292,8 @@ export default function EstimacionForm({
           </div>
         </section>
       )}
+      </>
+      )}
       </div>
       )}
 
@@ -1277,6 +1362,7 @@ export default function EstimacionForm({
 
       {existente && (
         <div hidden={tab !== "comunicacion"} className="space-y-6">
+          <ComunicacionAcciones cotizacionId={existente.id} />
           <InlineTextEditor
             cotizacionId={existente.id}
             field="borrador_correo"
@@ -1407,57 +1493,46 @@ export default function EstimacionForm({
             Costo estimado
           </SectionTitle>
           <div>
-            <div className="text-overline text-text-tertiary">Estimador</div>
-            <div className="text-body-medium mt-1">
-              {programadorSeleccionado?.nombre ?? "— sin seleccionar —"}
-            </div>
-          </div>
-          <div>
-            <div className="text-overline text-text-tertiary">Costo por hora (estimador)</div>
-            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
-              {programadorSeleccionado ? fmtMoneda(precioHoraInterno, "MXN") : "—"}
-            </div>
-            {!programadorSeleccionado && (
-              <div className="text-caption text-text-tertiary">Selecciona un estimador</div>
-            )}
-          </div>
-          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-overline text-text-tertiary">
-              Horas (PERT{bufferPct > 0 ? ` +${bufferPct}%` : ""})
-            </div>
-            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
-              {totalesConBuffer.totalEsperado}h
-            </div>
-            <div className="text-caption text-text-tertiary">
-              rango: {totalesConBuffer.totalMin}–{totalesConBuffer.totalMax}h
-            </div>
-          </div>
-          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-overline text-text-tertiary">Costo total estimado</div>
-            <div className="mt-1 num-tabular" style={{ fontSize: 27, fontWeight: 700 }}>
-              {fmtMoneda(costoEstimado, "MXN")}
-            </div>
-            <div className="text-caption text-text-tertiary">
-              {totalesConBuffer.totalEsperado}h × {fmtMoneda(precioHoraInterno, "MXN")}/h
-            </div>
-          </div>
-          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-overline text-text-tertiary">Precio por hora (proyecto)</div>
-            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
-              {proyectoSeleccionado ? fmtMoneda(precioHoraVenta, monedaHora) : "—"}
-            </div>
-            {!proyectoSeleccionado && (
-              <div className="text-caption text-text-tertiary">Selecciona un proyecto</div>
-            )}
-          </div>
-          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-overline text-text-tertiary">Precio total (horas a enviar)</div>
+            <div className="text-overline text-text-tertiary">Precio total que se envió</div>
             <div className="mt-1 num-tabular" style={{ fontSize: 27, fontWeight: 700 }}>
               {fmtMoneda(precioTotalEnvio, monedaHora)}
             </div>
-            <div className="text-caption text-text-tertiary">
-              {horasEnvioValor}h × {fmtMoneda(precioHoraVenta, monedaHora)}/h
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">Horas enviadas</div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
+              {horasEnvioValor}h
             </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">Costo</div>
+            <div className="mt-1 num-tabular" style={{ fontSize: 20, fontWeight: 600 }}>
+              {fmtMoneda(costoTotalEnviado, "MXN")}
+            </div>
+          </div>
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary">% de margen del proyecto</div>
+            <div
+              className="mt-1 num-tabular"
+              style={{ fontSize: 20, fontWeight: 600, color: colorMargen }}
+            >
+              {margenPct != null ? `${margenPct}%` : "—"}
+            </div>
+            {margenPct != null && (
+              <div
+                className="mt-2 rounded-full overflow-hidden"
+                style={{ height: 8, background: "var(--bg-overlay)" }}
+              >
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(0, Math.min(100, margenPct))}%`,
+                    background: colorMargen,
+                    transition: "width 200ms ease",
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Notas — debajo del costo estimado, como se pidió. En edición se
