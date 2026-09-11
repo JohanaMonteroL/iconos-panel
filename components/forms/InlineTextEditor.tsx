@@ -95,12 +95,8 @@ export default function InlineTextEditor({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      if (json.clickup_warning) {
-        setMsg({ tipo: "warn", texto: `Guardado. ClickUp: ${json.clickup_warning}` });
-      } else {
-        setMsg({ tipo: "ok", texto: "Guardado" });
-        setTimeout(() => setMsg(null), 2500);
-      }
+      setMsg({ tipo: "ok", texto: "Guardado" });
+      setTimeout(() => setMsg(null), 2500);
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });

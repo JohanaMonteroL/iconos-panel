@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { distribuirHorasProporcional } from "@/lib/pert";
 
 export const runtime = "nodejs";
 
@@ -26,32 +27,6 @@ type Tarea = {
   hrs_min: number;
   hrs_max: number;
 };
-
-function distribuirHoras(tareas: Tarea[], total: number): number[] {
-  if (tareas.length === 0) return [];
-  const medios = tareas.map((t) => (t.hrs_min + t.hrs_max) / 2);
-  const suma = medios.reduce((a, b) => a + b, 0);
-  if (suma <= 0) {
-    const cada = Math.round((total / tareas.length) * 10) / 10;
-    return tareas.map((_, i) =>
-      i === tareas.length - 1
-        ? Math.round((total - cada * (tareas.length - 1)) * 10) / 10
-        : cada
-    );
-  }
-  const escaladas = medios.map(
-    (m) => Math.round((m * total) / suma * 10) / 10
-  );
-  const diff =
-    Math.round((total - escaladas.reduce((a, b) => a + b, 0)) * 10) / 10;
-  if (diff !== 0) {
-    escaladas[escaladas.length - 1] = Math.max(
-      0,
-      Math.round((escaladas[escaladas.length - 1] + diff) * 10) / 10
-    );
-  }
-  return escaladas;
-}
 
 export async function GET(
   _req: NextRequest,
@@ -100,7 +75,7 @@ export async function GET(
       ? Number((cot as any).horas_envio)
       : Math.round(((cot.horas_min + cot.horas_max) / 2) * 10) / 10;
 
-  const horasPorTarea = distribuirHoras(tareas, total);
+  const horasPorTarea = distribuirHorasProporcional(tareas, total);
   // Programadores no tiene columna correo en la tabla actual, así que solo
   // pre-llenamos el nombre. La admin elige el asignado de JIRA en el wizard.
   const programador = (cot as any).programadores as

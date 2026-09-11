@@ -9,7 +9,7 @@ import ConceptosEditor, {
 } from "@/components/forms/ConceptosEditor";
 import ProyectoSearch from "@/components/forms/ProyectoSearch";
 
-type Proyecto = { id: string; nombre: string };
+type Proyecto = { id: string; nombre: string; emoji?: string };
 
 type Props = {
   programadores: { id: string; nombre: string }[];
@@ -113,7 +113,11 @@ export default function NuevaCotizacionFijaForm({
           })),
           programador_id: programadorId || null,
           proyecto_clickup_id: proyectoSel?.id || null,
-          proyecto_nombre: proyectoSel?.nombre || null,
+          proyecto_nombre: proyectoSel
+            ? proyectoSel.emoji
+              ? `${proyectoSel.nombre} ${proyectoSel.emoji}`
+              : proyectoSel.nombre
+            : null,
           descripcion_corta: descripcion.trim(),
           borrador_correo: borradorCorreo.trim() || null,
           notas: notas.trim() || null,
@@ -126,7 +130,6 @@ export default function NuevaCotizacionFijaForm({
       }
 
       const ws: string[] = [];
-      if (json.clickup_warning) ws.push(`ClickUp: ${json.clickup_warning}`);
       if (json.slack_warning) ws.push(`Slack: ${json.slack_warning}`);
 
       if (ws.length > 0) {

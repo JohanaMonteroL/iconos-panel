@@ -3,6 +3,7 @@ import { FileText, Inbox, Plus } from "lucide-react";
 import EnablePushButton from "@/components/ui/EnablePushButton";
 import AutoRefresh from "@/components/ui/AutoRefresh";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { ESTADOS_ESTIMACION_ACTIVA } from "@/lib/estados";
 
 export const dynamic = "force-dynamic";
 
@@ -11,32 +12,21 @@ async function getCounts() {
     return { pendientes: 0, cotizacionesActivas: 0 };
   const supa = createSupabaseServiceClient();
 
-  // Estimaciones "por revisar" = sin cotización + estados activos + no abiertas
-  // aún por la admin. Coincide con el badge del sidebar.
-  let pendCount = 0;
-  const r = await supa
-    .from("estimaciones_formulario")
+  // Estimaciones "por revisar" = cotizaciones en etapa temprana
+  // (por_estimar / pendiente_revision_interna) que Johana no ha abierto aún.
+  // Coincide con el badge del sidebar.
+  const { count: pendCount } = await supa
+    .from("cotizaciones")
     .select("id", { count: "exact", head: true })
-    .is("cotizacion_ref", null)
     .is("revisada_at", null)
-    .in("estado", ["recibida", "procesada_ia", "en_revision"]);
-  if (r.error && /revisada_at|column/i.test(r.error.message)) {
-    const r2 = await supa
-      .from("estimaciones_formulario")
-      .select("id", { count: "exact", head: true })
-      .is("cotizacion_ref", null)
-      .in("estado", ["recibida", "procesada_ia", "en_revision"]);
-    pendCount = r2.count ?? 0;
-  } else {
-    pendCount = r.count ?? 0;
-  }
+    .in("estado", ESTADOS_ESTIMACION_ACTIVA);
 
   const { count: cot } = await supa
     .from("cotizaciones")
     .select("id", { count: "exact", head: true })
     .neq("estado", "archivada");
 
-  return { pendientes: pendCount, cotizacionesActivas: cot ?? 0 };
+  return { pendientes: pendCount ?? 0, cotizacionesActivas: cot ?? 0 };
 }
 
 export default async function PanelHome() {
@@ -79,7 +69,7 @@ export default async function PanelHome() {
             Sin archivar
           </div>
         </Link>
-        <Link href="/panel/estimaciones" className="card card-hover" style={{ display: "block" }}>
+        <Link href="/panel/cotizaciones?vista=board" className="card card-hover" style={{ display: "block" }}>
           <div className="flex items-center gap-2">
             <span
               className="grid place-items-center flex-shrink-0"
@@ -117,8 +107,8 @@ export default async function PanelHome() {
           <Link href="/panel/cotizaciones" className="btn-secondary">
             Ver cotizaciones
           </Link>
-          <Link href="/panel/estimaciones" className="btn-secondary">
-            Estimaciones recibidas
+          <Link href="/panel/cotizaciones?vista=board" className="btn-secondary">
+            Ver pendientes
           </Link>
         </div>
       </section>

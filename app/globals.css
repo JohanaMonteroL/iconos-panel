@@ -391,6 +391,127 @@ select:disabled,
   [data-theme="dark"] .badge-danger  { background: rgba(239,68,68,0.16); color: #F87171; }
   [data-theme="dark"] .badge-info    { background: rgba(59,130,246,0.16); color: #60A5FA; }
 
+  /* Colores por estado de cotización — un color distinto por estado
+     (inspirado en ClickUp: cada estatus tiene su propio color, no se
+     repiten entre familias "en espera"/"aprobado"/etc). Debe matchear
+     ESTADO_BADGE en lib/estados/index.ts. */
+  .estado-badge-por_estimar                  { background: #F1F1F3; color: #52525B; }
+  .estado-badge-pendiente_revision_interna   { background: #EDE7FE; color: #7C3AED; }
+  .estado-badge-esperando_aprobacion         { background: #FEF3C7; color: #B45309; }
+  .estado-badge-cambios_solicitados          { background: #FCE7F3; color: #DB2777; }
+  .estado-badge-enviada                      { background: #DBEAFE; color: #2563EB; }
+  .estado-badge-aprobada                     { background: #CCFBF1; color: #0D9488; }
+  .estado-badge-en_desarrollo                { background: #E0E7FF; color: #4F46E5; }
+  .estado-badge-en_espera_de_cobro           { background: #FEF9C3; color: #A16207; }
+  .estado-badge-pendiente_por_cobrar         { background: #FFEDD5; color: #C2410C; }
+  .estado-badge-rechazada                    { background: #FEE2E2; color: #DC2626; }
+  .estado-badge-cobrada                      { background: #DCFCE7; color: #16A34A; }
+  .estado-badge-archivada                    { background: #E2E8F0; color: #475569; }
+
+  [data-theme="dark"] .estado-badge-por_estimar                { background: rgba(161,161,170,0.16); color: #A1A1AA; }
+  [data-theme="dark"] .estado-badge-pendiente_revision_interna  { background: rgba(124,58,237,0.18);  color: #C4B5FD; }
+  [data-theme="dark"] .estado-badge-esperando_aprobacion        { background: rgba(217,119,6,0.18);   color: #FBBF24; }
+  [data-theme="dark"] .estado-badge-cambios_solicitados         { background: rgba(219,39,119,0.18);  color: #F472B6; }
+  [data-theme="dark"] .estado-badge-enviada                     { background: rgba(37,99,235,0.18);   color: #60A5FA; }
+  [data-theme="dark"] .estado-badge-aprobada                    { background: rgba(13,148,136,0.18);  color: #2DD4BF; }
+  [data-theme="dark"] .estado-badge-en_desarrollo                { background: rgba(79,70,229,0.18);  color: #818CF8; }
+  [data-theme="dark"] .estado-badge-en_espera_de_cobro           { background: rgba(202,138,4,0.18);  color: #FDE047; }
+  [data-theme="dark"] .estado-badge-pendiente_por_cobrar         { background: rgba(234,88,12,0.18);  color: #FB923C; }
+  [data-theme="dark"] .estado-badge-rechazada                    { background: rgba(220,38,38,0.18);  color: #F87171; }
+  [data-theme="dark"] .estado-badge-cobrada                      { background: rgba(22,163,74,0.18);  color: #4ADE80; }
+  [data-theme="dark"] .estado-badge-archivada                    { background: rgba(100,116,139,0.18); color: #94A3B8; }
+
+  /* Badge grande — estado destacado en cabeceras */
+  .badge-lg {
+    @apply inline-flex items-center;
+    height: 28px;
+    padding: 0 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* Badge con contorno (sin relleno) — para diferenciar visualmente la
+     prioridad del estado, que usa badge-lg con relleno sólido. */
+  .badge-outline {
+    @apply inline-flex items-center;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    gap: 5px;
+    border: 1.5px solid currentColor;
+    background: transparent;
+    flex-shrink: 0;
+  }
+  .badge-outline-alta  { color: #DC2626; }
+  .badge-outline-media { color: #B45309; }
+  .badge-outline-baja  { color: #1D4ED8; }
+  [data-theme="dark"] .badge-outline-alta  { color: #F87171; }
+  [data-theme="dark"] .badge-outline-media { color: #FBBF24; }
+  [data-theme="dark"] .badge-outline-baja  { color: #60A5FA; }
+
+  /* Botón principal "Cambiar estado" — pill de color sólido con el color
+     del estado actual (mismo espíritu que el botón de Status de ClickUp:
+     el control para cambiar de estado ES el color, no un botón gris más). */
+  .estado-trigger {
+    @apply inline-flex items-center;
+    height: 38px;
+    padding: 0 12px 0 14px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    gap: 7px;
+    border: none;
+    cursor: pointer;
+    transition: filter 120ms ease;
+  }
+  .estado-trigger:hover:not(:disabled) { filter: brightness(0.96); }
+  [data-theme="dark"] .estado-trigger:hover:not(:disabled) { filter: brightness(1.2); }
+  .estado-trigger:disabled { opacity: 0.6; cursor: not-allowed; }
+  .estado-trigger .estado-trigger-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* Selector visual de estado — grid de chips de color (CotizacionAcciones) */
+  .estado-chip {
+    @apply inline-flex items-center justify-center text-center;
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    gap: 6px;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  }
+  .estado-chip:hover:not(:disabled) { transform: translateY(-1px); }
+  .estado-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+  .estado-chip.is-selected {
+    border-color: currentColor;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] .estado-chip.is-selected {
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.08);
+  }
+
   /* Sidebar nav items */
   .nav-item {
     @apply flex items-center gap-3 transition-colors relative;

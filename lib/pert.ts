@@ -49,3 +49,41 @@ export function aplicarBuffer(
     totalEsperado: round1(totales.totalEsperado * factor),
   };
 }
+
+/**
+ * Reparte un total de horas entre tareas, proporcional al punto medio
+ * (hrs_min+hrs_max)/2 de cada una — la última tarea absorbe el redondeo
+ * para que la suma cuadre exacto con `total`. Si todas las tareas están en
+ * cero, reparte en partes iguales.
+ *
+ * Antes vivía duplicada en app/api/cotizaciones/[id]/datos-tickets/route.ts
+ * (pre-llenar el wizard de tickets) — un solo lugar para esa lógica.
+ */
+export function distribuirHorasProporcional(
+  tareas: { hrs_min: number; hrs_max: number }[],
+  total: number
+): number[] {
+  if (tareas.length === 0) return [];
+  const medios = tareas.map((t) => (t.hrs_min + t.hrs_max) / 2);
+  const suma = medios.reduce((a, b) => a + b, 0);
+  if (suma <= 0) {
+    const cada = Math.round((total / tareas.length) * 10) / 10;
+    return tareas.map((_, i) =>
+      i === tareas.length - 1
+        ? Math.round((total - cada * (tareas.length - 1)) * 10) / 10
+        : cada
+    );
+  }
+  const escaladas = medios.map(
+    (m) => Math.round(((m * total) / suma) * 10) / 10
+  );
+  const diff =
+    Math.round((total - escaladas.reduce((a, b) => a + b, 0)) * 10) / 10;
+  if (diff !== 0) {
+    escaladas[escaladas.length - 1] = Math.max(
+      0,
+      Math.round((escaladas[escaladas.length - 1] + diff) * 10) / 10
+    );
+  }
+  return escaladas;
+}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Check, X } from "lucide-react";
 
-type Proyecto = { id: string; nombre: string };
+type Proyecto = { id: string; nombre: string; emoji?: string };
 
 type Props = {
   proyectos: Proyecto[];
@@ -104,6 +104,7 @@ export default function ProyectoSearch({ proyectos, value, onChange, disabled }:
               className="absolute inset-0 flex items-center pointer-events-none truncate text-body"
               style={{ color: "var(--text-primary)" }}
             >
+              {seleccionado.emoji ? `${seleccionado.emoji} ` : ""}
               {seleccionado.nombre}
             </span>
           )}
@@ -168,7 +169,10 @@ export default function ProyectoSearch({ proyectos, value, onChange, disabled }:
                         color: "var(--text-primary)",
                       }}
                     >
-                      <span className="truncate">{p.nombre}</span>
+                      <span className="truncate">
+                        {p.emoji ? `${p.emoji} ` : ""}
+                        {p.nombre}
+                      </span>
                       {esSeleccionado && (
                         <Check size={14} strokeWidth={1.75} className="text-text-secondary shrink-0" />
                       )}

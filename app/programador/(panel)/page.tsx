@@ -16,93 +16,69 @@ import { formatFechaCorta } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
-type EstFila = {
+type CotizacionFila = {
   id: string;
   created_at: string;
   estado: string;
-  cotizacion_ref: string | null;
-  datos_raw: { nombre_solicitud?: string };
-};
-
-type CotLite = {
-  id: string;
-  estado: string;
-  estimacion_formulario_id: string | null;
+  nombre: string;
   horas_envio: number | null;
 };
 
 async function getDashboardData(programadorId: string) {
   const supa = createSupabaseServiceClient();
 
-  const { data: ests } = await supa
-    .from("estimaciones_formulario")
-    .select("id, created_at, estado, cotizacion_ref, datos_raw")
+  const { data } = await supa
+    .from("cotizaciones")
+    .select("id, created_at, estado, nombre, horas_envio")
     .eq("programador_id", programadorId)
     .order("created_at", { ascending: false })
     .limit(500);
-  const estimaciones = (ests ?? []) as EstFila[];
-
-  const cotIds = estimaciones
-    .map((e) => e.cotizacion_ref)
-    .filter((x): x is string => !!x);
-  const cotByEst = new Map<string, CotLite>();
-  if (cotIds.length > 0) {
-    const sel = "id, estado, estimacion_formulario_id, horas_envio";
-    const selSin = sel.replace(", horas_envio", "");
-    let resp: { data: any; error: any } = await supa
-      .from("cotizaciones")
-      .select(sel)
-      .in("id", cotIds);
-    if (resp.error && /horas_envio/i.test(resp.error.message)) {
-      resp = await supa.from("cotizaciones").select(selSin).in("id", cotIds);
-    }
-    for (const c of (resp.data ?? []) as any[]) {
-      if (c.estimacion_formulario_id) {
-        cotByEst.set(c.estimacion_formulario_id, c as CotLite);
-      }
-    }
-  }
+  const cotizaciones = (data ?? []) as CotizacionFila[];
 
   type Bucket =
     | "recibida"
-    | "procesada"
     | "esperando"
     | "aprobada"
     | "en_desarrollo"
     | "enviada"
     | "cambios"
+    | "cobrada"
     | "descartada";
   const buckets: Record<Bucket, number> = {
     recibida: 0,
-    procesada: 0,
     esperando: 0,
     aprobada: 0,
     en_desarrollo: 0,
     enviada: 0,
     cambios: 0,
+    cobrada: 0,
     descartada: 0,
   };
 
   let totalHorasEnviadas = 0;
 
-  for (const e of estimaciones) {
-    const cot = cotByEst.get(e.id);
-    const ef = cot?.estado ?? e.estado;
-    if (ef === "recibida") buckets.recibida++;
-    else if (ef === "procesada_ia" || ef === "en_revision") buckets.procesada++;
-    else if (ef === "esperando_aprobacion" || ef === "pendiente_revisar")
-      buckets.esperando++;
+  for (const c of cotizaciones) {
+    const ef = c.estado;
+    if (ef === "por_estimar" || ef === "pendiente_revision_interna")
+      buckets.recibida++;
+    else if (ef === "esperando_aprobacion") buckets.esperando++;
     else if (ef === "aprobada") buckets.aprobada++;
     else if (ef === "en_desarrollo") buckets.en_desarrollo++;
-    else if (ef === "enviada_cliente") buckets.enviada++;
+    else if (ef === "enviada") buckets.enviada++;
     else if (ef === "cambios_solicitados") buckets.cambios++;
-    else if (ef === "descartada" || ef === "archivada") buckets.descartada++;
-    if (cot?.horas_envio) totalHorasEnviadas += Number(cot.horas_envio);
+    else if (
+      ef === "cobrada" ||
+      ef === "en_espera_de_cobro" ||
+      ef === "pendiente_por_cobrar"
+    )
+      buckets.cobrada++;
+    else if (ef === "rechazada" || ef === "archivada") buckets.descartada++;
+    if (c.horas_envio) totalHorasEnviadas += Number(c.horas_envio);
   }
 
-  const total = estimaciones.length;
+  const total = cotizaciones.length;
   const aprobadasYAdelante =
-    buckets.aprobada + buckets.en_desarrollo + buckets.enviada;
+    buckets.aprobada + buckets.en_desarrollo + buckets.enviada + buckets.cobrada;
   const tasaAprobacion =
     total > 0 ? Math.round((aprobadasYAdelante / total) * 100) : 0;
 
@@ -122,8 +98,8 @@ async function getDashboardData(programadorId: string) {
       value: 0,
     });
   }
-  for (const e of estimaciones) {
-    const d = new Date(e.created_at);
+  for (const c of cotizaciones) {
+    const d = new Date(c.created_at);
     const slot = serie.find(
       (s) => s.year === d.getFullYear() && s.month === d.getMonth()
     );
@@ -140,15 +116,12 @@ async function getDashboardData(programadorId: string) {
       ? 100
       : 0;
 
-  const recientes = estimaciones.slice(0, 5).map((e) => {
-    const cot = cotByEst.get(e.id);
-    return {
-      id: e.id,
-      nombre: e.datos_raw?.nombre_solicitud ?? "(sin nombre)",
-      created_at: e.created_at,
-      estado_efectivo: cot?.estado ?? e.estado,
-    };
-  });
+  const recientes = cotizaciones.slice(0, 5).map((c) => ({
+    id: c.id,
+    nombre: c.nombre || "(sin nombre)",
+    created_at: c.created_at,
+    estado_efectivo: c.estado,
+  }));
 
   return {
     total,
@@ -170,12 +143,12 @@ import { labelEstado, badgeEstado } from "@/lib/estados";
 //   grises = todo lo demás, en escala de claridad por etapa
 const COLOR = {
   recibida: "#D1D5DB",      // gray-300 (recién llega, claro)
-  procesada: "#9CA3AF",     // gray-400
   esperando: "#6B7280",     // gray-500
   aprobada: "#22C55E",      // green (win)
   en_desarrollo: "#16A34A", // green-600
   enviada: "#15803D",       // green-700
   cambios: "#EF4444",       // red (problema)
+  cobrada: "#0EA5E9",       // sky-500 (dinero cobrado)
   descartada: "#4B5563",    // gray-600 (apagada, sin color)
 };
 
@@ -184,14 +157,14 @@ export default async function DashboardProgramadorPage() {
   const d = await getDashboardData(p.id);
 
   const segmentos = [
-    { label: "Recibidas", value: d.buckets.recibida, color: COLOR.recibida },
-    { label: "Procesadas con IA", value: d.buckets.procesada, color: COLOR.procesada },
-    { label: "Esperando jefe", value: d.buckets.esperando, color: COLOR.esperando },
-    { label: "Aprobadas", value: d.buckets.aprobada, color: COLOR.aprobada },
+    { label: "En revisión interna", value: d.buckets.recibida, color: COLOR.recibida },
+    { label: "Esperando aprobación", value: d.buckets.esperando, color: COLOR.esperando },
+    { label: "Aprobadas por cliente", value: d.buckets.aprobada, color: COLOR.aprobada },
     { label: "En desarrollo", value: d.buckets.en_desarrollo, color: COLOR.en_desarrollo },
     { label: "Enviadas al cliente", value: d.buckets.enviada, color: COLOR.enviada },
     { label: "Cambios solicitados", value: d.buckets.cambios, color: COLOR.cambios },
-    { label: "Descartadas / Archivadas", value: d.buckets.descartada, color: COLOR.descartada },
+    { label: "Cobradas", value: d.buckets.cobrada, color: COLOR.cobrada },
+    { label: "Rechazadas / Archivadas", value: d.buckets.descartada, color: COLOR.descartada },
   ].filter((s) => s.value > 0);
 
   return (
@@ -213,7 +186,12 @@ export default async function DashboardProgramadorPage() {
         />
         <KpiCard
           label="Aprobadas"
-          valor={d.buckets.aprobada + d.buckets.en_desarrollo + d.buckets.enviada}
+          valor={
+            d.buckets.aprobada +
+            d.buckets.en_desarrollo +
+            d.buckets.enviada +
+            d.buckets.cobrada
+          }
           subtexto={`${d.tasaAprobacion}% del total`}
           icon={CheckCircle2}
           color="var(--state-success)"

@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ORDEN_FLUJO_COTIZACION, labelEstado } from "@/lib/estados";
 
 type Props = {
   actuales: {
@@ -13,14 +14,7 @@ type Props = {
 
 const ESTADOS = [
   { id: "", label: "Todos" },
-  { id: "recibida", label: "Recibida" },
-  { id: "procesada_ia", label: "Procesada con IA" },
-  { id: "esperando_aprobacion", label: "Esperando jefe" },
-  { id: "aprobada", label: "Aprobada" },
-  { id: "en_desarrollo", label: "En desarrollo" },
-  { id: "enviada_cliente", label: "Enviada al cliente" },
-  { id: "cambios_solicitados", label: "Cambios solicitados" },
-  { id: "descartada", label: "Descartada / Archivada" },
+  ...ORDEN_FLUJO_COTIZACION.map((e) => ({ id: e, label: labelEstado(e) })),
 ];
 
 export default function FiltrosEstimaciones({ actuales }: Props) {

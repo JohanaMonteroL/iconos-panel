@@ -3,8 +3,7 @@
 // Crea una cotización de monto fijo (sin horas). Caso típico: venta de un
 // dispositivo, servicio one-shot, etc. Hace el flujo completo:
 //   1. Persiste la cotización en Supabase con tipo_precio='fijo'.
-//   2. Crea el ticket de ClickUp con descripción adaptada al monto fijo.
-//   3. Manda el mensaje de aprobación al jefe en Slack.
+//   2. Manda el mensaje de aprobación al jefe en Slack.
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";

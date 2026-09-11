@@ -5,20 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSessionFromCookies } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { ESTADOS_COTIZACION } from "@/lib/estados";
 
 export const runtime = "nodejs";
 
-const ESTADOS_VALIDOS = [
-  "pendiente_revisar",
-  "esperando_aprobacion",
-  "aprobada",
-  "cambios_solicitados",
-  "aprobado_cliente",
-  "enviada_cliente",
-  "en_desarrollo",
-  "finalizado",
-  "archivada",
-];
+const ESTADOS_VALIDOS: readonly string[] = ESTADOS_COTIZACION;
 
 export async function POST(
   req: NextRequest,
@@ -42,6 +33,17 @@ export async function POST(
   if (!ESTADOS_VALIDOS.includes(nuevo)) {
     return NextResponse.json({ error: "Estado inválido" }, { status: 422 });
   }
+  // "enviada" exige antes subir el PDF que se mandó al cliente — solo se
+  // puede llegar a ese estado vía /api/cotizaciones/[id]/enviar-pdf.
+  if (nuevo === "enviada") {
+    return NextResponse.json(
+      {
+        error:
+          "Para marcar como \"Enviada\" primero sube el PDF que se mandó al cliente.",
+      },
+      { status: 422 }
+    );
+  }
   const comentario = body?.comentario ? String(body.comentario) : null;
   const aprobadoPor = body?.aprobado_por ? String(body.aprobado_por) : null; // "johana" | "ivan"
 
@@ -56,10 +58,11 @@ export async function POST(
     return NextResponse.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
 
+  // Nota: ya no seteamos jefe_aprobacion_recibida_at aquí cuando nuevo ===
+  // "aprobada" — ese estado ahora significa "el cliente aprobó". El visto
+  // bueno interno de Iván es un timestamp aparte que solo se sella desde
+  // Slack (handleAprobar) o manualmente si hiciera falta.
   const patch: Record<string, any> = { estado: nuevo };
-  if (nuevo === "aprobada") {
-    patch.jefe_aprobacion_recibida_at = new Date().toISOString();
-  }
 
   const { error: updErr } = await supa
     .from("cotizaciones")

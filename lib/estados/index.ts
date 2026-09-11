@@ -1,66 +1,80 @@
-// Catálogo central de estados de estimaciones y cotizaciones, con sus
-// etiquetas para mostrar al usuario y las clases de badge. Importar de aquí
-// en cualquier parte de la app para mantener consistencia.
-
-export const ESTADOS_ESTIMACION = [
-  "recibida",
-  "procesada_ia",
-  "en_revision",
-  "descartada",
-] as const;
+// Catálogo central de estados de cotizaciones, con sus etiquetas para
+// mostrar al usuario y las clases de badge. Importar de aquí en cualquier
+// parte de la app para mantener consistencia.
+//
+// Desde la fusión Cotizaciones + Estimaciones, un registro nace como
+// "estimación" (por_estimar / pendiente_revision_interna) y recorre TODO el
+// flujo — sin cambiar de tabla ni de id — hasta "cobrada". Ya no existe un
+// vocabulario de estado separado para estimaciones.
 
 export const ESTADOS_COTIZACION = [
-  "pendiente_revisar",
+  "por_estimar",
+  "pendiente_revision_interna",
   "esperando_aprobacion",
-  "aprobada",
   "cambios_solicitados",
-  "aprobado_cliente",
-  "enviada_cliente",
+  "enviada",
+  "aprobada",
   "en_desarrollo",
-  "finalizado",
+  "en_espera_de_cobro",
+  "pendiente_por_cobrar",
+  "rechazada",
+  "cobrada",
   "archivada",
 ] as const;
 
-export type EstadoEstimacion = (typeof ESTADOS_ESTIMACION)[number];
 export type EstadoCotizacion = (typeof ESTADOS_COTIZACION)[number];
-export type EstadoCualquiera = EstadoEstimacion | EstadoCotizacion;
 
 // Etiquetas que ve el usuario.
 export const ESTADO_LABEL: Record<string, string> = {
-  // Estimación
-  recibida: "Recibida",
-  procesada_ia: "Procesada con IA",
-  en_revision: "Procesada con IA", // legacy mismo significado
-  descartada: "Descartada",
-  // Cotización
-  pendiente_revisar: "Por revisar",
-  esperando_aprobacion: "Esperando jefe",
-  aprobada: "Aprobado por Iván",
+  por_estimar: "Por estimar",
+  pendiente_revision_interna: "Revisión interna",
+  esperando_aprobacion: "Esperando aprobación",
   cambios_solicitados: "Cambios solicitados",
-  aprobado_cliente: "Aprobado por cliente",
-  enviada_cliente: "Enviada al cliente",
+  enviada: "Enviada al cliente",
+  aprobada: "Aprobada por cliente",
   en_desarrollo: "En desarrollo",
-  finalizado: "Finalizado",
+  en_espera_de_cobro: "En espera de cobro",
+  pendiente_por_cobrar: "Pendiente por cobrar",
+  rechazada: "Rechazada",
+  cobrada: "Cobrada",
   archivada: "Archivada",
 };
 
-// Clase de badge para el estado (debe matchear app/globals.css).
+// Clase de badge para el estado — un color distinto por estado (inspirado
+// en los estatus de ClickUp: cada uno tiene su propio color, no solo 4
+// familias repetidas). Debe matchear las clases `.estado-badge-*` en
+// app/globals.css.
 export const ESTADO_BADGE: Record<string, string> = {
-  // Estimación
-  recibida: "badge-warning",
-  procesada_ia: "badge-info",
-  en_revision: "badge-info",
-  descartada: "badge-neutral",
-  // Cotización
-  pendiente_revisar: "badge-warning",
-  esperando_aprobacion: "badge-info",
-  aprobada: "badge-success",
-  cambios_solicitados: "badge-danger",
-  aprobado_cliente: "badge-success",
-  enviada_cliente: "badge-info",
-  en_desarrollo: "badge-info",
-  finalizado: "badge-success",
-  archivada: "badge-neutral",
+  por_estimar: "estado-badge-por_estimar",
+  pendiente_revision_interna: "estado-badge-pendiente_revision_interna",
+  esperando_aprobacion: "estado-badge-esperando_aprobacion",
+  cambios_solicitados: "estado-badge-cambios_solicitados",
+  enviada: "estado-badge-enviada",
+  aprobada: "estado-badge-aprobada",
+  en_desarrollo: "estado-badge-en_desarrollo",
+  en_espera_de_cobro: "estado-badge-en_espera_de_cobro",
+  pendiente_por_cobrar: "estado-badge-pendiente_por_cobrar",
+  rechazada: "estado-badge-rechazada",
+  cobrada: "estado-badge-cobrada",
+  archivada: "estado-badge-archivada",
+};
+
+// Mismo color que ESTADO_BADGE pero como hex plano, para los pocos lugares
+// que no pueden usar la clase CSS directamente (ej. el punto de color de
+// las columnas del tablero kanban, que se dibuja con un div inline).
+export const ESTADO_COLOR_HEX: Record<string, string> = {
+  por_estimar: "#71717A",
+  pendiente_revision_interna: "#7C3AED",
+  esperando_aprobacion: "#D97706",
+  cambios_solicitados: "#DB2777",
+  enviada: "#2563EB",
+  aprobada: "#0D9488",
+  en_desarrollo: "#4F46E5",
+  en_espera_de_cobro: "#CA8A04",
+  pendiente_por_cobrar: "#EA580C",
+  rechazada: "#DC2626",
+  cobrada: "#16A34A",
+  archivada: "#64748B",
 };
 
 // Helpers
@@ -70,25 +84,36 @@ export function labelEstado(estado: string | null | undefined): string {
 }
 
 export function badgeEstado(estado: string | null | undefined): string {
-  if (!estado) return "badge-neutral";
-  return ESTADO_BADGE[estado] ?? "badge-neutral";
+  if (!estado) return "estado-badge-por_estimar";
+  return ESTADO_BADGE[estado] ?? "estado-badge-por_estimar";
+}
+
+export function colorHexEstado(estado: string | null | undefined): string {
+  if (!estado) return ESTADO_COLOR_HEX.por_estimar;
+  return ESTADO_COLOR_HEX[estado] ?? ESTADO_COLOR_HEX.por_estimar;
 }
 
 // Orden lógico del flujo (de inicial a final). Útil para selectors.
+// Incluye "archivada" al final (housekeeping, no es parte del flujo visual
+// principal) — quien construya un tablero kanban debe filtrarla.
 export const ORDEN_FLUJO_COTIZACION: EstadoCotizacion[] = [
-  "pendiente_revisar",
+  "por_estimar",
+  "pendiente_revision_interna",
   "esperando_aprobacion",
-  "aprobada",
   "cambios_solicitados",
-  "aprobado_cliente",
-  "enviada_cliente",
+  "enviada",
+  "aprobada",
   "en_desarrollo",
-  "finalizado",
+  "en_espera_de_cobro",
+  "pendiente_por_cobrar",
+  "rechazada",
+  "cobrada",
   "archivada",
 ];
 
-export const ORDEN_FLUJO_ESTIMACION: EstadoEstimacion[] = [
-  "recibida",
-  "procesada_ia",
-  "descartada",
+// Estados que cuentan como "estimación por revisar" (badge/campanita del
+// header y contador del dashboard).
+export const ESTADOS_ESTIMACION_ACTIVA: EstadoCotizacion[] = [
+  "por_estimar",
+  "pendiente_revision_interna",
 ];

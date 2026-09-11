@@ -42,18 +42,19 @@ async function handleAprobar(cotizacionId: string, user: any) {
   const supa = createSupabaseServiceClient();
   const aprobadoPor = `${user?.username || user?.name || user?.id || "jefe"} (slack)`;
 
-  // 1) Cambiar estado local
+  // Solo sellamos el visto bueno interno de Iván — el estado se queda en
+  // "esperando_aprobacion" hasta que Johana suba el PDF y marque "Enviada".
+  // "aprobada" ahora significa "el cliente aprobó" (no el jefe interno).
   await supa
     .from("cotizaciones")
     .update({
-      estado: "aprobada",
       jefe_aprobacion_recibida_at: new Date().toISOString(),
     })
     .eq("id", cotizacionId);
 
   await supa.from("acciones_cotizacion").insert({
     cotizacion_id: cotizacionId,
-    tipo_accion: "estado_aprobada",
+    tipo_accion: "jefe_aprobacion_recibida",
     metadata: { aprobado_por: aprobadoPor, via: "slack" },
   });
 

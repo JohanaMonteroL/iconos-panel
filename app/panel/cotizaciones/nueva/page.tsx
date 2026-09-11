@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { getProyectoOptions } from "@/lib/clickup/client";
+import { getProyectosActivos } from "@/lib/proyectos/catalogo";
 import NuevaCotizacionFijaForm from "./NuevaCotizacionFijaForm";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +22,11 @@ async function getProgramadores(): Promise<{ id: string; nombre: string }[]> {
 }
 
 export default async function NuevaCotizacionPage() {
-  const [programadores, proyectosRaw] = await Promise.all([
+  const supa = createSupabaseServiceClient();
+  const [programadores, proyectos] = await Promise.all([
     getProgramadores(),
-    getProyectoOptions().catch(() => []),
+    getProyectosActivos(supa),
   ]);
-  const proyectos = proyectosRaw.map((p) => ({ id: p.id, nombre: p.name }));
 
   return (
     <>
