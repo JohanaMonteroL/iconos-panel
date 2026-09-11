@@ -54,7 +54,7 @@ export default function CrearMenu() {
           <Link
             href="/panel/cotizaciones/nueva"
             onClick={() => setOpen(false)}
-            className="flex items-start gap-3 px-3.5 py-3"
+            className="flex items-start gap-3 px-3.5 py-3 transition-colors hover:bg-[var(--bg-surface)]"
             style={{ borderBottom: "1px solid var(--border-subtle)" }}
             role="menuitem"
           >
@@ -69,7 +69,7 @@ export default function CrearMenu() {
           <Link
             href="/panel/cotizaciones/nueva-estimacion"
             onClick={() => setOpen(false)}
-            className="flex items-start gap-3 px-3.5 py-3"
+            className="flex items-start gap-3 px-3.5 py-3 transition-colors hover:bg-[var(--bg-surface)]"
             role="menuitem"
           >
             <ClipboardList size={16} strokeWidth={1.75} style={{ marginTop: 2, flexShrink: 0, color: "var(--text-secondary)" }} />

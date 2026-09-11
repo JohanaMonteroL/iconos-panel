@@ -55,7 +55,7 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="modal-backdrop-anim fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
@@ -66,7 +66,7 @@ export default function Modal({
         ref={dialogRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className={`w-full ${SIZES[size]} max-h-[90vh] flex flex-col rounded-[14px] outline-none`}
+        className={`modal-panel-anim w-full ${SIZES[size]} max-h-[90vh] flex flex-col rounded-[14px] outline-none`}
         style={{
           background: "var(--bg-elevated)",
           border: "1px solid var(--border-subtle)",

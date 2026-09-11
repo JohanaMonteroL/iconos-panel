@@ -23,7 +23,18 @@ type Body = {
   color?: string;
   emoji?: string;
   notas?: string | null;
+  soporte_activo?: boolean;
+  soporte_tipo?: "fijo" | "variable" | null;
+  soporte_horas_fijas?: number | null;
+  soporte_tarifa_hora?: number | null;
 };
+
+const CAMPOS_SOPORTE = [
+  "soporte_activo",
+  "soporte_tipo",
+  "soporte_horas_fijas",
+  "soporte_tarifa_hora",
+] as const;
 
 export async function POST(
   req: NextRequest,
@@ -79,6 +90,21 @@ export async function POST(
     }
     patch.emoji = body.emoji;
   }
+  if (body.soporte_activo !== undefined) {
+    patch.soporte_activo = !!body.soporte_activo;
+  }
+  if (body.soporte_tipo !== undefined) {
+    if (body.soporte_tipo !== null && !["fijo", "variable"].includes(body.soporte_tipo)) {
+      return NextResponse.json({ error: "Tipo de soporte inválido" }, { status: 422 });
+    }
+    patch.soporte_tipo = body.soporte_tipo;
+  }
+  if (body.soporte_horas_fijas !== undefined) {
+    patch.soporte_horas_fijas = body.soporte_horas_fijas;
+  }
+  if (body.soporte_tarifa_hora !== undefined) {
+    patch.soporte_tarifa_hora = body.soporte_tarifa_hora;
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
@@ -97,6 +123,24 @@ export async function POST(
       );
     }
     ({ error } = await supa.from("proyectos").update(sinEmoji).eq("id", params.id));
+  }
+  // Degradación si la migración 0023 (columnas de soporte) todavía no se
+  // corrió — reintenta sin esos 4 campos para no bloquear el resto del
+  // patch (ej. si Johana solo cambió el nombre en el mismo formulario).
+  if (
+    error &&
+    /soporte_activo|soporte_tipo|soporte_horas_fijas|soporte_tarifa_hora/i.test(error.message) &&
+    CAMPOS_SOPORTE.some((c) => c in patch)
+  ) {
+    const sinSoporte = { ...patch };
+    for (const campo of CAMPOS_SOPORTE) delete sinSoporte[campo];
+    if (Object.keys(sinSoporte).length === 0) {
+      return NextResponse.json(
+        { error: "La migración de configuración de soporte no se ha aplicado todavía" },
+        { status: 503 }
+      );
+    }
+    ({ error } = await supa.from("proyectos").update(sinSoporte).eq("id", params.id));
   }
   if (error) {
     console.error("[proyectos] error editando:", error);

@@ -4,7 +4,9 @@ import AutoRefresh from "@/components/ui/AutoRefresh";
 import VistaToggle from "@/components/ui/VistaToggle";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
-import { labelEstado, badgeEstado, ORDEN_FLUJO_COTIZACION } from "@/lib/estados";
+import { labelEstado, badgeEstado, ORDEN_FLUJO_COTIZACION, ESTADOS_YA_EN_COBROS } from "@/lib/estados";
+import { montoCotizacion } from "@/lib/cotizaciones/calculos";
+import { rangoRapidoAFechas } from "@/lib/dates";
 import FiltrosCotizaciones from "./FiltrosCotizaciones";
 import CrearMenu from "./CrearMenu";
 import TableroCotizaciones from "./TableroCotizaciones";
@@ -39,10 +41,7 @@ const estadosVisibles = [
   "enviada",
   "aprobada",
   "en_desarrollo",
-  "en_espera_de_cobro",
-  "pendiente_por_cobrar",
   "rechazada",
-  "cobrada",
 ];
 
 type Filtros = {
@@ -53,6 +52,8 @@ type Filtros = {
   desde: string | null;
   hasta: string | null;
   archivadas: boolean;
+  rango: string | null;
+  orden: string | null;
 };
 
 async function getCotizaciones(filtros: Filtros): Promise<Row[]> {
@@ -177,23 +178,27 @@ async function getProyectos(): Promise<string[]> {
 async function getInfoProyectos(): Promise<{
   coloresProyecto: Record<string, string>;
   emojisProyecto: Record<string, string>;
+  precioHoraVentaProyecto: Record<string, number>;
 }> {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { coloresProyecto: {}, emojisProyecto: {} };
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    return { coloresProyecto: {}, emojisProyecto: {}, precioHoraVentaProyecto: {} };
   const supa = createSupabaseServiceClient();
   let { data, error }: { data: any; error: any } = await supa
     .from("proyectos")
-    .select("id, color, emoji");
+    .select("id, color, emoji, precio_hora_venta");
   if (error && /emoji/i.test(error.message)) {
-    ({ data, error } = await supa.from("proyectos").select("id, color"));
+    ({ data, error } = await supa.from("proyectos").select("id, color, precio_hora_venta"));
   }
   const coloresProyecto: Record<string, string> = {};
   const emojisProyecto: Record<string, string> = {};
+  const precioHoraVentaProyecto: Record<string, number> = {};
   for (const r of (data ?? []) as any[]) {
     if (!r.id) continue;
     coloresProyecto[r.id] = r.color;
     if (r.emoji) emojisProyecto[r.id] = r.emoji;
+    if (r.precio_hora_venta != null) precioHoraVentaProyecto[r.id] = Number(r.precio_hora_venta);
   }
-  return { coloresProyecto, emojisProyecto };
+  return { coloresProyecto, emojisProyecto, precioHoraVentaProyecto };
 }
 
 function fmtMxn(n: number): string {
@@ -217,6 +222,8 @@ export default async function CotizacionesPage({
     desde?: string;
     hasta?: string;
     vista?: string;
+    rango?: string;
+    orden?: string;
   };
 }) {
   const vistaExplicita: Vista | null =
@@ -227,24 +234,57 @@ export default async function CotizacionesPage({
       : searchParams.vista === "lista"
       ? "lista"
       : null;
+  // Un estado "ya en Cobros" (en_espera_de_cobro/pendiente_por_cobrar/
+  // cobrada) no tiene columna en el tablero kanban (no está en
+  // ORDEN_FLUJO_COTIZACION a propósito) — si es lo que se está filtrando,
+  // forzamos lista para que sí se vea, en vez de un tablero vacío.
+  const estadoEsDeCobros = !!(
+    searchParams.estado && (ESTADOS_YA_EN_COBROS as string[]).includes(searchParams.estado)
+  );
   // Vista mostrada en el toggle (refleja desktop). Mobile usa cuadrícula por defecto.
-  const vista: Vista = vistaExplicita ?? "board";
+  const vista: Vista = estadoEsDeCobros ? "lista" : vistaExplicita ?? "board";
+
+  // "Este mes"/"Mes pasado" calculan desde/hasta solos; "Personalizado" (o
+  // sin elegir un rango rápido) usa los que se hayan capturado a mano.
+  const rango = searchParams.rango ?? null;
+  const { desde, hasta } =
+    rango === "este_mes" || rango === "mes_pasado"
+      ? rangoRapidoAFechas(rango)
+      : { desde: searchParams.desde ?? null, hasta: searchParams.hasta ?? null };
+
   const filtros: Filtros = {
     archivadas: searchParams.archivadas === "1",
     q: searchParams.q ?? null,
     estado: searchParams.estado ?? null,
     programador: searchParams.programador ?? null,
     proyecto: searchParams.proyecto ?? null,
-    desde: searchParams.desde ?? null,
-    hasta: searchParams.hasta ?? null,
+    desde,
+    hasta,
+    rango,
+    orden: searchParams.orden ?? null,
   };
 
-  const [items, programadores, proyectos, { coloresProyecto, emojisProyecto }] = await Promise.all([
-    getCotizaciones(filtros),
-    getProgramadores(),
-    getProyectos(),
-    getInfoProyectos(),
-  ]);
+  const [itemsSinOrdenar, programadores, proyectos, { coloresProyecto, emojisProyecto, precioHoraVentaProyecto }] =
+    await Promise.all([
+      getCotizaciones(filtros),
+      getProgramadores(),
+      getProyectos(),
+      getInfoProyectos(),
+    ]);
+
+  const items = [...itemsSinOrdenar].sort((a, b) => {
+    if (filtros.orden === "nombre") {
+      return a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" });
+    }
+    if (filtros.orden === "monto") {
+      const montoA =
+        montoCotizacion(a, a.proyecto_clickup_id ? precioHoraVentaProyecto[a.proyecto_clickup_id] : undefined) ?? -1;
+      const montoB =
+        montoCotizacion(b, b.proyecto_clickup_id ? precioHoraVentaProyecto[b.proyecto_clickup_id] : undefined) ?? -1;
+      return montoB - montoA;
+    }
+    return 0; // ya viene ordenado por fecha de creación desc desde la consulta
+  });
 
   const pipelineFijo = items
     .filter((it) => it.tipo_precio === "fijo" && it.monto_fijo != null)
@@ -252,9 +292,15 @@ export default async function CotizacionesPage({
 
   const ESTADOS_EN_PROCESO = ["por_estimar", "pendiente_revision_interna", "esperando_aprobacion", "cambios_solicitados"];
   const ESTADOS_EN_CURSO = ["enviada", "aprobada", "en_desarrollo"];
-  const ESTADOS_POR_COBRAR = ["en_espera_de_cobro", "pendiente_por_cobrar"];
 
-  const kpis = [
+  const kpis: {
+    label: string;
+    value: string;
+    icon: typeof FileText;
+    iconBg: string;
+    iconFg: string;
+    sub?: string;
+  }[] = [
     {
       label: "Cotizaciones activas",
       value: String(items.length),
@@ -285,7 +331,6 @@ export default async function CotizacionesPage({
       icon: DollarSign,
       iconBg: "#EDE9FE",
       iconFg: "#6D28D9",
-      sub: `${items.filter((it) => ESTADOS_POR_COBRAR.includes(it.estado)).length} por cobrar`,
     },
   ];
 
@@ -327,12 +372,14 @@ export default async function CotizacionesPage({
             >
               {k.value}
             </div>
-            <div
-              className="text-caption num-tabular"
-              style={{ color: "var(--text-tertiary)", marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}
-            >
-              {k.sub}
-            </div>
+            {k.sub && (
+              <div
+                className="text-caption num-tabular"
+                style={{ color: "var(--text-tertiary)", marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}
+              >
+                {k.sub}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -347,6 +394,8 @@ export default async function CotizacionesPage({
         <div className="card text-body text-text-secondary text-center py-10">
           Sin cotizaciones que coincidan con los filtros.
         </div>
+      ) : estadoEsDeCobros ? (
+        <ListaCotizaciones items={items} />
       ) : vistaExplicita ? (
         vistaExplicita === "board" ? (
           <TableroCotizaciones
@@ -354,6 +403,7 @@ export default async function CotizacionesPage({
             itemsIniciales={items}
             coloresProyecto={coloresProyecto}
             emojisProyecto={emojisProyecto}
+            precioHoraVentaProyecto={precioHoraVentaProyecto}
           />
         ) : vistaExplicita === "cuadricula" ? (
           <CuadriculaCotizaciones items={items} />
@@ -371,6 +421,7 @@ export default async function CotizacionesPage({
               itemsIniciales={items}
               coloresProyecto={coloresProyecto}
               emojisProyecto={emojisProyecto}
+              precioHoraVentaProyecto={precioHoraVentaProyecto}
             />
           </div>
         </>

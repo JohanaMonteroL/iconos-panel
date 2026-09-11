@@ -15,12 +15,14 @@ import {
   ChevronsUpDown,
   Ticket,
   Briefcase,
+  DollarSign,
 } from "lucide-react";
 import LogoutButton from "./LogoutButton";
 
 const items = [
   { href: "/panel", label: "Inicio", icon: Home },
   { href: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText },
+  { href: "/panel/cobros", label: "Cobros", icon: DollarSign },
   { href: "/panel/proyectos", label: "Proyectos", icon: Briefcase },
   { href: "/panel/tickets/nuevo", label: "Tickets", icon: Ticket },
   { href: "/panel/settings", label: "Settings", icon: Settings },

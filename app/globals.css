@@ -421,6 +421,19 @@ select:disabled,
   [data-theme="dark"] .estado-badge-cobrada                      { background: rgba(22,163,74,0.18);  color: #4ADE80; }
   [data-theme="dark"] .estado-badge-archivada                    { background: rgba(100,116,139,0.18); color: #94A3B8; }
 
+  /* Colores por estado de Período de Cobro — mismo espíritu que
+     .estado-badge-*, para el módulo hermano lib/estados/cobros.ts. Debe
+     matchear ESTADO_PERIODO_BADGE. */
+  .periodo-badge-listo_para_cobrar          { background: #FEF9C3; color: #A16207; }
+  .periodo-badge-esperando_aprobacion_pago  { background: #EDE7FE; color: #7C3AED; }
+  .periodo-badge-por_facturar               { background: #DBEAFE; color: #2563EB; }
+  .periodo-badge-facturado                  { background: #DCFCE7; color: #16A34A; }
+
+  [data-theme="dark"] .periodo-badge-listo_para_cobrar         { background: rgba(202,138,4,0.18);  color: #FDE047; }
+  [data-theme="dark"] .periodo-badge-esperando_aprobacion_pago { background: rgba(124,58,237,0.18); color: #C4B5FD; }
+  [data-theme="dark"] .periodo-badge-por_facturar               { background: rgba(37,99,235,0.18); color: #60A5FA; }
+  [data-theme="dark"] .periodo-badge-facturado                  { background: rgba(22,163,74,0.18); color: #4ADE80; }
+
   /* Badge grande — estado destacado en cabeceras */
   .badge-lg {
     @apply inline-flex items-center;
@@ -568,6 +581,31 @@ select:disabled,
 
   /* Divider */
   .divider { border: none; border-top: 1px solid var(--border-subtle); margin: 0; }
+}
+
+/* ========================================================================
+   ANIMACIONES — simples, reutilizan la convención de duraciones que ya
+   existe en el resto del CSS (120ms micro-interacciones, 180-200ms
+   elevar/lift). Respetan prefers-reduced-motion vía el bloque de abajo.
+   ======================================================================== */
+
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-panel-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-backdrop-anim { animation: modal-backdrop-in 160ms ease; }
+.modal-panel-anim { animation: modal-panel-in 180ms ease; }
+
+/* Tarjetas de los tableros kanban (Cotizaciones y Cobros) — usan la misma
+   transition de box-shadow/transform que ya traían declarada (antes sin
+   usar) para un lift sutil al pasar el mouse, igual que .card-hover. */
+.kanban-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 /* ========================================================================
