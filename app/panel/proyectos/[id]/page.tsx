@@ -10,14 +10,14 @@ export const dynamic = "force-dynamic";
 async function getProyecto(id: string): Promise<ProyectoData | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const supa = createSupabaseServiceClient();
-  let { data, error } = await supa
+  let { data, error }: { data: any; error: any } = await supa
     .from("proyectos")
     .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, emoji, notas, activo")
     .eq("id", id)
     .maybeSingle();
   // Degradación si la migración de `emoji` todavía no se corrió.
   if (error && /emoji/i.test(error.message)) {
-    ({ data } = await supa
+    ({ data, error } = await supa
       .from("proyectos")
       .select("id, nombre, contacto_principal, rfc, correo, telefono, precio_hora_venta, moneda_hora, color, notas, activo")
       .eq("id", id)

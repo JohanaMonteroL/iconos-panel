@@ -88,7 +88,8 @@ export async function POST(
   let { error } = await supa.from("proyectos").update(patch).eq("id", params.id);
   // Degradación si la migración de `emoji` todavía no se corrió.
   if (error && /emoji/i.test(error.message) && "emoji" in patch) {
-    const { emoji: _omitido, ...sinEmoji } = patch;
+    const sinEmoji = { ...patch };
+    delete sinEmoji.emoji;
     if (Object.keys(sinEmoji).length === 0) {
       return NextResponse.json(
         { error: "La migración de emoji no se ha aplicado todavía" },
