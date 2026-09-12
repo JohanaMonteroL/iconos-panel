@@ -345,6 +345,15 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
         </div>
       </header>
 
+      <PeriodoAcciones
+        periodoId={periodo.id}
+        estado={periodo.estado}
+        etiqueta={periodo.etiqueta}
+        monto={periodo.monto}
+        moneda={periodo.moneda}
+        esUltimoPeriodo={hermanos.length <= 1}
+      />
+
       <section className="card space-y-4">
         <div className="flex items-start justify-between gap-6 flex-wrap">
           <div>
@@ -427,15 +436,6 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
           </div>
         )}
       </section>
-
-      <PeriodoAcciones
-        periodoId={periodo.id}
-        estado={periodo.estado}
-        etiqueta={periodo.etiqueta}
-        monto={periodo.monto}
-        moneda={periodo.moneda}
-        esUltimoPeriodo={hermanos.length <= 1}
-      />
 
       <CobroPeriodoTabs
         periodoId={periodo.id}
