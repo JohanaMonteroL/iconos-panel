@@ -49,6 +49,9 @@ type Detalle = {
     proyecto_nombre: string | null;
     proyecto_color: string | null;
     proyecto_emoji: string | null;
+    programador_nombre: string | null;
+    descripcion: string | null;
+    horas: number | null;
   };
   hermanos: PeriodoHermano[];
   totalCobradoContrato: number;
@@ -79,15 +82,31 @@ async function getDetalle(id: string): Promise<Detalle | null> {
     .maybeSingle();
   if (error || !periodo) return null;
 
-  const { data: cobroRaw } = await supa
+  const selCobroFull =
+    "id, origen, titulo, monto_total, moneda, cotizacion_id, descripcion, horas, proyectos(nombre, color, emoji), programadores(nombre)";
+  const selCobroSinManual = "id, origen, titulo, monto_total, moneda, cotizacion_id, proyectos(nombre, color, emoji)";
+  let { data: cobroRaw, error: cobroErr }: { data: any; error: any } = await supa
     .from("cobros")
-    .select("id, origen, titulo, monto_total, moneda, cotizacion_id, proyectos(nombre, color, emoji)")
+    .select(selCobroFull)
     .eq("id", periodo.cobro_id)
     .maybeSingle();
+  // Cualquier error (columna faltante, o el embed `programadores(nombre)`
+  // que PostgREST no puede resolver sin la FK de la migración 0026) cae al
+  // select reducido — más simple y robusto que adivinar el mensaje exacto.
+  if (cobroErr) {
+    ({ data: cobroRaw, error: cobroErr } = await supa
+      .from("cobros")
+      .select(selCobroSinManual)
+      .eq("id", periodo.cobro_id)
+      .maybeSingle());
+  }
   if (!cobroRaw) return null;
   const proyecto = Array.isArray((cobroRaw as any).proyectos)
     ? (cobroRaw as any).proyectos[0]
     : (cobroRaw as any).proyectos;
+  const programadorCobro = Array.isArray((cobroRaw as any).programadores)
+    ? (cobroRaw as any).programadores[0]
+    : (cobroRaw as any).programadores;
 
   const { data: hermanosRaw } = await supa
     .from("cobros_periodos")
@@ -255,6 +274,9 @@ async function getDetalle(id: string): Promise<Detalle | null> {
       proyecto_nombre: proyecto?.nombre ?? null,
       proyecto_color: proyecto?.color ?? null,
       proyecto_emoji: proyecto?.emoji ?? null,
+      programador_nombre: programadorCobro?.nombre ?? null,
+      descripcion: (cobroRaw as any).descripcion ?? null,
+      horas: (cobroRaw as any).horas != null ? Number((cobroRaw as any).horas) : null,
     },
     hermanos,
     totalCobradoContrato,
@@ -331,6 +353,7 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
                   {cobro.proyecto_nombre}
                 </span>
               )}
+              {cobro.programador_nombre && <span>· {cobro.programador_nombre}</span>}
               {cobro.cotizacion_id && (
                 <Link
                   href={`/panel/cotizaciones/${cobro.cotizacion_id}`}
@@ -402,7 +425,20 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
               {fmtMonto(totalCobradoContrato, cobro.moneda)}
             </div>
           </div>
+          {cobro.horas != null && (
+            <div>
+              <div className="text-overline text-text-tertiary">Horas capturadas</div>
+              <div className="mt-1 num-tabular text-body-medium">{cobro.horas}h</div>
+            </div>
+          )}
         </div>
+
+        {cobro.descripcion && (
+          <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-overline text-text-tertiary mb-1">Descripción</div>
+            <p className="text-body text-text-secondary whitespace-pre-wrap">{cobro.descripcion}</p>
+          </div>
+        )}
 
         {hermanos.length > 1 && (
           <div>

@@ -6,6 +6,7 @@ import { rangoRapidoAFechas } from "@/lib/dates";
 import { montoPagado, pendientePeriodo, estadoFactura } from "@/lib/cobros/calculos";
 import TableroCobros from "./TableroCobros";
 import FiltrosCobros from "./FiltrosCobros";
+import CrearCobroModal from "@/components/forms/CrearCobroModal";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,38 @@ async function getInfoProyectos(): Promise<{
   return { coloresProyecto, emojisProyecto, nombresProyecto, nombresUnicos };
 }
 
+// Proyectos/programadores activos para el formulario de "Crear cobro" —
+// solo lo que ese modal necesita (costo por hora + moneda del proyecto
+// para el cálculo horas × tarifa).
+async function getDatosParaCrear(): Promise<{
+  proyectosActivos: { id: string; nombre: string; emoji: string | null; precio_hora_venta: number | null; moneda_hora: "MXN" | "USD" }[];
+  programadoresActivos: { id: string; nombre: string }[];
+}> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { proyectosActivos: [], programadoresActivos: [] };
+  const supa = createSupabaseServiceClient();
+  let { data: proy, error: proyErr }: { data: any; error: any } = await supa
+    .from("proyectos")
+    .select("id, nombre, emoji, precio_hora_venta, moneda_hora")
+    .eq("activo", true)
+    .order("nombre");
+  if (proyErr && /emoji/i.test(proyErr.message)) {
+    ({ data: proy, error: proyErr } = await supa
+      .from("proyectos")
+      .select("id, nombre, precio_hora_venta, moneda_hora")
+      .eq("activo", true)
+      .order("nombre"));
+  }
+  const { data: prog } = await supa
+    .from("programadores")
+    .select("id, nombre")
+    .eq("activo", true)
+    .order("nombre");
+  return {
+    proyectosActivos: ((proy ?? []) as any[]).map((p) => ({ ...p, emoji: p.emoji ?? null })),
+    programadoresActivos: (prog ?? []) as any[],
+  };
+}
+
 function fmtMxn(n: number): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
@@ -151,8 +184,11 @@ export default async function CobrosPage({
     orden?: string;
   };
 }) {
-  const [{ items: todos, migracionPendiente }, { coloresProyecto, emojisProyecto, nombresProyecto, nombresUnicos }] =
-    await Promise.all([getPeriodos(), getInfoProyectos()]);
+  const [
+    { items: todos, migracionPendiente },
+    { coloresProyecto, emojisProyecto, nombresProyecto, nombresUnicos },
+    { proyectosActivos, programadoresActivos },
+  ] = await Promise.all([getPeriodos(), getInfoProyectos(), getDatosParaCrear()]);
 
   const rango = searchParams.rango ?? null;
   const { desde, hasta } =
@@ -267,6 +303,7 @@ export default async function CobrosPage({
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <AutoRefresh intervalSeconds={15} />
+          <CrearCobroModal proyectos={proyectosActivos} programadores={programadoresActivos} />
         </div>
       </header>
 
@@ -318,7 +355,8 @@ export default async function CobrosPage({
       ) : todos.length === 0 ? (
         <div className="card text-body text-text-secondary text-center py-10">
           Sin cobros todavía. Se crean automáticamente cuando una cotización pasa a
-          &quot;Enviar a Cobros&quot;, o cuando corre la generación mensual de Soporte.
+          &quot;Enviar a Cobros&quot;, cuando corre la generación mensual de Soporte, o
+          usa &quot;Crear cobro&quot; arriba para uno manual.
         </div>
       ) : (
         <>
