@@ -413,7 +413,7 @@ export function AgregarPeriodoForm({
     return (
       <button type="button" onClick={() => setAbierto(true)} className="btn-secondary btn-sm w-fit">
         <Plus size={14} strokeWidth={1.75} />
-        <span>Agregar período (parcialidad)</span>
+        <span>Añadir parcialidad extra</span>
       </button>
     );
   }
@@ -549,7 +549,7 @@ export function DividirParcialidadesForm({
     return (
       <button type="button" onClick={() => setAbierto(true)} className="btn-secondary btn-sm w-fit">
         <Scissors size={14} strokeWidth={1.75} />
-        <span>Dividir en parcialidades</span>
+        <span>Generar plan de pagos</span>
       </button>
     );
   }

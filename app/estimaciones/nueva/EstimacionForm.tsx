@@ -15,6 +15,8 @@ import {
   Folder,
   RefreshCcw,
   PencilLine,
+  MessageSquare,
+  History,
 } from "lucide-react";
 import TareasTabla, { TareaRow, filaVacia } from "@/components/forms/TareasTabla";
 import TareasEnviadas from "@/components/forms/TareasEnviadas";
@@ -832,6 +834,14 @@ export default function EstimacionForm({
     }
   };
 
+  const ICONO_TAB: Record<Tab, typeof ListChecks> = {
+    desglose: ListChecks,
+    documentos: Folder,
+    financiero: DollarSign,
+    comunicacion: MessageSquare,
+    historial: History,
+  };
+
   const tabsList: { value: Tab; label: string }[] = existente
     ? esFijo
       ? [
@@ -1029,22 +1039,26 @@ export default function EstimacionForm({
       </section>
 
       {modoAdmin && (
-        <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: "var(--border-subtle)" }}>
-          {tabsList.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              onClick={() => setTab(t.value)}
-              className="px-4 py-2.5 text-body-medium whitespace-nowrap"
-              style={{
-                borderBottom: `2px solid ${tab === t.value ? "var(--accent)" : "transparent"}`,
-                color: tab === t.value ? "var(--text-primary)" : "var(--text-secondary)",
-                marginBottom: -1,
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex gap-1 border-b overflow-x-auto overflow-y-hidden" style={{ borderColor: "var(--border-subtle)" }}>
+          {tabsList.map((t) => {
+            const Icono = ICONO_TAB[t.value];
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setTab(t.value)}
+                className="px-4 py-2.5 text-body-medium inline-flex items-center gap-1.5 whitespace-nowrap"
+                style={{
+                  borderBottom: `2px solid ${tab === t.value ? "var(--accent)" : "transparent"}`,
+                  color: tab === t.value ? "var(--text-primary)" : "var(--text-secondary)",
+                  marginBottom: -1,
+                }}
+              >
+                <Icono size={14} strokeWidth={1.75} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       )}
 

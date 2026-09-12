@@ -12,7 +12,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   FileText,
   FileCode2,
@@ -25,7 +24,8 @@ import {
   Paperclip,
   X,
 } from "lucide-react";
-import { formatFechaLarga, formatFechaCorta } from "@/lib/dates";
+import { formatFechaLarga, hoyISO } from "@/lib/dates";
+import Modal from "@/components/ui/Modal";
 
 type Pago = {
   id: string;
@@ -33,15 +33,6 @@ type Pago = {
   fecha: string;
   notas: string | null;
   comprobante_url: string | null;
-};
-
-type PagoContrato = {
-  id: string;
-  monto: number;
-  fecha: string;
-  periodoId: string;
-  periodoEtiqueta: string;
-  esPeriodoActual: boolean;
 };
 
 type Props = {
@@ -55,8 +46,6 @@ type Props = {
   facturaXmlUrl: string | null;
   facturaXmlNombre: string | null;
   pagos: Pago[];
-  pagosContrato: PagoContrato[];
-  mostrarLedgerContrato: boolean;
 };
 
 function fmtMonto(n: number, moneda: string): string {
@@ -280,8 +269,6 @@ function PagosTab({
   montoPeriodo,
   moneda,
   pagos,
-  pagosContrato,
-  mostrarLedgerContrato,
 }: {
   periodoId: string;
   periodoEtiqueta: string;
@@ -289,17 +276,24 @@ function PagosTab({
   montoPeriodo: number;
   moneda: string;
   pagos: Pago[];
-  pagosContrato: PagoContrato[];
-  mostrarLedgerContrato: boolean;
 }) {
   const router = useRouter();
   const [monto, setMonto] = useState("");
-  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(() => hoyISO());
   const [notas, setNotas] = useState("");
   const [comprobante, setComprobante] = useState<File | null>(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [movingEstado, setMovingEstado] = useState(false);
+
+  // "Marcar como pagada" — atajo para cuando el pago ya cubre TODO lo
+  // pendiente de este período: solo pide la fecha (para poder capturar
+  // pagos pasados con su fecha real, no la de hoy) en vez de repetir el
+  // monto a mano.
+  const [modalPagadaAbierto, setModalPagadaAbierto] = useState(false);
+  const [fechaPagada, setFechaPagada] = useState(() => hoyISO());
+  const [workingPagada, setWorkingPagada] = useState(false);
+  const [errorPagada, setErrorPagada] = useState<string | null>(null);
 
   const montoPagado = pagos.reduce((acc, p) => acc + Number(p.monto || 0), 0);
   const pendiente = Math.max(montoPeriodo - montoPagado, 0);
@@ -362,6 +356,35 @@ function PagosTab({
     }
   };
 
+  const marcarComoPagada = async () => {
+    if (!fechaPagada) {
+      setErrorPagada("Falta la fecha");
+      return;
+    }
+    setWorkingPagada(true);
+    setErrorPagada(null);
+    try {
+      const form = new FormData();
+      form.append("monto", String(pendiente));
+      form.append("fecha", fechaPagada);
+      const res = await fetch(`/api/cobros/periodos/${periodoId}/pagos`, {
+        method: "POST",
+        body: form,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorPagada(json.error || "No se pudo registrar el pago");
+        return;
+      }
+      setModalPagadaAbierto(false);
+      router.refresh();
+    } catch {
+      setErrorPagada("Error de red");
+    } finally {
+      setWorkingPagada(false);
+    }
+  };
+
   const moverAFacturado = async () => {
     setMovingEstado(true);
     setError(null);
@@ -388,29 +411,14 @@ function PagosTab({
     <div className="space-y-4">
       <section className="card space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="text-overline text-text-tertiary">Pago de</div>
-            <div className="text-heading-2">{periodoEtiqueta}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-overline text-text-tertiary">Monto de esta parcialidad</div>
-            <div className="num-tabular" style={{ fontSize: 22, fontWeight: 700 }}>
-              {fmtMonto(montoPeriodo, moneda)}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-          <div>
-            <div className="text-overline text-text-tertiary">Pagado</div>
-            <div className="mt-1 num-tabular text-body-medium" style={{ color: "var(--state-success)" }}>
-              {fmtMonto(montoPagado, moneda)}
-            </div>
-          </div>
-          <div>
-            <div className="text-overline text-text-tertiary">Pendiente</div>
-            <div className="mt-1 num-tabular text-body-medium">{fmtMonto(pendiente, moneda)}</div>
-          </div>
+          <h3 className="text-heading-2">Progreso de pago de &quot;{periodoEtiqueta}&quot;</h3>
+          <span className="text-caption num-tabular text-text-secondary">
+            <strong style={{ color: "var(--state-success)" }}>{fmtMonto(montoPagado, moneda)}</strong> pagado
+            {" · "}
+            <strong>{fmtMonto(pendiente, moneda)}</strong> pendiente
+            {" de "}
+            {fmtMonto(montoPeriodo, moneda)}
+          </span>
         </div>
         <div
           className="rounded-full overflow-hidden"
@@ -425,18 +433,86 @@ function PagosTab({
             }}
           />
         </div>
-        {pagoCompleto && estado !== "facturado" && (
-          <button
-            type="button"
-            onClick={moverAFacturado}
-            disabled={movingEstado}
-            className="btn-secondary btn-sm w-fit"
-          >
-            <CheckCircle2 size={14} strokeWidth={1.75} />
-            <span>{movingEstado ? "Moviendo…" : "Pago completo — ¿mover a Facturado?"}</span>
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {!pagoCompleto && pendiente > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setFechaPagada(hoyISO());
+                setErrorPagada(null);
+                setModalPagadaAbierto(true);
+              }}
+              className="btn-primary btn-sm w-fit"
+            >
+              <CheckCircle2 size={14} strokeWidth={1.75} />
+              <span>Marcar como pagada</span>
+            </button>
+          )}
+          {pagoCompleto && estado !== "facturado" && (
+            <button
+              type="button"
+              onClick={moverAFacturado}
+              disabled={movingEstado}
+              className="btn-secondary btn-sm w-fit"
+            >
+              <CheckCircle2 size={14} strokeWidth={1.75} />
+              <span>{movingEstado ? "Moviendo…" : "Pago completo — ¿mover a Facturado?"}</span>
+            </button>
+          )}
+        </div>
       </section>
+
+      <Modal
+        open={modalPagadaAbierto}
+        onClose={() => !workingPagada && setModalPagadaAbierto(false)}
+        title="Marcar como pagada"
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setModalPagadaAbierto(false)}
+              disabled={workingPagada}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={marcarComoPagada}
+              disabled={workingPagada}
+              className="btn-primary"
+            >
+              <CheckCircle2 size={14} strokeWidth={1.75} />
+              <span>{workingPagada ? "Guardando…" : "Marcar como pagada"}</span>
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-body text-text-secondary">
+            Se registrará un pago por <strong className="text-text-primary">{fmtMonto(pendiente, moneda)}</strong>{" "}
+            (lo que falta de &quot;{periodoEtiqueta}&quot;).
+          </p>
+          <div>
+            <label className="field-label">Fecha de pago *</label>
+            <input
+              className="input"
+              type="date"
+              value={fechaPagada}
+              onChange={(e) => setFechaPagada(e.target.value)}
+            />
+            <span className="field-hint">
+              Por defecto es hoy — cámbiala si estás capturando un pago pasado.
+            </span>
+          </div>
+          {errorPagada && (
+            <p className="text-caption" style={{ color: "var(--state-error)" }}>
+              {errorPagada}
+            </p>
+          )}
+        </div>
+      </Modal>
 
       <section className="card space-y-3">
         <h3 className="text-heading-2">Registrar un pago de &quot;{periodoEtiqueta}&quot;</h3>
@@ -543,44 +619,6 @@ function PagosTab({
         )}
       </section>
 
-      {mostrarLedgerContrato && (
-        <section className="card space-y-3">
-          <h3 className="text-heading-2">Pagos de este Cobro (todas las parcialidades)</h3>
-          {pagosContrato.length === 0 ? (
-            <p className="text-caption text-text-tertiary">
-              Todavía no hay pagos registrados en ninguna parcialidad de este contrato.
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {pagosContrato.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between gap-3 py-1.5 px-2 rounded-[8px]"
-                  style={{
-                    background: p.esPeriodoActual ? "var(--bg-overlay)" : "transparent",
-                  }}
-                >
-                  <span className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="num-tabular text-body-medium">{fmtMonto(p.monto, moneda)}</span>
-                    <span className="text-caption text-text-tertiary">{formatFechaCorta(p.fecha)}</span>
-                  </span>
-                  {p.esPeriodoActual ? (
-                    <span className="badge badge-neutral shrink-0">Este período</span>
-                  ) : (
-                    <Link
-                      href={`/panel/cobros/${p.periodoId}`}
-                      className="text-caption shrink-0 hover:underline truncate"
-                      style={{ color: "var(--text-secondary)", maxWidth: 180 }}
-                    >
-                      {p.periodoEtiqueta}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
     </div>
   );
 }
@@ -596,8 +634,6 @@ export default function CobroPeriodoTabs({
   facturaXmlUrl,
   facturaXmlNombre,
   pagos,
-  pagosContrato,
-  mostrarLedgerContrato,
 }: Props) {
   return (
     <div className="space-y-4">
@@ -608,13 +644,11 @@ export default function CobroPeriodoTabs({
         montoPeriodo={montoPeriodo}
         moneda={moneda}
         pagos={pagos}
-        pagosContrato={pagosContrato}
-        mostrarLedgerContrato={mostrarLedgerContrato}
       />
 
       <div className="space-y-2">
         <h3 className="text-heading-2 text-text-secondary" style={{ fontSize: 14 }}>
-          Complemento de pago — factura (opcional)
+          Subir factura de &quot;{periodoEtiqueta}&quot; (opcional)
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <AdjuntoFactura periodoId={periodoId} tipo="pdf" url={facturaPdfUrl} nombre={facturaPdfNombre} />
