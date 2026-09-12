@@ -298,6 +298,9 @@ export default function EstimacionForm({
   const [comentarioDesglose, setComentarioDesglose] = useState("");
   const [savingDesglose, setSavingDesglose] = useState(false);
   const [desgloseMsg, setDesgloseMsg] = useState<Msg>(null);
+  const [savingNotas, setSavingNotas] = useState(false);
+  const [notasMsg, setNotasMsg] = useState<Msg>(null);
+  const notasDirty = existente ? notas.trim() !== (existente.notasProgramador ?? "").trim() : false;
   const [iaRecoLocal, setIaRecoLocal] = useState<string | null>(
     existente?.iaRecomendacion ?? null
   );
@@ -417,6 +420,11 @@ export default function EstimacionForm({
       programador_id: programadorId,
       nombre_solicitud: nombre.trim(),
       notas: notas.trim() || undefined,
+      // proyecto_clickup_id es el id real del catálogo de Proyectos (pese al
+      // nombre heredado) — sin esto la cotización se crea "sin proyecto
+      // asignado" en el select de Datos generales, aunque proyecto_nombre
+      // (solo texto) sí se haya guardado y se vea bien en listas/tarjetas.
+      proyecto_clickup_id: proyectoId || undefined,
       proyecto_nombre: nombreProyectoConEmoji(proyecto),
       buffer_porcentaje: bufferPct,
       prioridad,
@@ -755,6 +763,34 @@ export default function EstimacionForm({
       setDesgloseMsg({ tipo: "err", texto: "Error de red" });
     } finally {
       setSavingDesglose(false);
+    }
+  };
+
+  // Guardado independiente de las Notas — antes solo se guardaban al pasar
+  // por la pestaña "Desglose" y darle "Guardar cambios" ahí, así que si
+  // Johana escribía una nota y se salía sin visitar esa pestaña, se perdía.
+  const guardarNotas = async () => {
+    if (!existente) return;
+    setSavingNotas(true);
+    setNotasMsg(null);
+    try {
+      const res = await fetch(`/api/cotizaciones/${existente.id}/editar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notas_programador: notas.trim() || null }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setNotasMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
+        return;
+      }
+      setNotasMsg({ tipo: "ok", texto: "Guardado" });
+      setTimeout(() => setNotasMsg(null), 2500);
+      router.refresh();
+    } catch {
+      setNotasMsg({ tipo: "err", texto: "Error de red" });
+    } finally {
+      setSavingNotas(false);
     }
   };
 
@@ -1571,8 +1607,10 @@ export default function EstimacionForm({
             )}
           </div>
 
-          {/* Notas — debajo del costo estimado, como se pidió. En edición se
-              guarda junto con el resto de "Desglose de estimación". */}
+          {/* Notas — debajo del costo estimado, como se pidió. En edición
+              tiene su propio guardado (independiente del de "Desglose"), para
+              que no se pierda si Johana escribe una nota y se sale sin pasar
+              por esa pestaña. */}
           <div className="pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
             <label className="field-label">Notas</label>
             <textarea
@@ -1583,9 +1621,18 @@ export default function EstimacionForm({
               placeholder="Opcional — supuestos o advertencias"
             />
             {existente && (
-              <span className="field-hint">
-                Se guarda con “Guardar cambios” en la pestaña Desglose.
-              </span>
+              <div className="flex items-center justify-between gap-2 mt-2">
+                <MsgLine msg={notasMsg} />
+                <button
+                  type="button"
+                  onClick={guardarNotas}
+                  disabled={savingNotas || !notasDirty}
+                  className="btn-secondary btn-sm"
+                >
+                  <Save size={14} strokeWidth={1.75} />
+                  <span>{savingNotas ? "Guardando…" : notasDirty ? "Guardar nota" : "Sin cambios"}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

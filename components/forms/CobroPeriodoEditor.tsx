@@ -79,6 +79,7 @@ export function PeriodoAcciones({
     if (!res.ok) throw new Error(json.error || "No se pudo eliminar el período");
     setModalEliminar(false);
     router.replace("/panel/cobros");
+    router.refresh();
   };
 
   return (
