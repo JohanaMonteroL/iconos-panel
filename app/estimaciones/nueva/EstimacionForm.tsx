@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -232,6 +232,17 @@ export default function EstimacionForm({
 }: Props) {
   const router = useRouter();
   const esFijo = existente?.tipoPrecio === "fijo";
+
+  // Al abrir el formulario de creación, refresca el server component una
+  // vez — el Router Cache del cliente a veces sirve el listado de
+  // proyectos/programadores de una visita anterior, de antes de que se
+  // creara un proyecto nuevo, así que sin esto el catálogo puede verse
+  // desactualizado aunque el servidor ya tenga el dato.
+  useEffect(() => {
+    if (modoAdmin && !existente) router.refresh();
+    // Solo al montar — no queremos volver a refrescar en cada re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Si la lista trae un solo programador (caso portal interno donde solo
   // está el logueado), pre-seleccionarlo para evitar paso innecesario.
