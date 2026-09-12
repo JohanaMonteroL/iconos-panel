@@ -58,7 +58,6 @@ export default function CrearCobroModal({
   const monedaHoras = proyecto?.moneda_hora ?? "MXN";
   const montoCalculado =
     modo === "horas" ? Math.round((Number(horas) || 0) * precioHora * 100) / 100 : Number(montoDirecto) || 0;
-  const monedaFinal = modo === "horas" ? monedaHoras : monedaDirecta;
 
   const cerrar = () => {
     if (sending) return;
