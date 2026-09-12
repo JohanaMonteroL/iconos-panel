@@ -79,7 +79,7 @@ function ticksLimpios(maxVal: number): number[] {
 export default function GraficaLineas({
   etiquetas,
   series,
-  alto = 240,
+  alto = 260,
 }: {
   etiquetas: string[];
   series: SerieLinea[];
@@ -107,10 +107,10 @@ export default function GraficaLineas({
 
   const VW = anchoMedido;
   const VH = alto;
-  const padTop = 12;
-  const padBottom = 26;
-  const padLeft = 46;
-  const padRight = 10;
+  const padTop = 16;
+  const padBottom = 28;
+  const padLeft = 50;
+  const padRight = 12;
   const n = etiquetas.length;
   const maxDato = Math.max(1, ...series.flatMap((s) => s.valores));
   const ticks = useMemo(() => ticksLimpios(maxDato), [maxDato]);
@@ -122,43 +122,70 @@ export default function GraficaLineas({
   const x = (i: number) => padLeft + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
   const y = (v: number) => padTop + plotH - (v / maxVal) * plotH;
 
+  const activo = hoverIdx !== null;
   const idx = hoverIdx ?? n - 1;
   const hoverPct = n > 1 ? (idx / (n - 1)) * 100 : 50;
+  const anchoBanda = n > 1 ? plotW / (n - 1) : plotW;
 
   return (
-    <div className="space-y-3">
-      <div ref={contenedorRef} className="relative" style={{ height: alto }} onMouseLeave={() => setHoverIdx(null)}>
-        <svg
-          viewBox={`0 0 ${VW} ${VH}`}
-          className="w-full h-full overflow-visible"
-        >
+    <div className="space-y-4">
+      {/* Leyenda como chips — arriba del área de dibujo, estilo Stripe/Notion */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {series.map((s) => (
+          <span
+            key={s.key}
+            className="inline-flex items-center gap-1.5 rounded-full text-caption"
+            style={{
+              padding: "4px 10px 4px 8px",
+              background: `${s.color}14`,
+              color: "var(--text-secondary)",
+              fontWeight: 500,
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: s.color, flexShrink: 0 }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+
+      <div
+        ref={contenedorRef}
+        className="relative"
+        style={{ height: alto }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <svg viewBox={`0 0 ${VW} ${VH}`} className="w-full h-full overflow-visible">
           <defs>
             {series.map((s) => (
               <linearGradient key={s.key} id={`${gradId}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={s.color} stopOpacity={0.16} />
+                <stop offset="0%" stopColor={s.color} stopOpacity={0.22} />
                 <stop offset="100%" stopColor={s.color} stopOpacity={0} />
               </linearGradient>
             ))}
+            <filter id={`${gradId}-sombra`} x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="1" stdDeviation="1.4" floodOpacity="0.22" />
+            </filter>
           </defs>
 
           {/* eje Y — líneas guía + etiquetas redondas */}
-          {ticks.map((t) => (
+          {ticks.map((t, i) => (
             <g key={t}>
               <line
                 x1={padLeft}
                 x2={VW - padRight}
                 y1={y(t)}
                 y2={y(t)}
-                stroke="var(--border-faint)"
+                stroke={i === 0 ? "var(--border-subtle)" : "var(--border-faint)"}
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
               />
               <text
-                x={padLeft - 8}
+                x={padLeft - 10}
                 y={y(t)}
-                dy={3}
+                dy={3.5}
                 textAnchor="end"
                 fontSize={10.5}
+                letterSpacing={0.2}
                 fill="var(--text-tertiary)"
               >
                 {fmtMxnCompacto(t)}
@@ -167,12 +194,23 @@ export default function GraficaLineas({
           ))}
 
           {/* eje X — mes inicial y final */}
-          <text x={padLeft} y={VH - 6} fontSize={10.5} fill="var(--text-tertiary)" textAnchor="start">
+          <text x={padLeft} y={VH - 8} fontSize={10.5} letterSpacing={0.2} fill="var(--text-tertiary)" textAnchor="start">
             {etiquetas[0]}
           </text>
-          <text x={VW - padRight} y={VH - 6} fontSize={10.5} fill="var(--text-tertiary)" textAnchor="end">
+          <text x={VW - padRight} y={VH - 8} fontSize={10.5} letterSpacing={0.2} fill="var(--text-tertiary)" textAnchor="end">
             {etiquetas[etiquetas.length - 1]}
           </text>
+
+          {/* banda de foco tras el mes activo — spotlight suave */}
+          <rect
+            x={x(idx) - anchoBanda / 2}
+            y={padTop}
+            width={anchoBanda}
+            height={plotH}
+            fill="var(--bg-overlay)"
+            opacity={activo ? 0.5 : 0}
+            style={{ transition: "opacity 140ms ease" }}
+          />
 
           {series.map((s) => {
             const pts = s.valores.map((v, i) => ({ x: x(i), y: y(v) }));
@@ -185,19 +223,20 @@ export default function GraficaLineas({
                   d={linea}
                   fill="none"
                   stroke={s.color}
-                  strokeWidth={2}
+                  strokeWidth={2.25}
                   strokeLinejoin="round"
                   strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
+                  filter={`url(#${gradId}-sombra)`}
                 />
                 {/* marcador fijo al final de la línea — punto de referencia siempre visible */}
                 <circle
                   cx={x(n - 1)}
                   cy={y(s.valores[n - 1] ?? 0)}
-                  r={4}
+                  r={4.5}
                   fill={s.color}
                   stroke="var(--bg-elevated)"
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   vectorEffect="non-scaling-stroke"
                 />
               </g>
@@ -205,31 +244,31 @@ export default function GraficaLineas({
           })}
 
           {/* crosshair + marcador en el mes activo (hover) */}
-          {hoverIdx !== null && (
-            <>
-              <line
-                x1={x(idx)}
-                x2={x(idx)}
-                y1={padTop}
-                y2={VH - padBottom}
-                stroke="var(--border-default)"
-                strokeWidth={1}
-                vectorEffect="non-scaling-stroke"
-              />
-              {series.map((s) => (
-                <circle
-                  key={s.key}
-                  cx={x(idx)}
-                  cy={y(s.valores[idx] ?? 0)}
-                  r={4}
-                  fill={s.color}
-                  stroke="var(--bg-elevated)"
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
-            </>
-          )}
+          <line
+            x1={x(idx)}
+            x2={x(idx)}
+            y1={padTop}
+            y2={VH - padBottom}
+            stroke="var(--border-default)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+            opacity={activo ? 1 : 0}
+            style={{ transition: "opacity 140ms ease" }}
+          />
+          {series.map((s) => (
+            <circle
+              key={s.key}
+              cx={x(idx)}
+              cy={y(s.valores[idx] ?? 0)}
+              r={5}
+              fill={s.color}
+              stroke="var(--bg-elevated)"
+              strokeWidth={2.5}
+              vectorEffect="non-scaling-stroke"
+              opacity={activo ? 1 : 0}
+              style={{ transition: "opacity 140ms ease" }}
+            />
+          ))}
 
           {/* zonas invisibles para detectar el hover por mes — más grandes que la marca */}
           {etiquetas.map((_, i) => {
@@ -249,39 +288,44 @@ export default function GraficaLineas({
           })}
         </svg>
 
-        {hoverIdx !== null && (
-          <div
-            className="absolute top-0 pointer-events-none rounded-[10px] px-3 py-2 space-y-1"
-            style={{
-              left: `${hoverPct}%`,
-              transform: `translateX(${idx > n / 2 ? "calc(-100% - 10px)" : "10px"})`,
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-default)",
-              boxShadow: "var(--shadow-md)",
-              minWidth: 160,
-              zIndex: 10,
-            }}
-          >
-            <div className="text-caption text-text-tertiary">{etiquetas[idx]}</div>
+        <div
+          className="absolute top-0 pointer-events-none rounded-[12px] px-3.5 py-2.5 space-y-1.5"
+          style={{
+            left: `${hoverPct}%`,
+            transform: `translateX(${idx > n / 2 ? "calc(-100% - 12px)" : "12px"})`,
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border-default)",
+            boxShadow: "var(--shadow-lg)",
+            minWidth: 170,
+            zIndex: 10,
+            opacity: activo ? 1 : 0,
+            transition: "opacity 140ms ease",
+          }}
+        >
+          <div className="text-caption text-text-secondary" style={{ fontWeight: 600 }}>
+            {etiquetas[idx]}
+          </div>
+          <div className="space-y-1 pt-0.5">
             {series.map((s) => {
-              const actual = s.valores[idx] ?? 0;
+              const actualVal = s.valores[idx] ?? 0;
               const anterior = idx > 0 ? s.valores[idx - 1] ?? 0 : null;
-              const pct = anterior != null && anterior !== 0 ? ((actual - anterior) / anterior) * 100 : null;
+              const pct = anterior != null && anterior !== 0 ? ((actualVal - anterior) / anterior) * 100 : null;
               return (
-                <div key={s.key} className="flex items-center justify-between gap-3 text-caption">
+                <div key={s.key} className="flex items-center justify-between gap-4 text-caption">
                   <span className="flex items-center gap-1.5">
-                    <span style={{ width: 12, height: 2, borderRadius: 999, background: s.color }} />
-                    <span className="text-text-secondary">{s.label}</span>
+                    <span style={{ width: 10, height: 2.5, borderRadius: 999, background: s.color, flexShrink: 0 }} />
+                    <span className="text-text-tertiary">{s.label}</span>
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="num-tabular text-body-medium" style={{ fontSize: 12.5 }}>
-                      {fmtMxn(actual)}
+                    <span className="num-tabular text-body-medium" style={{ fontSize: 13 }}>
+                      {fmtMxn(actualVal)}
                     </span>
                     {pct != null && (
                       <span
                         className="num-tabular"
                         style={{
                           fontSize: 11,
+                          fontWeight: 600,
                           color: pct >= 0 ? "var(--state-success)" : "var(--state-error)",
                         }}
                       >
@@ -294,16 +338,7 @@ export default function GraficaLineas({
               );
             })}
           </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-4">
-        {series.map((s) => (
-          <span key={s.key} className="flex items-center gap-1.5 text-caption text-text-secondary">
-            <span style={{ width: 12, height: 2, borderRadius: 999, background: s.color, display: "inline-block" }} />
-            {s.label}
-          </span>
-        ))}
+        </div>
       </div>
     </div>
   );
