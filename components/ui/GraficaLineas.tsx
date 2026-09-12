@@ -4,7 +4,7 @@
 // degradado, eje Y con valores redondos, y hover con crosshair + tooltip
 // (monto y variación % vs. el mes anterior). Sin librería externa.
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { fmtMxn, fmtMxnCompacto } from "@/lib/dashboard/calculos";
 
 export type SerieLinea = {
@@ -87,8 +87,25 @@ export default function GraficaLineas({
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const gradId = useId();
+  const contenedorRef = useRef<HTMLDivElement>(null);
+  // Medimos el ancho real del contenedor para que el viewBox use la MISMA
+  // escala en x que en y (1 unidad = 1px) — con `preserveAspectRatio="none"`
+  // y un ancho fijo arbitrario, el navegador escala x y y por separado y
+  // deforma círculos (se vuelven óvalos) y texto (se ve estirado).
+  const [anchoMedido, setAnchoMedido] = useState(640);
 
-  const VW = 640;
+  useEffect(() => {
+    const el = contenedorRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setAnchoMedido(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const VW = anchoMedido;
   const VH = alto;
   const padTop = 12;
   const padBottom = 26;
@@ -110,10 +127,9 @@ export default function GraficaLineas({
 
   return (
     <div className="space-y-3">
-      <div className="relative" style={{ height: alto }} onMouseLeave={() => setHoverIdx(null)}>
+      <div ref={contenedorRef} className="relative" style={{ height: alto }} onMouseLeave={() => setHoverIdx(null)}>
         <svg
           viewBox={`0 0 ${VW} ${VH}`}
-          preserveAspectRatio="none"
           className="w-full h-full overflow-visible"
         >
           <defs>
