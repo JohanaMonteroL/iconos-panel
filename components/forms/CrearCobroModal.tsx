@@ -5,7 +5,7 @@
 // directo a esa ficha, donde ya puede dividir en parcialidades, subir
 // factura o registrar pagos (mismos componentes que cualquier otro Cobro).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, DollarSign, Clock } from "lucide-react";
 import Modal from "@/components/ui/Modal";
@@ -41,6 +41,19 @@ export default function CrearCobroModal({
   programadores: Programador[];
 }) {
   const router = useRouter();
+
+  // Fuerza una re-obtención del server component apenas se monta esta
+  // página — el Router Cache del cliente a veces sirve una versión de
+  // /panel/cobros de antes de que se creara un proyecto nuevo (aunque el
+  // servidor ya lo tenga), dejando el catálogo de proyectos de este modal
+  // desactualizado hasta refrescar a mano. `router.refresh()` es estable
+  // (no depende de la config experimental de staleTimes).
+  useEffect(() => {
+    router.refresh();
+    // Solo al montar — no queremos volver a refrescar en cada re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [abierto, setAbierto] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [proyectoId, setProyectoId] = useState("");
@@ -122,7 +135,14 @@ export default function CrearCobroModal({
 
   return (
     <>
-      <button type="button" onClick={() => setAbierto(true)} className="btn-primary">
+      <button
+        type="button"
+        onClick={() => {
+          router.refresh();
+          setAbierto(true);
+        }}
+        className="btn-primary"
+      >
         <Plus size={16} strokeWidth={1.75} />
         <span>Crear cobro</span>
       </button>
