@@ -9,7 +9,6 @@ import {
   Menu,
   X,
   Settings,
-  Search,
   PanelLeftClose,
   PanelLeftOpen,
   ChevronsUpDown,
@@ -18,6 +17,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import LogoutButton from "./LogoutButton";
+import BuscarGlobal from "./BuscarGlobal";
 
 const items = [
   { href: "/panel", label: "Inicio", icon: Home },
@@ -135,13 +135,7 @@ export default function Sidebar() {
                 <X size={18} strokeWidth={1.5} />
               </button>
             </div>
-            <div
-              className="flex items-center gap-2 border rounded-[11px] px-3 py-2.5"
-              style={{ borderColor: "var(--border-default)", background: "var(--bg-elevated)" }}
-            >
-              <Search size={15} strokeWidth={2} style={{ color: "var(--text-tertiary)" }} />
-              <span className="text-caption text-text-tertiary flex-1">Buscar cliente, folio…</span>
-            </div>
+            <BuscarGlobal />
             <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
             <div className="pt-4 border-t" style={{ borderColor: "var(--border-subtle)" }}>
               <LogoutButton />
@@ -225,30 +219,7 @@ export default function Sidebar() {
 
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
           <div className="p-3 pb-1.5">
-            <div
-              className="flex items-center gap-2 rounded-[11px] border cursor-pointer"
-              style={{
-                background: "var(--bg-elevated)",
-                borderColor: "var(--border-default)",
-                padding: "10px 11px",
-                justifyContent: collapsed ? "center" : undefined,
-                boxShadow: "var(--shadow-sm)",
-              }}
-              title="Buscar cliente, folio…"
-            >
-              <Search size={15} strokeWidth={2} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
-              {!collapsed && (
-                <>
-                  <span className="text-caption text-text-tertiary flex-1 truncate">Buscar cliente, folio…</span>
-                  <span
-                    className="text-mono"
-                    style={{ fontSize: 10.5, color: "var(--text-disabled)" }}
-                  >
-                    ⌘K
-                  </span>
-                </>
-              )}
-            </div>
+            <BuscarGlobal collapsed={collapsed} />
           </div>
 
           {!collapsed && (

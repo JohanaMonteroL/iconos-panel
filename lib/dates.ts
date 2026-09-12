@@ -40,6 +40,23 @@ export function formatHora(d: Date): string {
   });
 }
 
+// "Hoy" (YYYY-MM-DD) en la zona horaria de Mexicali/Tijuana — para
+// prellenar campos de fecha (ej. fecha de pago) sin el desfase de usar
+// `new Date().toISOString()`, que toma la fecha en UTC y puede mostrar el
+// día siguiente en horas de la noche/madrugada locales.
+export function hoyISO(): string {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ZONA,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const anio = partes.find((p) => p.type === "year")?.value;
+  const mes = partes.find((p) => p.type === "month")?.value;
+  const dia = partes.find((p) => p.type === "day")?.value;
+  return `${anio}-${mes}-${dia}`;
+}
+
 export type RangoFechaRapido = "este_mes" | "mes_pasado";
 
 // Rango de fechas (YYYY-MM-DD) para los filtros rápidos "Este mes" / "Mes
