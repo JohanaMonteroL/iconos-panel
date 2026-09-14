@@ -1,8 +1,11 @@
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import Sidebar from "@/components/ui/Sidebar";
 import PanelHeader from "@/components/ui/PanelHeader";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import AppBadgeSync from "@/components/ui/AppBadgeSync";
 import { ESTADOS_ESTIMACION_ACTIVA } from "@/lib/estados";
+import { getCurrentAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +29,22 @@ async function getEstimacionesPendientes(): Promise<number> {
 }
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
+  const admin = await getCurrentAdmin();
+  if (!admin) redirect("/login");
+
+  // Si el administrador todavía tiene la contraseña temporal, lo forzamos a
+  // cambiarla antes de usar el resto del panel — salvo que ya esté en esa
+  // página (si no, sería un loop de redirects).
+  const pathname = headers().get("x-pathname") ?? "";
+  if (admin.mustChangePassword && pathname !== "/panel/settings/password") {
+    redirect("/panel/settings/password?forzado=1");
+  }
+
   const estimacionesPendientes = await getEstimacionesPendientes();
 
   return (
     <div className="min-h-screen">
-      <Sidebar />
+      <Sidebar nombre={admin.nombre} esJohana={admin.id === null} />
       <AppBadgeSync count={estimacionesPendientes} />
       <main
         className="min-h-screen md:pl-[var(--sidebar-w,240px)]"

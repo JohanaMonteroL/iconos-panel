@@ -9,6 +9,7 @@ export default function LoginForm() {
   const params = useSearchParams();
   const next = params.get("next") || "/panel";
 
+  const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,14 +23,18 @@ export default function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ correo: correo.trim() || undefined, password }),
       });
       const json = await res.json();
       if (!res.ok) {
         setError(json.error || "Error al iniciar sesión");
         return;
       }
-      router.replace(next);
+      if (json.must_change_password) {
+        router.replace("/panel/settings/password?forzado=1");
+      } else {
+        router.replace(next);
+      }
       router.refresh();
     } catch {
       setError("Error de red. Intenta de nuevo.");
@@ -40,6 +45,18 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <div>
+        <label htmlFor="correo" className="field-label">Correo (solo administradores adicionales)</label>
+        <input
+          id="correo"
+          className="input"
+          type="email"
+          value={correo}
+          onChange={(e) => setCorreo(e.target.value)}
+          placeholder="Déjalo vacío si eres Johana"
+          autoComplete="username"
+        />
+      </div>
       <div>
         <label htmlFor="password" className="field-label">Contraseña</label>
         <div className="flex gap-2">

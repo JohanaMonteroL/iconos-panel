@@ -105,3 +105,52 @@ export function getSessionFromCookies(): { ok: boolean; label?: string } {
 
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;
 export const SESSION_MAX_AGE_SECONDS = SESSION_MAX_DAYS * 24 * 60 * 60;
+
+// ── Multi-admin (tabla `administradores`) ──────────────────────────────
+//
+// El login original de Johana (arriba) sigue usando el label fijo "johana".
+// Los administradores adicionales usan un label "admin:<id>" que apunta a
+// una fila de la tabla `administradores` — así ambos caminos comparten la
+// misma cookie y el mismo middleware, sin tocar lo que ya existía.
+
+const ADMIN_LABEL_PREFIX = "admin:";
+
+export function createAdminSessionToken(administradorId: string): string {
+  return createSessionToken(`${ADMIN_LABEL_PREFIX}${administradorId}`);
+}
+
+export type CurrentAdmin = {
+  id: string | null; // null = login legacy de Johana (sin fila en `administradores`)
+  nombre: string;
+  correo: string | null;
+  mustChangePassword: boolean;
+};
+
+/**
+ * Helper de páginas: devuelve el administrador autenticado (Johana vía el
+ * login legacy, o un administrador adicional vía la tabla) o null.
+ */
+export async function getCurrentAdmin(): Promise<CurrentAdmin | null> {
+  const s = getSessionFromCookies();
+  if (!s.ok) return null;
+
+  if (s.label?.startsWith(ADMIN_LABEL_PREFIX)) {
+    const id = s.label.slice(ADMIN_LABEL_PREFIX.length);
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+    const supa = createSupabaseServiceClient();
+    const { data } = await supa
+      .from("administradores")
+      .select("id, nombre, correo, must_change_password, activo")
+      .eq("id", id)
+      .maybeSingle();
+    if (!data || !data.activo) return null;
+    return {
+      id: data.id,
+      nombre: data.nombre,
+      correo: data.correo,
+      mustChangePassword: !!data.must_change_password,
+    };
+  }
+
+  return { id: null, nombre: "Johana Montero", correo: null, mustChangePassword: false };
+}

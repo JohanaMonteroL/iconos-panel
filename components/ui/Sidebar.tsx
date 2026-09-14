@@ -63,12 +63,26 @@ function NavList({
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({
+  nombre = "Johana Montero",
+  esJohana = true,
+}: {
+  nombre?: string;
+  esJohana?: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const rol = esJohana ? "Dirección" : "Administrador";
+  const iniciales = nombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("") || "AD";
 
   useEffect(() => {
     let stored = false;
@@ -248,8 +262,8 @@ export default function Sidebar() {
                 }}
               >
                 <div className="px-3 py-2.5 border-b" style={{ borderColor: "var(--border-subtle)" }}>
-                  <div className="text-caption font-medium truncate">Johana Montero</div>
-                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Dirección</div>
+                  <div className="text-caption font-medium truncate">{nombre}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{rol}</div>
                 </div>
                 <div className="p-1.5">
                   <LogoutButton />
@@ -266,7 +280,7 @@ export default function Sidebar() {
             }}
             aria-haspopup="menu"
             aria-expanded={profileOpen}
-            title={collapsed ? "Johana Montero · Dirección" : undefined}
+            title={collapsed ? `${nombre} · ${rol}` : undefined}
           >
             <div
               className="grid place-items-center flex-shrink-0"
@@ -280,13 +294,13 @@ export default function Sidebar() {
                 fontWeight: 600,
               }}
             >
-              JM
+              {iniciales}
             </div>
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0 text-left">
-                  <div className="text-caption font-medium truncate">Johana Montero</div>
-                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Dirección</div>
+                  <div className="text-caption font-medium truncate">{nombre}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{rol}</div>
                 </div>
                 <ChevronsUpDown size={13} strokeWidth={1.8} style={{ color: "var(--text-disabled)", flexShrink: 0 }} />
               </>

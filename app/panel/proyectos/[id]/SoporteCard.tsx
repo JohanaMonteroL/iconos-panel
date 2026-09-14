@@ -162,12 +162,12 @@ function TarifaCampo({
   };
 
   const placeholder = fallback
-    ? `Usa el costo/hora general (${fallback.toLocaleString("es-MX")} ${moneda}/h)`
-    : "Sin capturar — usará el costo/hora general";
+    ? `Usa el Precio de Desarrollo (${fallback.toLocaleString("es-MX")} ${moneda}/h)`
+    : "Sin capturar — usará el Precio de Desarrollo";
 
   return (
     <div>
-      <label className="field-label">Tarifa por hora de Soporte (opcional)</label>
+      <label className="field-label">Precio de Soporte (por hora, opcional)</label>
       {editing ? (
         <div className="flex items-center gap-2">
           <input

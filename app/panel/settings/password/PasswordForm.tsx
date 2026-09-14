@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Save } from "lucide-react";
 
-export default function PasswordForm() {
+export default function PasswordForm({ forzado = false }: { forzado?: boolean }) {
+  const router = useRouter();
   const [actual, setActual] = useState("");
   const [nueva, setNueva] = useState("");
   const [confirma, setConfirma] = useState("");
@@ -32,6 +34,10 @@ export default function PasswordForm() {
       setActual("");
       setNueva("");
       setConfirma("");
+      if (forzado) {
+        router.push("/panel");
+        router.refresh();
+      }
     } catch {
       setError("Error de red");
     } finally {

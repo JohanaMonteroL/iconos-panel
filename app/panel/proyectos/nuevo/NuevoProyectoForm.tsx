@@ -155,13 +155,17 @@ export default function NuevoProyectoForm() {
             />
           </div>
           <div>
-            <label className="field-label">Costo por hora</label>
+            <label className="field-label">Precio de Desarrollo (por hora)</label>
             <CostoHoraField
               valor={costoHora}
               moneda={monedaHora}
               onValorChange={setCostoHora}
               onMonedaChange={setMonedaHora}
             />
+            <span className="field-hint">
+              Se usa para calcular cotizaciones y estimaciones. El precio de Soporte se
+              configura aparte, ya con el proyecto creado.
+            </span>
           </div>
           <div>
             <label className="field-label">Color de etiqueta</label>

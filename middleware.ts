@@ -47,7 +47,15 @@ export async function middleware(req: NextRequest) {
 
   const token = req.cookies.get("iconos_session")?.value;
   const ok = await verifyToken(token, secret);
-  if (ok) return NextResponse.next();
+  if (ok) {
+    // Header interno para que app/panel/layout.tsx (Server Component, sin
+    // acceso directo al pathname) sepa cuándo NO forzar el redirect de
+    // "debes cambiar tu contraseña" — si no, /panel/settings/password
+    // entraría en loop consigo misma.
+    const res = NextResponse.next();
+    res.headers.set("x-pathname", req.nextUrl.pathname);
+    return res;
+  }
 
   const url = new URL("/login", req.url);
   url.searchParams.set("next", req.nextUrl.pathname);
