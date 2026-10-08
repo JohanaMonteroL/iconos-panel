@@ -358,8 +358,12 @@ function TabCobros({ items }: { items: CobroProyectoRow[] }) {
                 className="grid grid-cols-1 md:grid-cols-[1fr_110px_130px_180px_110px_140px] gap-3 px-5 py-3 items-center hover:bg-[color:var(--bg-surface)] transition-colors"
               >
                 <div className="min-w-0">
-                  <div className="text-body-medium text-text-primary break-words">{it.etiqueta}</div>
-                  <div className="text-caption text-text-tertiary truncate">{it.titulo}</div>
+                  <div className="text-body-medium text-text-primary break-words">
+                    {it.etiqueta === "Pago único" ? it.titulo : it.etiqueta}
+                  </div>
+                  {it.etiqueta !== "Pago único" && (
+                    <div className="text-caption text-text-tertiary truncate">{it.titulo}</div>
+                  )}
                 </div>
                 <div>
                   <span

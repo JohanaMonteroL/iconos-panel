@@ -248,7 +248,7 @@ function TarjetaPeriodo({
       <Link href={`/panel/cobros/${it.id}`} className="block space-y-0" draggable={false}>
         <div className="flex items-start justify-between gap-2">
           <span className="text-body-medium break-words flex-1 min-w-0" style={{ fontSize: 15, lineHeight: 1.35 }}>
-            {it.etiqueta}
+            {it.etiqueta === "Pago único" ? it.titulo : it.etiqueta}
           </span>
           <span
             className="badge shrink-0"
@@ -262,9 +262,14 @@ function TarjetaPeriodo({
           </span>
         </div>
 
-        <p className="text-caption text-text-tertiary truncate" style={{ margin: "2px 0 8px" }}>
-          {it.titulo}
-        </p>
+        {/* "Pago único" es la etiqueta genérica de un período sin parcialidades
+            — ya mostramos el título arriba en ese caso, repetirlo aquí abajo
+            sería redundante. */}
+        {it.etiqueta !== "Pago único" && (
+          <p className="text-caption text-text-tertiary truncate" style={{ margin: "2px 0 8px" }}>
+            {it.titulo}
+          </p>
+        )}
 
         {nombreProyecto && (
           <div style={{ margin: "4px 0 10px" }}>

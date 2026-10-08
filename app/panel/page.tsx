@@ -325,10 +325,12 @@ export default async function PanelHome() {
                   >
                     <span className="text-caption text-text-tertiary w-4 text-center shrink-0">{i + 1}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-body-medium truncate">{per.etiqueta}</span>
+                      <span className="block text-body-medium truncate">
+                        {per.etiqueta === "Pago único" ? cobro?.titulo ?? per.etiqueta : per.etiqueta}
+                      </span>
                       <span className="text-caption text-text-tertiary truncate">
                         {proyecto?.emoji ? `${proyecto.emoji} ` : ""}
-                        {proyecto?.nombre ?? cobro?.titulo ?? "—"}
+                        {proyecto?.nombre ?? "—"}
                       </span>
                     </span>
                     <span className="num-tabular text-body-medium shrink-0" style={{ color: "var(--state-error)" }}>

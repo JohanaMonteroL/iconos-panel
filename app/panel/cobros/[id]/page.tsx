@@ -324,7 +324,13 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
       <header className="card space-y-3">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0 space-y-1.5">
-            <h1 className="text-display">{periodo.etiqueta}</h1>
+            {/* "Pago único" es la etiqueta genérica de un período sin
+                parcialidades — en ese caso el título del Cobro es lo único
+                que de verdad identifica de qué se trata, así que lo subimos
+                al encabezado en vez de enterrarlo abajo. */}
+            <h1 className="text-display">
+              {periodo.etiqueta === "Pago único" ? cobro.titulo : periodo.etiqueta}
+            </h1>
             <p className="text-caption text-text-secondary flex items-center gap-2 flex-wrap">
               <span
                 className="badge"
@@ -335,7 +341,7 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
               >
                 {labelOrigenCobro(cobro.origen)}
               </span>
-              <span>{cobro.titulo}</span>
+              {periodo.etiqueta !== "Pago único" && <span>{cobro.titulo}</span>}
               {cobro.proyecto_nombre && (
                 <span
                   className="inline-block text-caption truncate"
