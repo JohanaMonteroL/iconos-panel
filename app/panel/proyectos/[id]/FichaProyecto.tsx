@@ -208,7 +208,7 @@ function CostoHoraCampo({
 
   return (
     <div>
-      <label className="field-label">Costo por hora</label>
+      <label className="field-label">Precio de Desarrollo (por hora)</label>
       {editing ? (
         <div className="flex items-center gap-2">
           <CostoHoraField valor={valor} moneda={moneda} onValorChange={setValor} onMonedaChange={setMoneda} autoFocus />

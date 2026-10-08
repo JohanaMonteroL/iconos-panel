@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Users, KeyRound, ChevronRight } from "lucide-react";
+import { Users, ShieldCheck, KeyRound, ChevronRight } from "lucide-react";
 
 const sections = [
   {
@@ -7,6 +7,12 @@ const sections = [
     icon: Users,
     title: "Programadores",
     desc: "Agrega, edita o desactiva programadores y sus precios por hora.",
+  },
+  {
+    href: "/panel/settings/administradores",
+    icon: ShieldCheck,
+    title: "Administradores",
+    desc: "Crea más usuarios con acceso completo al panel. Tú generas su contraseña temporal.",
   },
   {
     href: "/panel/settings/password",
