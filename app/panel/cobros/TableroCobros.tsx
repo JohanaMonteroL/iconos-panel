@@ -1,13 +1,14 @@
 "use client";
 
 // Tablero kanban con drag & drop: arrastrar una tarjeta a otra columna
-// llama a /api/cobros/periodos/[id]/cambiar-estado — mismo patrón exacto
-// que TableroCotizaciones.tsx (que sigue manejando el tablero de
-// Cotizaciones, sin tocar).
+// llama a /api/cobros/periodos/[id]/cambiar-estado, y soltarla más arriba
+// o más abajo guarda su posición en el carril (/reordenar). La lógica de
+// arrastre se comparte con TableroCotizaciones.tsx en
+// lib/tableros/useTableroKanban.ts.
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useTableroKanban } from "@/lib/tableros/useTableroKanban";
+import LineaInsercion from "@/components/ui/LineaInsercion";
 import { labelEstadoPeriodo, colorHexEstadoPeriodo, labelOrigenCobro } from "@/lib/estados/cobros";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { textoContrastante } from "@/lib/proyectos/colores";
@@ -45,63 +46,22 @@ export default function TableroCobros({
   coloresProyecto = {},
   emojisProyecto = {},
   nombresProyecto = {},
+  reordenable = true,
 }: {
   columnas: string[];
   itemsIniciales: Row[];
   coloresProyecto?: Record<string, string>;
   emojisProyecto?: Record<string, string>;
   nombresProyecto?: Record<string, string>;
+  // false cuando hay un "Ordenar por" activo: el orden manual no aplica.
+  reordenable?: boolean;
 }) {
-  const router = useRouter();
-  const [items, setItems] = useState(itemsIniciales);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overEstado, setOverEstado] = useState<string | null>(null);
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
-
-  const porEstado = useMemo(() => {
-    const map = new Map<string, Row[]>();
-    for (const e of columnas) map.set(e, []);
-    for (const it of items) {
-      if (!map.has(it.estado)) map.set(it.estado, []);
-      map.get(it.estado)!.push(it);
-    }
-    return map;
-  }, [items, columnas]);
-
-  async function moverA(id: string, nuevoEstado: string) {
-    const actual = items.find((it) => it.id === id);
-    if (!actual || actual.estado === nuevoEstado) return;
-
-    setError(null);
-    const estadoAnterior = actual.estado;
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: nuevoEstado } : it)));
-    setPendingIds((prev) => new Set(prev).add(id));
-
-    try {
-      const res = await fetch(`/api/cobros/periodos/${id}/cambiar-estado`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estado: nuevoEstado }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: estadoAnterior } : it)));
-        setError(data?.error || "No se pudo cambiar el estado.");
-        return;
-      }
-      router.refresh();
-    } catch {
-      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: estadoAnterior } : it)));
-      setError("No se pudo cambiar el estado (sin conexión).");
-    } finally {
-      setPendingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  }
+  const { porEstado, error, setError, carrilActivo, propsCarril, propsTarjeta, lineaEn } = useTableroKanban({
+    columnas,
+    itemsIniciales,
+    rutaApi: (id) => `/api/cobros/periodos/${id}`,
+    reordenable,
+  });
 
   return (
     <div className="space-y-3">
@@ -127,7 +87,7 @@ export default function TableroCobros({
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
             const totalColumna = cards.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
-            const isOver = overEstado === estado;
+            const isOver = carrilActivo === estado;
             return (
               <div
                 key={estado}
@@ -138,17 +98,7 @@ export default function TableroCobros({
                   borderColor: isOver ? "var(--accent)" : "var(--border-subtle)",
                   transition: "background 120ms ease, border-color 120ms ease",
                 }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (overEstado !== estado) setOverEstado(estado);
-                }}
-                onDragLeave={() => setOverEstado((cur) => (cur === estado ? null : cur))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setOverEstado(null);
-                  const id = e.dataTransfer.getData("text/plain");
-                  if (id) moverA(id, estado);
-                }}
+                {...propsCarril(estado)}
               >
                 <div className="flex items-center gap-2 px-[5px] pb-[11px]">
                   <span
@@ -185,17 +135,8 @@ export default function TableroCobros({
                         colorProyecto={it.proyecto_id ? coloresProyecto[it.proyecto_id] : undefined}
                         emojiProyecto={it.proyecto_id ? emojisProyecto[it.proyecto_id] : undefined}
                         nombreProyecto={it.proyecto_id ? nombresProyecto[it.proyecto_id] : undefined}
-                        dragging={dragId === it.id}
-                        pending={pendingIds.has(it.id)}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", it.id);
-                          e.dataTransfer.effectAllowed = "move";
-                          setDragId(it.id);
-                        }}
-                        onDragEnd={() => {
-                          setDragId(null);
-                          setOverEstado(null);
-                        }}
+                        {...propsTarjeta(it.id)}
+                        linea={lineaEn(estado, it.id)}
                       />
                     ))
                   )}
@@ -216,8 +157,10 @@ function TarjetaPeriodo({
   nombreProyecto,
   dragging,
   pending,
+  linea,
   onDragStart,
   onDragEnd,
+  ...rest
 }: {
   it: Row;
   colorProyecto?: string;
@@ -225,6 +168,8 @@ function TarjetaPeriodo({
   nombreProyecto?: string;
   dragging: boolean;
   pending: boolean;
+  linea: "arriba" | "abajo" | null;
+  "data-tarjeta-id": string;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
@@ -233,6 +178,7 @@ function TarjetaPeriodo({
   return (
     <div
       draggable
+      data-tarjeta-id={rest["data-tarjeta-id"]}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className="kanban-card relative rounded-[12px] border p-3"
@@ -245,6 +191,7 @@ function TarjetaPeriodo({
         transition: "box-shadow 180ms ease, transform 180ms ease, opacity 120ms ease",
       }}
     >
+      {linea && <LineaInsercion posicion={linea} />}
       <Link href={`/panel/cobros/${it.id}`} className="block space-y-0" draggable={false}>
         <div className="flex items-start justify-between gap-2">
           <span className="text-body-medium break-words flex-1 min-w-0" style={{ fontSize: 15, lineHeight: 1.35 }}>

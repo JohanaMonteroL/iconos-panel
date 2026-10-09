@@ -25,6 +25,7 @@ type Row = {
   factura_pdf_path: string | null;
   factura_xml_path: string | null;
   pagos: { monto: number }[];
+  orden: number | null;
 };
 
 function relationMissing(message: string | undefined | null): boolean {
@@ -37,7 +38,7 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
   const supa = createSupabaseServiceClient();
 
   const selConPagos =
-    "id, estado, etiqueta, monto, moneda, created_at, factura_pdf_path, factura_xml_path, cobro_id, cobros(origen, titulo, proyecto_id, cotizacion_id), cobros_pagos(monto)";
+    "id, estado, orden, etiqueta, monto, moneda, created_at, factura_pdf_path, factura_xml_path, cobro_id, cobros(origen, titulo, proyecto_id, cotizacion_id), cobros_pagos(monto)";
   const selSinPagos = selConPagos.replace(", cobros_pagos(monto)", "");
 
   let { data, error }: { data: any; error: any } = await supa
@@ -47,6 +48,19 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
 
   if (error && relationMissing(error.message) && /cobros_pagos/i.test(error.message ?? "")) {
     ({ data, error } = await supa.from("cobros_periodos").select(selSinPagos).order("created_at", { ascending: false }));
+  }
+  // Sin la migración 0028 no existe `orden`: se cae al orden por fecha.
+  if (error && /\borden\b/i.test(error.message ?? "")) {
+    ({ data, error } = await supa
+      .from("cobros_periodos")
+      .select(selConPagos.replace(", orden", ""))
+      .order("created_at", { ascending: false }));
+    if (error && relationMissing(error.message) && /cobros_pagos/i.test(error.message ?? "")) {
+      ({ data, error } = await supa
+        .from("cobros_periodos")
+        .select(selSinPagos.replace(", orden", ""))
+        .order("created_at", { ascending: false }));
+    }
   }
 
   if (error) {
@@ -74,6 +88,7 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
       factura_pdf_path: r.factura_pdf_path,
       factura_xml_path: r.factura_xml_path,
       pagos: ((r.cobros_pagos ?? []) as any[]).map((p) => ({ monto: Number(p.monto) || 0 })),
+      orden: r.orden ?? null,
     };
   });
 
@@ -213,7 +228,14 @@ export default async function CobrosPage({
     .sort((a, b) => {
       if (orden === "nombre") return a.etiqueta.localeCompare(b.etiqueta, "es", { sensitivity: "base" });
       if (orden === "monto") return b.monto - a.monto;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      // Orden manual del tablero (default); empates y ambientes sin la
+      // migración 0028 caen a más reciente primero.
+      if (orden !== "reciente" && a.orden != null && b.orden != null && a.orden !== b.orden) {
+        return a.orden - b.orden;
+      }
+      const porFecha = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      // Desempate por id: mismo criterio que lib/tableros/orden.ts.
+      return porFecha || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     });
 
   // ── KPIs — respetan los mismos filtros que el tablero (q/estado/proyecto/
@@ -375,6 +397,7 @@ export default async function CobrosPage({
               coloresProyecto={coloresProyecto}
               emojisProyecto={emojisProyecto}
               nombresProyecto={nombresProyecto}
+              reordenable={!orden}
             />
           )}
         </>
