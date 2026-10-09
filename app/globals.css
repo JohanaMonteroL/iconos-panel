@@ -706,6 +706,17 @@ select:disabled,
   animation: girar 600ms linear infinite;
 }
 
+/* Etiqueta de proyecto que es enlace (detalle de cobro): se eleva un poco
+   al pasar el mouse para que se note que es clicable. */
+.etiqueta-link {
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+.etiqueta-link:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+  filter: brightness(0.96);
+}
+
 /* Tarjetas de los tableros kanban (Cotizaciones y Cobros) — usan la misma
    transition de box-shadow/transform que ya traían declarada (antes sin
    usar) para un lift sutil al pasar el mouse, igual que .card-hover. */

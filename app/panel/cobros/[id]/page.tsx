@@ -47,6 +47,7 @@ type Detalle = {
     monto_total: number | null;
     moneda: string;
     cotizacion_id: string | null;
+    proyecto_id: string | null;
     proyecto_nombre: string | null;
     proyecto_color: string | null;
     proyecto_emoji: string | null;
@@ -84,8 +85,9 @@ async function getDetalle(id: string): Promise<Detalle | null> {
   if (error || !periodo) return null;
 
   const selCobroFull =
-    "id, origen, titulo, monto_total, moneda, cotizacion_id, descripcion, horas, proyectos(nombre, color, emoji), programadores(nombre)";
-  const selCobroSinManual = "id, origen, titulo, monto_total, moneda, cotizacion_id, proyectos(nombre, color, emoji)";
+    "id, origen, titulo, monto_total, moneda, cotizacion_id, proyecto_id, descripcion, horas, proyectos(nombre, color, emoji), programadores(nombre)";
+  const selCobroSinManual =
+    "id, origen, titulo, monto_total, moneda, cotizacion_id, proyecto_id, proyectos(nombre, color, emoji)";
   let { data: cobroRaw, error: cobroErr }: { data: any; error: any } = await supa
     .from("cobros")
     .select(selCobroFull)
@@ -272,6 +274,7 @@ async function getDetalle(id: string): Promise<Detalle | null> {
       monto_total: (cobroRaw as any).monto_total != null ? Number((cobroRaw as any).monto_total) : null,
       moneda: (cobroRaw as any).moneda ?? "MXN",
       cotizacion_id: (cobroRaw as any).cotizacion_id,
+      proyecto_id: (cobroRaw as any).proyecto_id ?? null,
       proyecto_nombre: proyecto?.nombre ?? null,
       proyecto_color: proyecto?.color ?? null,
       proyecto_emoji: proyecto?.emoji ?? null,
@@ -338,8 +341,10 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
               </span>
               <span>{cobro.titulo}</span>
               {cobro.proyecto_nombre && (
-                <span
-                  className="inline-block text-caption truncate"
+                <Link
+                  href={cobro.proyecto_id ? `/panel/proyectos/${cobro.proyecto_id}` : "/panel/proyectos"}
+                  title="Ver detalle del proyecto"
+                  className="inline-block text-caption truncate etiqueta-link"
                   style={{
                     padding: "2px 8px",
                     borderRadius: 999,
@@ -352,7 +357,7 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
                 >
                   {cobro.proyecto_emoji ? `${cobro.proyecto_emoji} ` : ""}
                   {cobro.proyecto_nombre}
-                </span>
+                </Link>
               )}
               {cobro.programador_nombre && <span>· {cobro.programador_nombre}</span>}
               {cobro.cotizacion_id && (
