@@ -4,6 +4,7 @@ import Sidebar from "@/components/ui/Sidebar";
 import PanelHeader from "@/components/ui/PanelHeader";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import AppBadgeSync from "@/components/ui/AppBadgeSync";
+import Toaster from "@/components/ui/Toaster";
 import { ESTADOS_ESTIMACION_ACTIVA } from "@/lib/estados";
 import { getCurrentAdmin } from "@/lib/auth";
 
@@ -46,12 +47,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
     <div className="min-h-screen">
       <Sidebar nombre={admin.nombre} esJohana={admin.id === null} />
       <AppBadgeSync count={estimacionesPendientes} />
+      <Toaster />
       <main
         className="min-h-screen md:pl-[var(--sidebar-w,240px)]"
         style={{ transition: "padding-left 260ms cubic-bezier(.4,0,.2,1)" }}
       >
         <PanelHeader badgeCount={estimacionesPendientes} />
-        <div className="container-panel py-8 lg:py-10 space-y-8">{children}</div>
+        <div className="container-panel py-8 lg:py-10">{children}</div>
       </main>
     </div>
   );

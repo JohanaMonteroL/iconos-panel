@@ -362,7 +362,7 @@ export default async function CotizacionesPage({
         </div>
       </header>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
+      <div className="escalonado grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
         {kpis.map((k) => (
           <div key={k.label} className="card card-hover">
             <div className="flex items-center gap-2">
@@ -545,7 +545,7 @@ function ListaCotizaciones({ items }: { items: Row[] }) {
 
 function CuadriculaCotizaciones({ items }: { items: Row[] }) {
   return (
-    <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
+    <ul className="escalonado grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
       {items.map((it) => (
         <li key={it.id}>
           <TarjetaCotizacion it={it} />

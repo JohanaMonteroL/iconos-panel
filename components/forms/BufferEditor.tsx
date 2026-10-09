@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 type Props = {
   // Endpoint para guardar el buffer_porcentaje (p. ej.
@@ -43,6 +44,7 @@ export default function BufferEditor({ savePath, valorInicial }: Props) {
         return;
       }
       setDirty(false);
+      toast("Buffer guardado");
       router.refresh();
     } catch {
       setError("Error de red");

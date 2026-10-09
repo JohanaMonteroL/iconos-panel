@@ -349,7 +349,7 @@ export default async function CobrosPage({
       </header>
 
       {!migracionPendiente && todos.length > 0 && (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
+        <div className="escalonado grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
           {kpis.map((k) => (
             <div key={k.label} className="card card-hover">
               <div className="flex items-center gap-2">

@@ -17,6 +17,7 @@ export default function LineaInsercion({ posicion }: { posicion: "arriba" | "aba
     <div
       aria-hidden
       data-linea-insercion={posicion}
+      className="linea-insercion-anim"
       style={{
         position: "absolute",
         left: -4,

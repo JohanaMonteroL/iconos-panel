@@ -63,13 +63,17 @@ export default function TableroCobros({
     itemsIniciales,
     rutaApi: (id) => `/api/cobros/periodos/${id}`,
     reordenable,
+    mensajeMovido: (estado, r, it) =>
+      r?.pagoAutomatico
+        ? `Movido a ${labelEstadoPeriodo(estado)} · pago de ${fmtMonto(r.pagoAutomatico, it.moneda)} registrado`
+        : `Movido a ${labelEstadoPeriodo(estado)}`,
   });
 
   return (
     <div className="space-y-3">
       {error && (
         <div
-          className="rounded-[9px] border px-3 py-2 text-caption"
+          className="banner-anim rounded-[9px] border px-3 py-2 text-caption"
           style={{ borderColor: "#FEE2E2", background: "#FEF2F2", color: "#DC2626" }}
         >
           {error}{" "}
@@ -85,7 +89,7 @@ export default function TableroCobros({
       )}
 
       <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3.5" style={{ minWidth: "max-content" }}>
+        <div className="escalonado flex gap-3.5" style={{ minWidth: "max-content" }}>
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
             const totalColumna = cards.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
@@ -162,6 +166,7 @@ function TarjetaPeriodo({
   nombreProyecto,
   dragging,
   pending,
+  soltada,
   linea,
   onDragStart,
   onDragEnd,
@@ -173,6 +178,7 @@ function TarjetaPeriodo({
   nombreProyecto?: string;
   dragging: boolean;
   pending: boolean;
+  soltada: boolean;
   linea: "arriba" | "abajo" | null;
   "data-tarjeta-id": string;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -186,13 +192,13 @@ function TarjetaPeriodo({
       data-tarjeta-id={rest["data-tarjeta-id"]}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="kanban-card relative rounded-[12px] border p-3"
+      className={`kanban-card relative rounded-[12px] border p-3 ${dragging ? "kanban-card-arrastrando" : ""} ${soltada ? "kanban-card-soltada" : ""}`}
       style={{
         background: "var(--bg-elevated)",
         borderColor: "var(--border-default)",
         boxShadow: "var(--shadow-sm)",
         cursor: pending ? "wait" : "grab",
-        opacity: dragging || pending ? 0.5 : 1,
+        opacity: pending && !soltada ? 0.6 : undefined,
         transition: "box-shadow 180ms ease, transform 180ms ease, opacity 120ms ease",
       }}
     >

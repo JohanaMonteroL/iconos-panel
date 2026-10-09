@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Edit3, Save, Sparkles, RotateCcw, X } from "lucide-react";
 import SlackText from "@/components/ui/SlackText";
+import { toast } from "@/lib/toast";
 
 type Props = {
   cotizacionId: string;
@@ -96,8 +97,8 @@ export default function SlackMessageEditor({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      setMsg({ tipo: "ok", texto: "Mensaje guardado" });
       setEditing(false);
+      toast("Mensaje de Slack guardado");
       router.refresh();
       setTimeout(() => setMsg(null), 2500);
     } catch {

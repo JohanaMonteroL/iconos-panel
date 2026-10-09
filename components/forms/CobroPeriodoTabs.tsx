@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { formatFechaLarga, hoyISO } from "@/lib/dates";
 import Modal from "@/components/ui/Modal";
+import { toast } from "@/lib/toast";
 
 type Pago = {
   id: string;
@@ -89,6 +90,7 @@ function AdjuntoFactura({
         setError(json.error || "No se pudo subir el archivo");
         return;
       }
+      toast("Factura subida");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -109,6 +111,7 @@ function AdjuntoFactura({
         setError(json.error || "No se pudo quitar el archivo");
         return;
       }
+      toast("Archivo de factura quitado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -330,6 +333,7 @@ function PagosTab({
       setMonto("");
       setNotas("");
       setComprobante(null);
+      toast("Pago registrado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -348,6 +352,7 @@ function PagosTab({
         setError(json.error || "No se pudo quitar el pago");
         return;
       }
+      toast("Pago eliminado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -377,6 +382,7 @@ function PagosTab({
         return;
       }
       setModalPagadaAbierto(false);
+      toast("Período marcado como pagado");
       router.refresh();
     } catch {
       setErrorPagada("Error de red");
@@ -399,6 +405,11 @@ function PagosTab({
         setError(json.error || "No se pudo cambiar el estado");
         return;
       }
+      toast(
+        json.pagoAutomatico
+          ? `Movido a Facturado · pago de ${fmtMonto(json.pagoAutomatico, moneda)} registrado`
+          : "Movido a Facturado"
+      );
       router.refresh();
     } catch {
       setError("Error de red");

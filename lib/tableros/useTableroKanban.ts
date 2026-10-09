@@ -7,10 +7,16 @@
 //    Ver lib/tableros/orden.ts.
 //
 // Actualiza la UI de inmediato y revierte si la API rechaza el cambio.
+//
+// Animación: cuando cambia el orden o el carril de las tarjetas, cada una se
+// desliza de su posición anterior a la nueva (técnica FLIP con la Web
+// Animations API), y la tarjeta soltada hace un pequeño rebote
+// (.kanban-card-soltada en globals.css).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "@/lib/toast";
 
 type Item = { id: string; estado: string };
 type Destino = { estado: string; index: number | null };
@@ -21,6 +27,7 @@ export function useTableroKanban<T extends Item>({
   rutaApi,
   reordenable,
   validarDestino,
+  mensajeMovido,
 }: {
   columnas: string[];
   itemsIniciales: T[];
@@ -28,6 +35,9 @@ export function useTableroKanban<T extends Item>({
   reordenable: boolean;
   // Devuelve un mensaje de error si no se puede soltar en ese estado.
   validarDestino?: (estado: string) => string | null;
+  // Texto del toast al cambiar de carril; recibe la respuesta de
+  // /cambiar-estado y la tarjeta movida. null = sin toast.
+  mensajeMovido?: (estado: string, respuesta: any, item: T) => string | null;
 }) {
   const router = useRouter();
   const [items, setItems] = useState(itemsIniciales);
@@ -36,11 +46,46 @@ export function useTableroKanban<T extends Item>({
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
+  // ── FLIP: se guardan las posiciones justo antes de cambiar `items` y,
+  // ya renderizado el cambio, cada tarjeta se anima desde donde estaba.
+  const posicionesPrevias = useRef<Map<string, DOMRect> | null>(null);
+  const [soltadaId, setSoltadaId] = useState<string | null>(null);
+
+  function capturarPosiciones() {
+    if (typeof document === "undefined") return;
+    const mapa = new Map<string, DOMRect>();
+    document.querySelectorAll<HTMLElement>("[data-tarjeta-id]").forEach((el) => {
+      mapa.set(el.dataset.tarjetaId!, el.getBoundingClientRect());
+    });
+    posicionesPrevias.current = mapa;
+  }
+
+  useLayoutEffect(() => {
+    const previas = posicionesPrevias.current;
+    posicionesPrevias.current = null;
+    if (!previas || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    document.querySelectorAll<HTMLElement>("[data-tarjeta-id]").forEach((el) => {
+      const antes = previas.get(el.dataset.tarjetaId!);
+      if (!antes) return;
+      const ahora = el.getBoundingClientRect();
+      const dx = antes.left - ahora.left;
+      const dy = antes.top - ahora.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      el.animate(
+        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
+        { duration: 320, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
+      );
+    });
+  }, [items]);
+
   // Tras router.refresh() el server manda datos nuevos (p. ej. el pago
   // automático al pasar a Facturado): se adoptan si no hay un movimiento en
   // curso, para no pisar el estado optimista.
   useEffect(() => {
-    if (pendingIds.size === 0) setItems(itemsIniciales);
+    if (pendingIds.size === 0) {
+      capturarPosiciones();
+      setItems(itemsIniciales);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsIniciales]);
 
@@ -66,10 +111,9 @@ export function useTableroKanban<T extends Item>({
     return index;
   }
 
-  // null si salió bien; si no, el mensaje de error. Un `aviso` en una
-  // respuesta OK (el cambio se guardó pero algo secundario falló) se
-  // muestra igual en el banner.
-  async function post(url: string, body: unknown): Promise<string | null> {
+  // `error` null si salió bien. Un `aviso` en una respuesta OK (el cambio
+  // se guardó pero algo secundario falló) se muestra igual en el banner.
+  async function post(url: string, body: unknown): Promise<{ error: string | null; data: any }> {
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -79,11 +123,11 @@ export function useTableroKanban<T extends Item>({
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         if (data?.aviso) setError(data.aviso);
-        return null;
+        return { error: null, data };
       }
-      return data?.error || "No se pudo guardar el cambio.";
+      return { error: data?.error || "No se pudo guardar el cambio.", data };
     } catch {
-      return "No se pudo guardar el cambio (sin conexión).";
+      return { error: "No se pudo guardar el cambio (sin conexión).", data: null };
     }
   }
 
@@ -113,6 +157,8 @@ export function useTableroKanban<T extends Item>({
 
     setError(null);
     const previo = items;
+    capturarPosiciones();
+    setSoltadaId(id);
     setItems((prev) => {
       const sin = prev.filter((it) => it.id !== id);
       const movido = { ...actual, estado };
@@ -126,22 +172,30 @@ export function useTableroKanban<T extends Item>({
 
     try {
       if (cambiaEstado) {
-        const err = await post(`${rutaApi(id)}/cambiar-estado`, { estado });
+        const { error: err, data } = await post(`${rutaApi(id)}/cambiar-estado`, { estado });
+        if (!err) {
+          const msg = mensajeMovido?.(estado, data, actual);
+          if (msg) toast(msg);
+        }
         if (err) {
+          capturarPosiciones();
           setItems(previo);
           setError(err);
           return;
         }
       }
       if (reordena) {
-        const err = await post(`${rutaApi(id)}/reordenar`, {
+        const { error: err } = await post(`${rutaApi(id)}/reordenar`, {
           antes_id: antes?.id ?? null,
           despues_id: despues?.id ?? null,
         });
         if (err) {
           // Si el estado sí se guardó, no se revierte: solo la posición
           // puede quedar distinta. El refresh trae el orden real.
-          if (!cambiaEstado) setItems(previo);
+          if (!cambiaEstado) {
+            capturarPosiciones();
+            setItems(previo);
+          }
           setError(err);
         }
       }
@@ -154,6 +208,13 @@ export function useTableroKanban<T extends Item>({
       });
     }
   }
+
+  // Quita la marca de "recién soltada" cuando termina su animación.
+  useEffect(() => {
+    if (!soltadaId) return;
+    const t = setTimeout(() => setSoltadaId(null), 600);
+    return () => clearTimeout(t);
+  }, [soltadaId]);
 
   function terminarArrastre() {
     setDragId(null);
@@ -189,6 +250,7 @@ export function useTableroKanban<T extends Item>({
       "data-tarjeta-id": id,
       dragging: dragId === id,
       pending: pendingIds.has(id),
+      soltada: soltadaId === id,
       onDragStart: (e: React.DragEvent<HTMLDivElement>) => {
         e.dataTransfer.setData("text/plain", id);
         e.dataTransfer.effectAllowed = "move";

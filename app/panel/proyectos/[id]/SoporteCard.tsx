@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "@/lib/toast";
 
 export type SoporteData = {
   id: string;
@@ -241,6 +242,7 @@ export default function SoporteCard({ proyecto }: { proyecto: SoporteData }) {
       setError(resultado.error ?? "No se pudo guardar");
       return;
     }
+    toast("Soporte actualizado");
     router.refresh();
   };
 

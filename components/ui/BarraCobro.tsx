@@ -64,6 +64,7 @@ export default function BarraCobro({
         }}
       >
         <div
+          className="barra-llenar-anim"
           style={{
             width: `${Math.min(pct, 100)}%`,
             height: "100%",

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Save } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 type Tipo = "min" | "pert" | "max" | "custom";
 
@@ -82,11 +83,7 @@ export default function HorasEnvioCotizacion({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      setMsg({
-        tipo: "ok",
-        texto: `Horas actualizadas a ${json.horas_envio}h.`,
-      });
-      setTimeout(() => setMsg(null), 3500);
+      toast(`Horas actualizadas a ${json.horas_envio}h`);
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });

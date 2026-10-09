@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Save } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 export default function PasswordForm({ forzado = false }: { forzado?: boolean }) {
   const router = useRouter();
@@ -35,6 +36,7 @@ export default function PasswordForm({ forzado = false }: { forzado?: boolean })
       setNueva("");
       setConfirma("");
       if (forzado) {
+        toast("Contraseña actualizada");
         router.push("/panel");
         router.refresh();
       }

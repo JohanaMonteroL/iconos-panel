@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DollarSign, Save } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 type Props = {
   cotizacionId: string;
@@ -45,8 +46,7 @@ export default function MontoFijoEditor({ cotizacionId, montoActual }: Props) {
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      setMsg({ tipo: "ok", texto: "Monto actualizado" });
-      setTimeout(() => setMsg(null), 2500);
+      toast("Monto actualizado");
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });

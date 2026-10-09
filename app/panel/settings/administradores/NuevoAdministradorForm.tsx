@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 export default function NuevoAdministradorForm() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function NuevoAdministradorForm() {
       }
       reset();
       setOpen(false);
+      toast("Administrador agregado");
       router.refresh();
     } catch {
       setError("Error de red");

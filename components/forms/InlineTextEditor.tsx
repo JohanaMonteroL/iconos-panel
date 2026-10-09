@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Sparkles } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 type Props = {
   cotizacionId: string;
@@ -95,8 +96,7 @@ export default function InlineTextEditor({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      setMsg({ tipo: "ok", texto: "Guardado" });
-      setTimeout(() => setMsg(null), 2500);
+      toast("Guardado");
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });

@@ -22,6 +22,7 @@ import {
   labelEstado,
   badgeEstado,
 } from "@/lib/estados";
+import { toast } from "@/lib/toast";
 
 // ─── Acciones rápidas para vista de lectura ─────────────────────────────
 
@@ -58,6 +59,7 @@ export function CotizacionAcciones({
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "No se pudo archivar");
     setModal(null);
+    toast("Cotización archivada");
     router.refresh();
   };
 
@@ -66,6 +68,7 @@ export function CotizacionAcciones({
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "No se pudo eliminar");
     setModal(null);
+    toast("Cotización eliminada");
     router.replace("/panel/cotizaciones");
   };
 
@@ -90,6 +93,7 @@ export function CotizacionAcciones({
         setMsg(json.error || "No se pudo cambiar el estado");
         return;
       }
+      toast(`Movida a ${labelEstado(nuevo)}`);
       router.refresh();
     } catch {
       setMsg("Error de red");
@@ -396,6 +400,7 @@ export function CotizacionAcciones({
         onClose={() => setEnviarPdfAbierto(false)}
         onEnviado={() => {
           setEnviarPdfAbierto(false);
+          toast("Cotización marcada como enviada");
           router.refresh();
         }}
       />

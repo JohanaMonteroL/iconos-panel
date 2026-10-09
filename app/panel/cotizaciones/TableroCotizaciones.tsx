@@ -86,6 +86,7 @@ export default function TableroCotizaciones({
     itemsIniciales,
     rutaApi: (id) => `/api/cotizaciones/${id}`,
     reordenable,
+    mensajeMovido: (estado) => `Movida a ${labelEstado(estado)}`,
     validarDestino: (estado) =>
       ESTADOS_NO_ARRASTRABLES.has(estado)
         ? `Para marcar "${labelEstado(estado)}" primero sube el PDF que se mandó al cliente, desde el detalle de la cotización.`
@@ -96,7 +97,7 @@ export default function TableroCotizaciones({
     <div className="space-y-3">
       {error && (
         <div
-          className="rounded-[9px] border px-3 py-2 text-caption"
+          className="banner-anim rounded-[9px] border px-3 py-2 text-caption"
           style={{ borderColor: "#FEE2E2", background: "#FEF2F2", color: "#DC2626" }}
         >
           {error}{" "}
@@ -112,7 +113,7 @@ export default function TableroCotizaciones({
       )}
 
       <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3.5" style={{ minWidth: "max-content" }}>
+        <div className="escalonado flex gap-3.5" style={{ minWidth: "max-content" }}>
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
             const totalColumna = cards.reduce(
@@ -199,6 +200,7 @@ function TarjetaCotizacion({
   precioHoraVentaProyecto,
   dragging,
   pending,
+  soltada,
   linea,
   onDragStart,
   onDragEnd,
@@ -210,6 +212,7 @@ function TarjetaCotizacion({
   precioHoraVentaProyecto?: number;
   dragging: boolean;
   pending: boolean;
+  soltada: boolean;
   linea: "arriba" | "abajo" | null;
   "data-tarjeta-id": string;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -226,13 +229,13 @@ function TarjetaCotizacion({
       data-tarjeta-id={rest["data-tarjeta-id"]}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="kanban-card relative rounded-[12px] border p-3"
+      className={`kanban-card relative rounded-[12px] border p-3 ${dragging ? "kanban-card-arrastrando" : ""} ${soltada ? "kanban-card-soltada" : ""}`}
       style={{
         background: "var(--bg-elevated)",
         borderColor: "var(--border-default)",
         boxShadow: "var(--shadow-sm)",
         cursor: pending ? "wait" : "grab",
-        opacity: dragging || pending ? 0.5 : 1,
+        opacity: pending && !soltada ? 0.6 : undefined,
         transition: "box-shadow 180ms ease, transform 180ms ease, opacity 120ms ease",
       }}
     >

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Edit3, Save, X, ToggleLeft, ToggleRight, KeyRound, Copy } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 export type Programador = {
   id: string;
@@ -56,6 +57,7 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
         return;
       }
       setPasswordTemporal(json.password);
+      toast("Contraseña temporal generada");
       router.refresh();
     } catch {
       setResetError("Error de red");
@@ -95,6 +97,7 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
         return;
       }
       setEditing(false);
+      toast("Programador actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -117,6 +120,7 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
         setError(json.error || "No se pudo cambiar");
         return;
       }
+      toast("Programador actualizado");
       router.refresh();
     } catch {
       setError("Error de red");

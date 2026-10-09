@@ -15,6 +15,7 @@ import {
   labelEstadoPeriodo,
   badgeEstadoPeriodo,
 } from "@/lib/estados/cobros";
+import { toast } from "@/lib/toast";
 
 const MONEDAS_VALIDAS = ["MXN", "USD"] as const;
 
@@ -65,6 +66,7 @@ export function PeriodoAcciones({
         return;
       }
       setCambioAbierto(false);
+      toast(json.pagoAutomatico ? "Estado actualizado · pago pendiente registrado" : "Estado actualizado");
       router.refresh();
     } catch {
       setMsg("Error de red");
@@ -78,6 +80,7 @@ export function PeriodoAcciones({
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "No se pudo eliminar el período");
     setModalEliminar(false);
+    toast("Período eliminado");
     router.replace("/panel/cobros");
     router.refresh();
   };
@@ -281,6 +284,7 @@ function EditarPeriodoModal({
         return;
       }
       onClose();
+      toast("Período actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -399,6 +403,7 @@ export function AgregarPeriodoForm({
       setMonto("");
       setAbierto(false);
       if (json.periodo?.id) {
+        toast("Período agregado");
         router.push(`/panel/cobros/${json.periodo.id}`);
       } else {
         router.refresh();
@@ -538,6 +543,7 @@ export function DividirParcialidadesForm({
         return;
       }
       setAbierto(false);
+      toast("Cobro dividido en parcialidades");
       router.refresh();
     } catch {
       setError("Error de red");
