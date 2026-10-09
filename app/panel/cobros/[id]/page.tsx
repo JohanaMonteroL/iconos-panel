@@ -12,6 +12,7 @@ import {
 } from "@/components/forms/CobroPeriodoEditor";
 import CobroPeriodoTabs from "@/components/forms/CobroPeriodoTabs";
 import DocumentosCobro, { type PeriodoDocumento } from "@/components/forms/DocumentosCobro";
+import BarraCobro from "@/components/ui/BarraCobro";
 
 export const dynamic = "force-dynamic";
 
@@ -405,6 +406,8 @@ export default async function CobroPeriodoPage({ params }: { params: { id: strin
             </div>
           </div>
         </div>
+
+        <BarraCobro pagado={montoPagadoPeriodo} total={periodo.monto} moneda={periodo.moneda} grande />
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
           <div>

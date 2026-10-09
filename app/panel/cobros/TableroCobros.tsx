@@ -12,7 +12,8 @@ import LineaInsercion from "@/components/ui/LineaInsercion";
 import { labelEstadoPeriodo, colorHexEstadoPeriodo, labelOrigenCobro } from "@/lib/estados/cobros";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { textoContrastante } from "@/lib/proyectos/colores";
-import { estadoFactura } from "@/lib/cobros/calculos";
+import { estadoFactura, montoPagado } from "@/lib/cobros/calculos";
+import BarraCobro from "@/components/ui/BarraCobro";
 import { FileCheck2, FileWarning, ExternalLink } from "lucide-react";
 
 type Row = {
@@ -29,6 +30,7 @@ type Row = {
   cotizacion_id: string | null;
   factura_pdf_path: string | null;
   factura_xml_path: string | null;
+  pagos?: { monto: number }[];
 };
 
 function fmtMonto(n: number, moneda: string): string {
@@ -239,6 +241,10 @@ function TarjetaPeriodo({
           <span className="num-tabular" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>
             {fmtMonto(Number(it.monto) || 0, it.moneda)}
           </span>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <BarraCobro pagado={montoPagado(it.pagos ?? [])} total={Number(it.monto) || 0} moneda={it.moneda} />
         </div>
 
         <div
