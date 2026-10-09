@@ -130,16 +130,31 @@ async function getInfoProyectos(): Promise<{
 // solo lo que ese modal necesita (costo por hora + moneda del proyecto
 // para el cálculo horas × tarifa).
 async function getDatosParaCrear(): Promise<{
-  proyectosActivos: { id: string; nombre: string; emoji: string | null; precio_hora_venta: number | null; moneda_hora: "MXN" | "USD" }[];
+  proyectosActivos: {
+    id: string;
+    nombre: string;
+    emoji: string | null;
+    precio_hora_venta: number | null;
+    soporte_tarifa_hora: number | null;
+    moneda_hora: "MXN" | "USD";
+  }[];
   programadoresActivos: { id: string; nombre: string }[];
 }> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { proyectosActivos: [], programadoresActivos: [] };
   const supa = createSupabaseServiceClient();
   let { data: proy, error: proyErr }: { data: any; error: any } = await supa
     .from("proyectos")
-    .select("id, nombre, emoji, precio_hora_venta, moneda_hora")
+    .select("id, nombre, emoji, precio_hora_venta, soporte_tarifa_hora, moneda_hora")
     .eq("activo", true)
     .order("nombre");
+  // Sin la migración 0023 no existe soporte_tarifa_hora.
+  if (proyErr && /soporte_tarifa_hora/i.test(proyErr.message)) {
+    ({ data: proy, error: proyErr } = await supa
+      .from("proyectos")
+      .select("id, nombre, emoji, precio_hora_venta, moneda_hora")
+      .eq("activo", true)
+      .order("nombre"));
+  }
   if (proyErr && /emoji/i.test(proyErr.message)) {
     ({ data: proy, error: proyErr } = await supa
       .from("proyectos")
@@ -153,7 +168,11 @@ async function getDatosParaCrear(): Promise<{
     .eq("activo", true)
     .order("nombre");
   return {
-    proyectosActivos: ((proy ?? []) as any[]).map((p) => ({ ...p, emoji: p.emoji ?? null })),
+    proyectosActivos: ((proy ?? []) as any[]).map((p) => ({
+      ...p,
+      emoji: p.emoji ?? null,
+      soporte_tarifa_hora: p.soporte_tarifa_hora ?? null,
+    })),
     programadoresActivos: (prog ?? []) as any[],
   };
 }
