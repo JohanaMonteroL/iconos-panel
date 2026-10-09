@@ -46,7 +46,7 @@ export default function InicioKpis({ porMes }: { porMes: KpiMes[] }) {
       icon: Landmark,
       iconBg: "#FEE2E2",
       iconFg: "#DC2626",
-      sub: `${mes.pendienteCount} cotización${mes.pendienteCount === 1 ? "" : "es"}`,
+      sub: `${mes.pendienteCount} período${mes.pendienteCount === 1 ? "" : "s"} con saldo${idx === porMes.length - 1 ? " hoy" : " al cierre del mes"}`,
     },
     {
       label: "En desarrollo",

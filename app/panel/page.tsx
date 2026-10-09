@@ -22,6 +22,7 @@ import {
   fmtMxn,
   fmtMxnCompacto,
   cotizacionesEnEstadoPorMes,
+  pendientePorCobrarPorMes,
   type CambioEstadoCotizacion,
 } from "@/lib/dashboard/calculos";
 
@@ -163,8 +164,6 @@ export default async function PanelHome() {
   const bucketVacio = () => ({
     cobradoMonto: 0,
     cobradoCotiz: new Set<string>(),
-    pendienteMonto: 0,
-    pendienteCotiz: new Set<string>(),
     cotizadoMonto: 0,
     cotizadoCount: 0,
   });
@@ -177,18 +176,6 @@ export default async function PanelHome() {
     const monto = montoDeCotizacion(c) ?? 0;
     b.cotizadoMonto += monto;
     b.cotizadoCount += 1;
-  }
-
-  for (const per of periodos) {
-    const key = claveMes(per.created_at);
-    const b = porMesMap.get(key);
-    if (!b) continue;
-    const pendiente = Math.max(per.monto - montoPagadoDePeriodo(per.id), 0);
-    if (pendiente > 0) {
-      b.pendienteMonto += pendiente;
-      const cobro = cobroPorId.get(per.cobro_id);
-      if (cobro?.cotizacion_id) b.pendienteCotiz.add(cobro.cotizacion_id);
-    }
   }
 
   for (const pg of pagos) {
@@ -204,6 +191,8 @@ export default async function PanelHome() {
   // "En desarrollo" no es un flujo del mes como cotizado/cobrado: es cuántas
   // estaban en desarrollo al cierre del mes (hoy, en el mes actual).
   const enDesarrolloPorMes = cotizacionesEnEstadoPorMes(meses, cotizaciones, cambiosEstado, "en_desarrollo");
+  // Igual "Pendiente por cobrar": saldo al cierre del mes (hoy, en el actual).
+  const pendientePorMes = pendientePorCobrarPorMes(meses, periodos, pagos);
 
   const porMes: KpiMes[] = meses.map((m) => {
     const b = porMesMap.get(m.key)!;
@@ -212,8 +201,8 @@ export default async function PanelHome() {
       label: m.label,
       cobradoMonto: b.cobradoMonto,
       cobradoCount: b.cobradoCotiz.size,
-      pendienteMonto: b.pendienteMonto,
-      pendienteCount: b.pendienteCotiz.size,
+      pendienteMonto: pendientePorMes.get(m.key)?.monto ?? 0,
+      pendienteCount: pendientePorMes.get(m.key)?.periodos ?? 0,
       enDesarrolloCount: enDesarrolloPorMes.get(m.key) ?? 0,
       cotizadoMonto: b.cotizadoMonto,
       cotizadoCount: b.cotizadoCount,

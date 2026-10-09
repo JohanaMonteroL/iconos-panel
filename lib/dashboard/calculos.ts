@@ -39,6 +39,10 @@ export function ultimosMeses(n: number, ahora: Date = new Date()): MesBucket[] {
 
 /** "YYYY-MM" de una fecha ISO, en la zona horaria del negocio. */
 export function claveMes(fechaISO: string): string {
+  // Una fecha sin hora ("2026-09-01", p. ej. cobros_pagos.fecha) ya es una
+  // fecha local: si se convirtiera, JS la toma como medianoche UTC y en
+  // Tijuana cae el día anterior (un pago del día 1 contaba en el mes previo).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fechaISO)) return fechaISO.slice(0, 7);
   const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: ZONA,
     year: "numeric",
@@ -131,6 +135,51 @@ export function cotizacionesEnEstadoPorMes(
       if (estadoAlCierre === estado) resultado.set(m.key, (resultado.get(m.key) ?? 0) + 1);
     }
   });
+
+  return resultado;
+}
+
+/**
+ * Lo pendiente por cobrar al cierre de cada mes: por cada período que ya
+ * existía, su monto menos los pagos con fecha hasta ese mes (nunca
+ * negativo). Como "en desarrollo", es un saldo y no un flujo: un período de
+ * agosto que sigue sin pagarse cuenta en agosto, septiembre y octubre.
+ * En el mes actual cuentan todos los pagos registrados (= lo que se debe hoy).
+ *
+ * `periodos` = cuántos períodos tenían saldo pendiente.
+ */
+export function pendientePorCobrarPorMes(
+  meses: MesBucket[],
+  periodos: { id: string; monto: number; created_at: string }[],
+  pagos: { periodo_id: string; monto: number; fecha: string }[]
+): Map<string, { monto: number; periodos: number }> {
+  const resultado = new Map(meses.map((m) => [m.key, { monto: 0, periodos: 0 }]));
+  if (meses.length === 0) return resultado;
+  const mesActual = meses[meses.length - 1].key;
+
+  const pagosPorPeriodo = new Map<string, { monto: number; key: string }[]>();
+  for (const pg of pagos) {
+    const arr = pagosPorPeriodo.get(pg.periodo_id) ?? [];
+    arr.push({ monto: pg.monto, key: claveMes(pg.fecha) });
+    pagosPorPeriodo.set(pg.periodo_id, arr);
+  }
+
+  for (const per of periodos) {
+    const creadoKey = claveMes(per.created_at);
+    const pagosPer = pagosPorPeriodo.get(per.id) ?? [];
+    for (const m of meses) {
+      if (m.key < creadoKey) continue;
+      const pagado = pagosPer
+        .filter((pg) => m.key === mesActual || pg.key <= m.key)
+        .reduce((acc, pg) => acc + pg.monto, 0);
+      const pendiente = per.monto - pagado;
+      if (pendiente > 0.005) {
+        const b = resultado.get(m.key)!;
+        b.monto += pendiente;
+        b.periodos += 1;
+      }
+    }
+  }
 
   return resultado;
 }
