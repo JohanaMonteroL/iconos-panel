@@ -6,17 +6,21 @@
 
 import { useState } from "react";
 import { Calendar, Wallet, Landmark, Hammer, FileStack } from "lucide-react";
-import { fmtMxn } from "@/lib/dashboard/calculos";
+import { fmtMxn, fmtMoneda } from "@/lib/dashboard/calculos";
 
 export type KpiMes = {
   key: string;
   label: string;
+  // *Monto = MXN; *Usd = USD (no se suman entre sí).
   cobradoMonto: number;
+  cobradoUsd: number;
   cobradoCount: number;
   pendienteMonto: number;
+  pendienteUsd: number;
   pendienteCount: number;
   enDesarrolloCount: number;
   cotizadoMonto: number;
+  cotizadoUsd: number;
   cotizadoCount: number;
 };
 
@@ -31,10 +35,12 @@ export default function InicioKpis({ porMes }: { porMes: KpiMes[] }) {
     iconBg: string;
     iconFg: string;
     sub: string;
+    usd?: number;
   }[] = [
     {
       label: "Total cobrado",
       value: fmtMxn(mes.cobradoMonto),
+      usd: mes.cobradoUsd,
       icon: Wallet,
       iconBg: "#DCFCE7",
       iconFg: "#15803D",
@@ -43,6 +49,7 @@ export default function InicioKpis({ porMes }: { porMes: KpiMes[] }) {
     {
       label: "Pendiente por cobrar",
       value: fmtMxn(mes.pendienteMonto),
+      usd: mes.pendienteUsd,
       icon: Landmark,
       iconBg: "#FEE2E2",
       iconFg: "#DC2626",
@@ -62,6 +69,7 @@ export default function InicioKpis({ porMes }: { porMes: KpiMes[] }) {
     {
       label: "Total cotizado",
       value: fmtMxn(mes.cotizadoMonto),
+      usd: mes.cotizadoUsd,
       icon: FileStack,
       iconBg: "#EDE9FE",
       iconFg: "#6D28D9",
@@ -110,6 +118,11 @@ export default function InicioKpis({ porMes }: { porMes: KpiMes[] }) {
             >
               {k.value}
             </div>
+            {k.usd ? (
+              <div className="num-tabular" style={{ fontSize: 15, fontWeight: 600, marginTop: 4, color: "var(--text-secondary)" }}>
+                + {fmtMoneda(k.usd, "USD")}
+              </div>
+            ) : null}
             <div
               className="text-caption"
               style={{ color: "var(--text-tertiary)", marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-faint)" }}

@@ -53,6 +53,29 @@ export function claveMes(fechaISO: string): string {
   return `${anio}-${mes}`;
 }
 
+export type Moneda = "MXN" | "USD";
+export type MontosPorMoneda = { MXN: number; USD: number };
+
+/** Normaliza una moneda de la base (null/otro → MXN, que es el default). */
+export function normMoneda(m: string | null | undefined): Moneda {
+  return m === "USD" ? "USD" : "MXN";
+}
+
+export function montosVacios(): MontosPorMoneda {
+  return { MXN: 0, USD: 0 };
+}
+
+/** "$12,500" en MXN, "US$1,200" en USD — para no confundir las dos. */
+export function fmtMoneda(n: number, moneda: Moneda): string {
+  if (moneda === "MXN") return fmtMxn(n);
+  return `US$${n.toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+export function fmtMonedaCompacto(n: number, moneda: Moneda): string {
+  const mxn = fmtMxnCompacto(n);
+  return moneda === "MXN" ? mxn : `US${mxn}`;
+}
+
 export function fmtMxnCompacto(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -146,14 +169,15 @@ export function cotizacionesEnEstadoPorMes(
  * agosto que sigue sin pagarse cuenta en agosto, septiembre y octubre.
  * En el mes actual cuentan todos los pagos registrados (= lo que se debe hoy).
  *
+ * Los montos se separan por moneda del período (MXN y USD no se suman).
  * `periodos` = cuántos períodos tenían saldo pendiente.
  */
 export function pendientePorCobrarPorMes(
   meses: MesBucket[],
-  periodos: { id: string; monto: number; created_at: string }[],
+  periodos: { id: string; monto: number; moneda?: string | null; created_at: string }[],
   pagos: { periodo_id: string; monto: number; fecha: string }[]
-): Map<string, { monto: number; periodos: number }> {
-  const resultado = new Map(meses.map((m) => [m.key, { monto: 0, periodos: 0 }]));
+): Map<string, { montos: MontosPorMoneda; periodos: number }> {
+  const resultado = new Map(meses.map((m) => [m.key, { montos: montosVacios(), periodos: 0 }]));
   if (meses.length === 0) return resultado;
   const mesActual = meses[meses.length - 1].key;
 
@@ -166,6 +190,7 @@ export function pendientePorCobrarPorMes(
 
   for (const per of periodos) {
     const creadoKey = claveMes(per.created_at);
+    const moneda = normMoneda(per.moneda);
     const pagosPer = pagosPorPeriodo.get(per.id) ?? [];
     for (const m of meses) {
       if (m.key < creadoKey) continue;
@@ -175,7 +200,7 @@ export function pendientePorCobrarPorMes(
       const pendiente = per.monto - pagado;
       if (pendiente > 0.005) {
         const b = resultado.get(m.key)!;
-        b.monto += pendiente;
+        b.montos[moneda] += pendiente;
         b.periodos += 1;
       }
     }

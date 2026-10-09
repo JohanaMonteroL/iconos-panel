@@ -7,6 +7,8 @@ export type FilaBarra = {
   label: string;
   sublabel?: string | null;
   valor: number;
+  // Texto a mostrar en vez de formatear(valor) — p. ej. con otra moneda.
+  textoValor?: string;
   color?: string;
 };
 
@@ -31,7 +33,7 @@ export default function BarrasHorizontales({
               <span className="text-text-primary font-medium truncate">{f.label}</span>
               {f.sublabel && <span className="text-text-tertiary"> · {f.sublabel}</span>}
             </span>
-            <span className="num-tabular text-text-secondary shrink-0">{formatear(f.valor)}</span>
+            <span className="num-tabular text-text-secondary shrink-0">{f.textoValor ?? formatear(f.valor)}</span>
           </div>
           <div className="rounded-full overflow-hidden" style={{ height: 7, background: "var(--bg-overlay)" }}>
             <div
