@@ -70,3 +70,67 @@ export function variacionPct(actual: number, anterior: number): number | null {
   if (anterior === 0) return actual === 0 ? null : null;
   return ((actual - anterior) / anterior) * 100;
 }
+
+export type CambioEstadoCotizacion = {
+  cotizacion_id: string;
+  estado: string;
+  estado_anterior: string | null;
+  created_at: string;
+};
+
+/**
+ * Cuántas cotizaciones estaban en `estado` (p. ej. "en_desarrollo") al
+ * cierre de cada mes. Es un conteo de "existencias", no de las creadas en el
+ * mes: una cotización creada en agosto que sigue en desarrollo en octubre
+ * cuenta en agosto, septiembre y octubre.
+ *
+ * - Mes actual: el estado de hoy (`cotizaciones[].estado`).
+ * - Meses pasados: se reconstruye con el log de cambios de estado
+ *   (acciones_cotizacion "estado_*", que registran todas las rutas que
+ *   cambian el estado). Antes del primer cambio registrado se usa su
+ *   `estado_anterior`; sin ningún cambio, el estado actual.
+ *
+ * `cotizaciones` puede no traer las archivadas: las que solo aparecen en el
+ * log se cuentan desde la fecha de su primer cambio.
+ */
+export function cotizacionesEnEstadoPorMes(
+  meses: MesBucket[],
+  cotizaciones: { id: string; estado: string; created_at: string }[],
+  cambios: CambioEstadoCotizacion[],
+  estado: string
+): Map<string, number> {
+  const resultado = new Map(meses.map((m) => [m.key, 0]));
+  if (meses.length === 0) return resultado;
+  const mesActual = meses[meses.length - 1].key;
+
+  const cambiosPorId = new Map<string, (CambioEstadoCotizacion & { key: string })[]>();
+  for (const c of cambios) {
+    const arr = cambiosPorId.get(c.cotizacion_id) ?? [];
+    arr.push({ ...c, key: claveMes(c.created_at) });
+    cambiosPorId.set(c.cotizacion_id, arr);
+  }
+  cambiosPorId.forEach((arr) => arr.sort((a, b) => a.created_at.localeCompare(b.created_at)));
+
+  const cotPorId = new Map(cotizaciones.map((c) => [c.id, c]));
+  const ids = new Set<string>([...Array.from(cotPorId.keys()), ...Array.from(cambiosPorId.keys())]);
+
+  ids.forEach((id) => {
+    const cot = cotPorId.get(id);
+    const log = cambiosPorId.get(id) ?? [];
+    const creadaKey = cot ? claveMes(cot.created_at) : log[0].key;
+
+    for (const m of meses) {
+      if (m.key < creadaKey) continue;
+      let estadoAlCierre: string | null | undefined;
+      if (m.key === mesActual && cot) {
+        estadoAlCierre = cot.estado;
+      } else {
+        const ultimo = log.filter((c) => c.key <= m.key).pop();
+        estadoAlCierre = ultimo ? ultimo.estado : log.length > 0 ? log[0].estado_anterior : cot?.estado;
+      }
+      if (estadoAlCierre === estado) resultado.set(m.key, (resultado.get(m.key) ?? 0) + 1);
+    }
+  });
+
+  return resultado;
+}

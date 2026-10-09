@@ -16,7 +16,14 @@ import InicioKpis, { type KpiMes } from "./InicioKpis";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { labelEstado, badgeEstado } from "@/lib/estados";
 import { montoCotizacion } from "@/lib/cotizaciones/calculos";
-import { ultimosMeses, claveMes, fmtMxn, fmtMxnCompacto } from "@/lib/dashboard/calculos";
+import {
+  ultimosMeses,
+  claveMes,
+  fmtMxn,
+  fmtMxnCompacto,
+  cotizacionesEnEstadoPorMes,
+  type CambioEstadoCotizacion,
+} from "@/lib/dashboard/calculos";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +58,7 @@ async function getDatos() {
       periodos: [] as PeriodoRow[],
       pagos: [] as PagoRow[],
       programadores: [] as ProgramadorRow[],
+      cambiosEstado: [] as CambioEstadoCotizacion[],
     };
   }
   const supa = createSupabaseServiceClient();
@@ -70,6 +78,7 @@ async function getDatos() {
     supa.from("cobros_pagos").select("id, periodo_id, monto, fecha"),
     supa.from("programadores").select("id, nombre"),
   ]);
+  const cambiosEstado = await getCambiosEstado(supa);
 
   return {
     cotizaciones: ((cotRes.data ?? []) as any[]).map((c) => ({
@@ -81,11 +90,45 @@ async function getDatos() {
     periodos: ((perRes.data ?? []) as any[]).map((p) => ({ ...p, monto: Number(p.monto) || 0 })) as PeriodoRow[],
     pagos: ((pagRes.data ?? []) as any[]).map((p) => ({ ...p, monto: Number(p.monto) || 0 })) as PagoRow[],
     programadores: (progRes.data ?? []) as ProgramadorRow[],
+    cambiosEstado,
   };
 }
 
+// Log de cambios de estado de cotizaciones, para reconstruir cuántas había
+// "en desarrollo" al cierre de cada mes. Paginado: Supabase devuelve como
+// máximo 1000 filas por consulta.
+async function getCambiosEstado(
+  supa: ReturnType<typeof createSupabaseServiceClient>
+): Promise<CambioEstadoCotizacion[]> {
+  const out: CambioEstadoCotizacion[] = [];
+  const PAGINA = 1000;
+  for (let desde = 0; desde < 50_000; desde += PAGINA) {
+    const { data, error } = await supa
+      .from("acciones_cotizacion")
+      .select("cotizacion_id, tipo_accion, metadata, created_at")
+      .like("tipo_accion", "estado%")
+      .order("created_at", { ascending: true })
+      .range(desde, desde + PAGINA - 1);
+    if (error) {
+      console.error("[inicio] no se pudo leer el log de estados:", error);
+      break;
+    }
+    for (const r of (data ?? []) as any[]) {
+      if (!String(r.tipo_accion).startsWith("estado_")) continue;
+      out.push({
+        cotizacion_id: r.cotizacion_id,
+        estado: String(r.tipo_accion).slice("estado_".length),
+        estado_anterior: r.metadata?.estado_anterior ?? null,
+        created_at: r.created_at,
+      });
+    }
+    if (!data || data.length < PAGINA) break;
+  }
+  return out;
+}
+
 export default async function PanelHome() {
-  const { cotizaciones, proyectos, cobros, periodos, pagos, programadores } = await getDatos();
+  const { cotizaciones, proyectos, cobros, periodos, pagos, programadores, cambiosEstado } = await getDatos();
 
   const proyectoPorId = new Map(proyectos.map((p) => [p.id, p]));
   const cobroPorId = new Map(cobros.map((c) => [c.id, c]));
@@ -122,7 +165,6 @@ export default async function PanelHome() {
     cobradoCotiz: new Set<string>(),
     pendienteMonto: 0,
     pendienteCotiz: new Set<string>(),
-    enDesarrolloCount: 0,
     cotizadoMonto: 0,
     cotizadoCount: 0,
   });
@@ -135,7 +177,6 @@ export default async function PanelHome() {
     const monto = montoDeCotizacion(c) ?? 0;
     b.cotizadoMonto += monto;
     b.cotizadoCount += 1;
-    if (c.estado === "en_desarrollo") b.enDesarrolloCount += 1;
   }
 
   for (const per of periodos) {
@@ -160,6 +201,10 @@ export default async function PanelHome() {
     if (cobro?.cotizacion_id) b.cobradoCotiz.add(cobro.cotizacion_id);
   }
 
+  // "En desarrollo" no es un flujo del mes como cotizado/cobrado: es cuántas
+  // estaban en desarrollo al cierre del mes (hoy, en el mes actual).
+  const enDesarrolloPorMes = cotizacionesEnEstadoPorMes(meses, cotizaciones, cambiosEstado, "en_desarrollo");
+
   const porMes: KpiMes[] = meses.map((m) => {
     const b = porMesMap.get(m.key)!;
     return {
@@ -169,7 +214,7 @@ export default async function PanelHome() {
       cobradoCount: b.cobradoCotiz.size,
       pendienteMonto: b.pendienteMonto,
       pendienteCount: b.pendienteCotiz.size,
-      enDesarrolloCount: b.enDesarrolloCount,
+      enDesarrolloCount: enDesarrolloPorMes.get(m.key) ?? 0,
       cotizadoMonto: b.cotizadoMonto,
       cotizadoCount: b.cotizadoCount,
     };

@@ -54,7 +54,10 @@ export default function InicioKpis({ porMes }: { porMes: KpiMes[] }) {
       icon: Hammer,
       iconBg: "#E0E7FF",
       iconFg: "#4F46E5",
-      sub: `cotización${mes.enDesarrolloCount === 1 ? "" : "es"} en curso`,
+      sub:
+        idx === porMes.length - 1
+          ? `cotización${mes.enDesarrolloCount === 1 ? "" : "es"} en curso hoy`
+          : `cotización${mes.enDesarrolloCount === 1 ? "" : "es"} al cierre del mes`,
     },
     {
       label: "Total cotizado",
