@@ -1,13 +1,15 @@
 "use client";
 
-// Alta manual de un Cobro — sin pasar por una cotización ni por Soporte.
-// Crea el Cobro + su primer Período ("Pago único") y manda a Johana
-// directo a esa ficha, donde ya puede dividir en parcialidades, subir
-// factura o registrar pagos (mismos componentes que cualquier otro Cobro).
+// Alta manual de un Cobro — sin pasar por una cotización. Desarrollo crea
+// el Cobro + su primer Período ("Pago único"); Soporte agrega un Período al
+// cobro de soporte del proyecto (ver POST /api/cobros). En ambos casos
+// manda a Johana directo a la ficha del período, donde ya puede dividir en
+// parcialidades, subir factura o registrar pagos.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, DollarSign, Clock } from "lucide-react";
+import { Plus, DollarSign, Clock, Code2, LifeBuoy } from "lucide-react";
+import { tarifaSoporte } from "@/lib/cobros/calculos";
 import Modal from "@/components/ui/Modal";
 import CostoHoraField, { type Moneda } from "@/app/panel/proyectos/CostoHoraField";
 
@@ -16,6 +18,7 @@ type Proyecto = {
   nombre: string;
   emoji?: string | null;
   precio_hora_venta?: number | null;
+  soporte_tarifa_hora?: number | null;
   moneda_hora?: Moneda;
 };
 type Programador = { id: string; nombre: string };
@@ -55,6 +58,7 @@ export default function CrearCobroModal({
   }, []);
 
   const [abierto, setAbierto] = useState(false);
+  const [origen, setOrigen] = useState<"desarrollo" | "soporte">("desarrollo");
   const [titulo, setTitulo] = useState("");
   const [proyectoId, setProyectoId] = useState("");
   const [programadorId, setProgramadorId] = useState("");
@@ -67,7 +71,9 @@ export default function CrearCobroModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const proyecto = proyectos.find((p) => p.id === proyectoId);
-  const precioHora = proyecto?.precio_hora_venta ?? 0;
+  // Soporte cobra con la tarifa de soporte del proyecto (o el costo/hora
+  // general si no tiene), igual que el cron mensual.
+  const precioHora = proyecto ? (origen === "soporte" ? tarifaSoporte(proyecto) : proyecto.precio_hora_venta ?? 0) : 0;
   const monedaHoras = proyecto?.moneda_hora ?? "MXN";
   const montoCalculado =
     modo === "horas" ? Math.round((Number(horas) || 0) * precioHora * 100) / 100 : Number(montoDirecto) || 0;
@@ -75,6 +81,7 @@ export default function CrearCobroModal({
   const cerrar = () => {
     if (sending) return;
     setAbierto(false);
+    setOrigen("desarrollo");
     setTitulo("");
     setProyectoId("");
     setProgramadorId("");
@@ -108,6 +115,7 @@ export default function CrearCobroModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          origen,
           titulo: titulo.trim(),
           proyecto_id: proyectoId,
           programador_id: programadorId || undefined,
@@ -166,11 +174,45 @@ export default function CrearCobroModal({
       >
         <div className="space-y-4">
           <p className="text-caption text-text-secondary">
-            Para un cobro que no viene de una cotización ni de Soporte — un trabajo extra, un
-            ajuste, lo que sea. Se crea directo en &quot;Listo para cobrar&quot;; de ahí puedes
-            dividirlo en parcialidades, subir factura y registrar pagos igual que cualquier otro
-            Cobro.
+            Para un cobro que no viene de una cotización — un trabajo extra, un ajuste, lo que
+            sea. Se crea directo en &quot;Listo para cobrar&quot;; de ahí puedes dividirlo en
+            parcialidades, subir factura y registrar pagos igual que cualquier otro Cobro.
           </p>
+
+          <div>
+            <label className="field-label">Tipo de cobro *</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setOrigen("desarrollo")}
+                className={origen === "desarrollo" ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
+                aria-pressed={origen === "desarrollo"}
+              >
+                <Code2 size={14} strokeWidth={1.75} />
+                <span>Desarrollo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrigen("soporte")}
+                className={origen === "soporte" ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
+                aria-pressed={origen === "soporte"}
+              >
+                <LifeBuoy size={14} strokeWidth={1.75} />
+                <span>Soporte</span>
+              </button>
+            </div>
+            {origen === "soporte" && (
+              <span className="field-hint block">
+                Se agrega como un período al cobro de Soporte del proyecto (si aún no tiene uno, se
+                crea), junto a los meses que genera el soporte automático.
+              </span>
+            )}
+            {errors.origen && (
+              <span className="field-hint block" style={{ color: "var(--state-error)" }}>
+                {errors.origen}
+              </span>
+            )}
+          </div>
 
           <div>
             <label className="field-label">Nombre del cobro *</label>
@@ -254,7 +296,7 @@ export default function CrearCobroModal({
                 <span className="field-hint">
                   {proyecto
                     ? precioHora > 0
-                      ? `${fmtMoneda(precioHora, monedaHoras)}/h · total ${fmtMoneda(montoCalculado, monedaHoras)}`
+                      ? `${fmtMoneda(precioHora, monedaHoras)}/h${origen === "soporte" ? " (tarifa de soporte)" : ""} · total ${fmtMoneda(montoCalculado, monedaHoras)}`
                       : `"${proyecto.nombre}" no tiene costo por hora configurado — usa monto directo.`
                     : "Selecciona un proyecto para ver su costo por hora."}
                 </span>

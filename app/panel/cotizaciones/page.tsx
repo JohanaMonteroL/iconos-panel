@@ -31,6 +31,7 @@ type Row = {
   tipo_precio?: string | null;
   monto_fijo?: number | null;
   estimacion_formulario_id?: string | null;
+  orden_tablero?: number | null;
 };
 
 const estadosVisibles = [
@@ -61,7 +62,7 @@ async function getCotizaciones(filtros: Filtros): Promise<Row[]> {
   const supa = createSupabaseServiceClient();
 
   const selCompleto =
-    "id, nombre, estado, horas_min, horas_max, horas_envio, precio_venta_hora, created_at, programador_id, tipo_precio, monto_fijo, proyecto_nombre, proyecto_clickup_id, estimacion_formulario_id, programadores(nombre)";
+    "id, nombre, estado, orden_tablero, horas_min, horas_max, horas_envio, precio_venta_hora, created_at, programador_id, tipo_precio, monto_fijo, proyecto_nombre, proyecto_clickup_id, estimacion_formulario_id, programadores(nombre)";
   const selSinPrecioVenta = selCompleto.replace(", precio_venta_hora", "");
   const selSinProy = selSinPrecioVenta.replace(", proyecto_nombre, proyecto_clickup_id", "");
   const selSinFijo = selSinProy.replace(", tipo_precio, monto_fijo", "");
@@ -88,13 +89,19 @@ async function getCotizaciones(filtros: Filtros): Promise<Row[]> {
 
   // Trato resiliente con migraciones — cae a select más pequeño si la
   // columna no existe en el ambiente.
-  const intentar = async (sel: string) => {
-    const qb = supa
-      .from("cotizaciones")
-      .select(sel)
-      .order("created_at", { ascending: false })
-      .limit(300);
-    return aplicarFiltros(qb);
+  // Sin la migración 0028 no existe `orden_tablero`: se cae al orden por fecha.
+  let conOrden = true;
+  const intentar = async (sel: string): Promise<any> => {
+    let qb = supa.from("cotizaciones").select(conOrden ? sel : sel.replace(", orden_tablero", ""));
+    if (conOrden) qb = qb.order("orden_tablero", { ascending: true });
+    // Desempate por id: mismo criterio que lib/tableros/orden.ts.
+    qb = qb.order("created_at", { ascending: false }).order("id", { ascending: true }).limit(300);
+    const r = await aplicarFiltros(qb);
+    if (r.error && conOrden && /orden_tablero/i.test(r.error.message)) {
+      conOrden = false;
+      return intentar(sel);
+    }
+    return r;
   };
 
   let resp: any = await intentar(selCompleto);
@@ -283,7 +290,10 @@ export default async function CotizacionesPage({
         montoCotizacion(b, b.proyecto_clickup_id ? precioHoraVentaProyecto[b.proyecto_clickup_id] : undefined) ?? -1;
       return montoB - montoA;
     }
-    return 0; // ya viene ordenado por fecha de creación desc desde la consulta
+    if (filtros.orden === "reciente") {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    return 0; // orden manual del tablero: ya viene ordenado desde la consulta
   });
 
   const pipelineFijo = items
@@ -352,7 +362,7 @@ export default async function CotizacionesPage({
         </div>
       </header>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
+      <div className="escalonado grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
         {kpis.map((k) => (
           <div key={k.label} className="card card-hover">
             <div className="flex items-center gap-2">
@@ -404,6 +414,7 @@ export default async function CotizacionesPage({
             coloresProyecto={coloresProyecto}
             emojisProyecto={emojisProyecto}
             precioHoraVentaProyecto={precioHoraVentaProyecto}
+            reordenable={!filtros.orden}
           />
         ) : vistaExplicita === "cuadricula" ? (
           <CuadriculaCotizaciones items={items} />
@@ -422,6 +433,7 @@ export default async function CotizacionesPage({
               coloresProyecto={coloresProyecto}
               emojisProyecto={emojisProyecto}
               precioHoraVentaProyecto={precioHoraVentaProyecto}
+              reordenable={!filtros.orden}
             />
           </div>
         </>
@@ -533,7 +545,7 @@ function ListaCotizaciones({ items }: { items: Row[] }) {
 
 function CuadriculaCotizaciones({ items }: { items: Row[] }) {
   return (
-    <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
+    <ul className="escalonado grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
       {items.map((it) => (
         <li key={it.id}>
           <TarjetaCotizacion it={it} />

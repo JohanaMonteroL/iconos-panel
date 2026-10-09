@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Edit3, Save, X, ToggleLeft, ToggleRight, KeyRound, Copy } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 export type Administrador = {
   id: string;
@@ -48,6 +49,7 @@ export default function AdministradorRow({ a }: { a: Administrador }) {
         return;
       }
       setPasswordTemporal(json.password);
+      toast("Contraseña temporal generada");
       router.refresh();
     } catch {
       setResetError("Error de red");
@@ -80,6 +82,7 @@ export default function AdministradorRow({ a }: { a: Administrador }) {
         return;
       }
       setEditing(false);
+      toast("Administrador actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -102,6 +105,7 @@ export default function AdministradorRow({ a }: { a: Administrador }) {
         setError(json.error || "No se pudo cambiar");
         return;
       }
+      toast("Administrador actualizado");
       router.refresh();
     } catch {
       setError("Error de red");

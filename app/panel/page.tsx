@@ -16,7 +16,20 @@ import InicioKpis, { type KpiMes } from "./InicioKpis";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { labelEstado, badgeEstado } from "@/lib/estados";
 import { montoCotizacion } from "@/lib/cotizaciones/calculos";
-import { ultimosMeses, claveMes, fmtMxn, fmtMxnCompacto } from "@/lib/dashboard/calculos";
+import {
+  ultimosMeses,
+  claveMes,
+  fmtMxnCompacto,
+  cotizacionesEnEstadoPorMes,
+  pendientePorCobrarPorMes,
+  normMoneda,
+  montosVacios,
+  fmtMoneda,
+  fmtMonedaCompacto,
+  type CambioEstadoCotizacion,
+  type Moneda,
+  type MontosPorMoneda,
+} from "@/lib/dashboard/calculos";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +49,14 @@ type CotizacionRow = {
   programadores: { nombre: string } | null;
 };
 
-type ProyectoRow = { id: string; nombre: string; color: string | null; emoji: string | null; precio_hora_venta: number | null };
+type ProyectoRow = {
+  id: string;
+  nombre: string;
+  color: string | null;
+  emoji: string | null;
+  precio_hora_venta: number | null;
+  moneda_hora: string | null;
+};
 type CobroRow = { id: string; origen: string; proyecto_id: string | null; cotizacion_id: string | null; titulo: string };
 type PeriodoRow = { id: string; cobro_id: string; estado: string; etiqueta: string; monto: number; moneda: string; created_at: string };
 type PagoRow = { id: string; periodo_id: string; monto: number; fecha: string };
@@ -51,6 +71,7 @@ async function getDatos() {
       periodos: [] as PeriodoRow[],
       pagos: [] as PagoRow[],
       programadores: [] as ProgramadorRow[],
+      cambiosEstado: [] as CambioEstadoCotizacion[],
     };
   }
   const supa = createSupabaseServiceClient();
@@ -64,12 +85,13 @@ async function getDatos() {
       .neq("estado", "archivada")
       .order("created_at", { ascending: false })
       .limit(1000),
-    supa.from("proyectos").select("id, nombre, color, emoji, precio_hora_venta"),
+    supa.from("proyectos").select("id, nombre, color, emoji, precio_hora_venta, moneda_hora"),
     supa.from("cobros").select("id, origen, proyecto_id, cotizacion_id, titulo"),
     supa.from("cobros_periodos").select("id, cobro_id, estado, etiqueta, monto, moneda, created_at"),
     supa.from("cobros_pagos").select("id, periodo_id, monto, fecha"),
     supa.from("programadores").select("id, nombre"),
   ]);
+  const cambiosEstado = await getCambiosEstado(supa);
 
   return {
     cotizaciones: ((cotRes.data ?? []) as any[]).map((c) => ({
@@ -81,11 +103,45 @@ async function getDatos() {
     periodos: ((perRes.data ?? []) as any[]).map((p) => ({ ...p, monto: Number(p.monto) || 0 })) as PeriodoRow[],
     pagos: ((pagRes.data ?? []) as any[]).map((p) => ({ ...p, monto: Number(p.monto) || 0 })) as PagoRow[],
     programadores: (progRes.data ?? []) as ProgramadorRow[],
+    cambiosEstado,
   };
 }
 
+// Log de cambios de estado de cotizaciones, para reconstruir cuántas había
+// "en desarrollo" al cierre de cada mes. Paginado: Supabase devuelve como
+// máximo 1000 filas por consulta.
+async function getCambiosEstado(
+  supa: ReturnType<typeof createSupabaseServiceClient>
+): Promise<CambioEstadoCotizacion[]> {
+  const out: CambioEstadoCotizacion[] = [];
+  const PAGINA = 1000;
+  for (let desde = 0; desde < 50_000; desde += PAGINA) {
+    const { data, error } = await supa
+      .from("acciones_cotizacion")
+      .select("cotizacion_id, tipo_accion, metadata, created_at")
+      .like("tipo_accion", "estado%")
+      .order("created_at", { ascending: true })
+      .range(desde, desde + PAGINA - 1);
+    if (error) {
+      console.error("[inicio] no se pudo leer el log de estados:", error);
+      break;
+    }
+    for (const r of (data ?? []) as any[]) {
+      if (!String(r.tipo_accion).startsWith("estado_")) continue;
+      out.push({
+        cotizacion_id: r.cotizacion_id,
+        estado: String(r.tipo_accion).slice("estado_".length),
+        estado_anterior: r.metadata?.estado_anterior ?? null,
+        created_at: r.created_at,
+      });
+    }
+    if (!data || data.length < PAGINA) break;
+  }
+  return out;
+}
+
 export default async function PanelHome() {
-  const { cotizaciones, proyectos, cobros, periodos, pagos, programadores } = await getDatos();
+  const { cotizaciones, proyectos, cobros, periodos, pagos, programadores, cambiosEstado } = await getDatos();
 
   const proyectoPorId = new Map(proyectos.map((p) => [p.id, p]));
   const cobroPorId = new Map(cobros.map((c) => [c.id, c]));
@@ -108,22 +164,30 @@ export default async function PanelHome() {
   const montoDeCotizacion = (c: CotizacionRow): number | null =>
     montoCotizacion(c, c.proyecto_clickup_id ? proyectoPorId.get(c.proyecto_clickup_id)?.precio_hora_venta : undefined);
 
-  const montoCobradoDeCotizacion = (cotizacionId: string): number => {
+  // MXN y USD nunca se suman entre sí. Una cotización está en la moneda del
+  // costo/hora de su proyecto (mismo criterio que al crear su cobro); un
+  // pago, en la de su período.
+  const monedaDeCotizacion = (c: CotizacionRow): Moneda =>
+    normMoneda(c.proyecto_clickup_id ? proyectoPorId.get(c.proyecto_clickup_id)?.moneda_hora : null);
+  const periodoPorId = new Map(periodos.map((p) => [p.id, p]));
+  const monedaDePago = (pg: PagoRow): Moneda => normMoneda(periodoPorId.get(pg.periodo_id)?.moneda);
+
+  const montoCobradoDeCotizacion = (cotizacionId: string): MontosPorMoneda => {
+    const total = montosVacios();
     const cobro = cobroPorCotizacionId.get(cotizacionId);
-    if (!cobro) return 0;
-    const pers = periodosPorCobroId.get(cobro.id) ?? [];
-    return pers.reduce((acc, per) => acc + montoPagadoDePeriodo(per.id), 0);
+    if (!cobro) return total;
+    for (const per of periodosPorCobroId.get(cobro.id) ?? []) {
+      total[normMoneda(per.moneda)] += montoPagadoDePeriodo(per.id);
+    }
+    return total;
   };
 
   // ── 1) KPIs "por mes" (últimos 12, incluye el actual) ──────────────────
   const meses = ultimosMeses(N_MESES);
   const bucketVacio = () => ({
-    cobradoMonto: 0,
+    cobrado: montosVacios(),
     cobradoCotiz: new Set<string>(),
-    pendienteMonto: 0,
-    pendienteCotiz: new Set<string>(),
-    enDesarrolloCount: 0,
-    cotizadoMonto: 0,
+    cotizado: montosVacios(),
     cotizadoCount: 0,
   });
   const porMesMap = new Map(meses.map((m) => [m.key, bucketVacio()]));
@@ -132,45 +196,40 @@ export default async function PanelHome() {
     const key = claveMes(c.created_at);
     const b = porMesMap.get(key);
     if (!b) continue;
-    const monto = montoDeCotizacion(c) ?? 0;
-    b.cotizadoMonto += monto;
+    b.cotizado[monedaDeCotizacion(c)] += montoDeCotizacion(c) ?? 0;
     b.cotizadoCount += 1;
-    if (c.estado === "en_desarrollo") b.enDesarrolloCount += 1;
-  }
-
-  for (const per of periodos) {
-    const key = claveMes(per.created_at);
-    const b = porMesMap.get(key);
-    if (!b) continue;
-    const pendiente = Math.max(per.monto - montoPagadoDePeriodo(per.id), 0);
-    if (pendiente > 0) {
-      b.pendienteMonto += pendiente;
-      const cobro = cobroPorId.get(per.cobro_id);
-      if (cobro?.cotizacion_id) b.pendienteCotiz.add(cobro.cotizacion_id);
-    }
   }
 
   for (const pg of pagos) {
     const key = claveMes(pg.fecha);
     const b = porMesMap.get(key);
     if (!b) continue;
-    b.cobradoMonto += pg.monto;
-    const per = periodos.find((p) => p.id === pg.periodo_id);
+    b.cobrado[monedaDePago(pg)] += pg.monto;
+    const per = periodoPorId.get(pg.periodo_id);
     const cobro = per ? cobroPorId.get(per.cobro_id) : undefined;
     if (cobro?.cotizacion_id) b.cobradoCotiz.add(cobro.cotizacion_id);
   }
+
+  // "En desarrollo" no es un flujo del mes como cotizado/cobrado: es cuántas
+  // estaban en desarrollo al cierre del mes (hoy, en el mes actual).
+  const enDesarrolloPorMes = cotizacionesEnEstadoPorMes(meses, cotizaciones, cambiosEstado, "en_desarrollo");
+  // Igual "Pendiente por cobrar": saldo al cierre del mes (hoy, en el actual).
+  const pendientePorMes = pendientePorCobrarPorMes(meses, periodos, pagos);
 
   const porMes: KpiMes[] = meses.map((m) => {
     const b = porMesMap.get(m.key)!;
     return {
       key: m.key,
       label: m.label,
-      cobradoMonto: b.cobradoMonto,
+      cobradoMonto: b.cobrado.MXN,
+      cobradoUsd: b.cobrado.USD,
       cobradoCount: b.cobradoCotiz.size,
-      pendienteMonto: b.pendienteMonto,
-      pendienteCount: b.pendienteCotiz.size,
-      enDesarrolloCount: b.enDesarrolloCount,
-      cotizadoMonto: b.cotizadoMonto,
+      pendienteMonto: pendientePorMes.get(m.key)?.montos.MXN ?? 0,
+      pendienteUsd: pendientePorMes.get(m.key)?.montos.USD ?? 0,
+      pendienteCount: pendientePorMes.get(m.key)?.periodos ?? 0,
+      enDesarrolloCount: enDesarrolloPorMes.get(m.key) ?? 0,
+      cotizadoMonto: b.cotizado.MXN,
+      cotizadoUsd: b.cotizado.USD,
       cotizadoCount: b.cotizadoCount,
     };
   });
@@ -178,12 +237,14 @@ export default async function PanelHome() {
   // ── 2) Gráfica: cobrado vs. cotizado por mes ────────────────────────────
   const serieCobrado = porMes.map((m) => m.cobradoMonto);
   const serieCotizado = porMes.map((m) => m.cotizadoMonto);
+  // La gráfica es solo MXN: sumar USD en el mismo eje no tendría sentido.
+  const hayUsd = porMes.some((m) => m.cobradoUsd > 0 || m.cotizadoUsd > 0);
 
   // ── 3) Top cotizaciones ya enviadas al cliente ──────────────────────────
   const ESTADOS_SEGUIMIENTO = ["enviada", "aprobada", "en_desarrollo"];
   const topEnviadas = cotizaciones
     .filter((c) => ESTADOS_SEGUIMIENTO.includes(c.estado))
-    .map((c) => ({ c, monto: montoDeCotizacion(c) ?? 0 }))
+    .map((c) => ({ c, monto: montoDeCotizacion(c) ?? 0, moneda: monedaDeCotizacion(c) }))
     .filter((x) => x.monto > 0)
     .sort((a, b) => b.monto - a.monto)
     .slice(0, 6);
@@ -194,36 +255,45 @@ export default async function PanelHome() {
       const pendiente = Math.max(per.monto - montoPagadoDePeriodo(per.id), 0);
       const cobro = cobroPorId.get(per.cobro_id);
       const proyecto = cobro?.proyecto_id ? proyectoPorId.get(cobro.proyecto_id) : undefined;
-      return { per, cobro, proyecto, pendiente };
+      return { per, cobro, proyecto, pendiente, moneda: normMoneda(per.moneda) };
     })
     .filter((x) => x.pendiente > 0)
     .sort((a, b) => b.pendiente - a.pendiente)
     .slice(0, 6);
 
   // ── 5) Top proyectos con Soporte por dinero facturado ───────────────────
-  const soportePorProyecto = new Map<string, number>();
+  const soportePorProyecto = new Map<string, MontosPorMoneda>();
   for (const per of periodos) {
     const cobro = cobroPorId.get(per.cobro_id);
     if (cobro?.origen !== "soporte" || !cobro.proyecto_id) continue;
-    soportePorProyecto.set(cobro.proyecto_id, (soportePorProyecto.get(cobro.proyecto_id) ?? 0) + per.monto);
+    const t = soportePorProyecto.get(cobro.proyecto_id) ?? montosVacios();
+    t[normMoneda(per.moneda)] += per.monto;
+    soportePorProyecto.set(cobro.proyecto_id, t);
   }
-  const topSoporte = Array.from(soportePorProyecto.entries())
-    .map(([proyectoId, monto]) => ({ proyecto: proyectoPorId.get(proyectoId), monto }))
-    .sort((a, b) => b.monto - a.monto)
-    .slice(0, 6);
+  const topSoporte = topPorMoneda(soportePorProyecto, 6);
 
   // ── 6) Top 5 clientes que más han pagado ────────────────────────────────
-  const pagadoPorProyecto = new Map<string, number>();
+  const pagadoPorProyecto = new Map<string, MontosPorMoneda>();
   for (const pg of pagos) {
-    const per = periodos.find((p) => p.id === pg.periodo_id);
+    const per = periodoPorId.get(pg.periodo_id);
     const cobro = per ? cobroPorId.get(per.cobro_id) : undefined;
     if (!cobro?.proyecto_id) continue;
-    pagadoPorProyecto.set(cobro.proyecto_id, (pagadoPorProyecto.get(cobro.proyecto_id) ?? 0) + pg.monto);
+    const t = pagadoPorProyecto.get(cobro.proyecto_id) ?? montosVacios();
+    t[monedaDePago(pg)] += pg.monto;
+    pagadoPorProyecto.set(cobro.proyecto_id, t);
   }
-  const topClientes = Array.from(pagadoPorProyecto.entries())
-    .map(([proyectoId, monto]) => ({ proyecto: proyectoPorId.get(proyectoId), monto }))
-    .sort((a, b) => b.monto - a.monto)
-    .slice(0, 5);
+  const topClientes = topPorMoneda(pagadoPorProyecto, 5);
+
+  // Top-N por moneda: filas MXN y USD por separado (no se comparan entre sí).
+  function topPorMoneda(porProyecto: Map<string, MontosPorMoneda>, n: number) {
+    const filas = (moneda: Moneda) =>
+      Array.from(porProyecto.entries())
+        .filter(([, t]) => t[moneda] > 0)
+        .map(([proyectoId, t]) => ({ proyecto: proyectoPorId.get(proyectoId), monto: t[moneda], moneda }))
+        .sort((a, b) => b.monto - a.monto)
+        .slice(0, n);
+    return { MXN: filas("MXN"), USD: filas("USD") };
+  }
 
   // ── 7-9) Secciones rápidas de estimaciones ──────────────────────────────
   const porEstimar = cotizaciones.filter((c) => c.estado === "por_estimar");
@@ -231,18 +301,27 @@ export default async function PanelHome() {
   const porAprobar = cotizaciones.filter((c) => c.estado === "esperando_aprobacion");
 
   // ── 10) Top programadores por dinero YA cobrado de lo que estimaron ────
-  const progAgg = new Map<string, { nombre: string; estimado: number; cobrado: number }>();
+  const progAgg = new Map<string, { nombre: string; estimado: MontosPorMoneda; cobrado: MontosPorMoneda }>();
   for (const c of cotizaciones) {
     if (!c.programador_id) continue;
     const nombre = c.programadores?.nombre ?? programadores.find((p) => p.id === c.programador_id)?.nombre ?? "—";
-    const cur = progAgg.get(c.programador_id) ?? { nombre, estimado: 0, cobrado: 0 };
-    cur.estimado += montoDeCotizacion(c) ?? 0;
-    cur.cobrado += montoCobradoDeCotizacion(c.id);
+    const cur = progAgg.get(c.programador_id) ?? { nombre, estimado: montosVacios(), cobrado: montosVacios() };
+    cur.estimado[monedaDeCotizacion(c)] += montoDeCotizacion(c) ?? 0;
+    const cobrado = montoCobradoDeCotizacion(c.id);
+    cur.cobrado.MXN += cobrado.MXN;
+    cur.cobrado.USD += cobrado.USD;
     progAgg.set(c.programador_id, cur);
   }
   const topProgramadores = Array.from(progAgg.values())
-    .filter((p) => p.estimado > 0 || p.cobrado > 0)
-    .sort((a, b) => b.cobrado - a.cobrado || b.estimado - a.estimado)
+    .filter((p) => p.estimado.MXN + p.estimado.USD > 0 || p.cobrado.MXN + p.cobrado.USD > 0)
+    // Orden por lo cobrado en MXN y luego en USD (no hay tipo de cambio).
+    .sort(
+      (a, b) =>
+        b.cobrado.MXN - a.cobrado.MXN ||
+        b.cobrado.USD - a.cobrado.USD ||
+        b.estimado.MXN - a.estimado.MXN ||
+        b.estimado.USD - a.estimado.USD
+    )
     .slice(0, 6);
 
   return (
@@ -267,6 +346,7 @@ export default async function PanelHome() {
             <TrendingUp size={13.5} strokeWidth={1.9} />
           </span>
           <h2 className="text-heading-2">Cobros y cotizaciones por mes</h2>
+          {hayUsd && <span className="text-caption text-text-tertiary">· en MXN (lo de USD está en el resumen del mes)</span>}
         </div>
         <GraficaLineas
           etiquetas={porMes.map((m) => m.label)}
@@ -286,7 +366,7 @@ export default async function PanelHome() {
             <p className="text-caption text-text-tertiary">Sin cotizaciones enviadas con monto calculable.</p>
           ) : (
             <ul className="space-y-1">
-              {topEnviadas.map(({ c, monto }, i) => (
+              {topEnviadas.map(({ c, monto, moneda }, i) => (
                 <li key={c.id}>
                   <Link
                     href={`/panel/cotizaciones/${c.id}`}
@@ -302,7 +382,7 @@ export default async function PanelHome() {
                         </span>
                       </span>
                     </span>
-                    <span className="num-tabular text-body-medium shrink-0">{fmtMxn(monto)}</span>
+                    <span className="num-tabular text-body-medium shrink-0">{fmtMoneda(monto, moneda)}</span>
                   </Link>
                 </li>
               ))}
@@ -317,7 +397,7 @@ export default async function PanelHome() {
             <p className="text-caption text-text-tertiary">Sin pendientes — todo cobrado 🎉</p>
           ) : (
             <ul className="space-y-1">
-              {topPendientes.map(({ per, cobro, proyecto, pendiente }, i) => (
+              {topPendientes.map(({ per, cobro, proyecto, pendiente, moneda }, i) => (
                 <li key={per.id}>
                   <Link
                     href={`/panel/cobros/${per.id}`}
@@ -332,7 +412,7 @@ export default async function PanelHome() {
                       </span>
                     </span>
                     <span className="num-tabular text-body-medium shrink-0" style={{ color: "var(--state-error)" }}>
-                      {fmtMxn(pendiente)}
+                      {fmtMoneda(pendiente, moneda)}
                     </span>
                   </Link>
                 </li>
@@ -347,15 +427,7 @@ export default async function PanelHome() {
         <section className="card space-y-3">
           <h2 className="text-heading-2">Top proyectos con Soporte</h2>
           <p className="text-caption text-text-tertiary -mt-2">Dinero facturado — solo Soporte.</p>
-          <BarrasHorizontales
-            formatear={fmtMxnCompacto}
-            filas={topSoporte.map(({ proyecto, monto }, i) => ({
-              key: proyecto?.id ?? String(i),
-              label: `${proyecto?.emoji ? proyecto.emoji + " " : ""}${proyecto?.nombre ?? "—"}`,
-              valor: monto,
-              color: "#0D9488",
-            }))}
-          />
+          <BarrasPorMoneda filas={topSoporte} color="#0D9488" />
         </section>
 
         <section className="card space-y-3">
@@ -364,15 +436,7 @@ export default async function PanelHome() {
             <h2 className="text-heading-2">Top 5 clientes</h2>
           </div>
           <p className="text-caption text-text-tertiary -mt-2">Los que más dinero han pagado en total.</p>
-          <BarrasHorizontales
-            formatear={fmtMxnCompacto}
-            filas={topClientes.map(({ proyecto, monto }, i) => ({
-              key: proyecto?.id ?? String(i),
-              label: `${proyecto?.emoji ? proyecto.emoji + " " : ""}${proyecto?.nombre ?? "—"}`,
-              valor: monto,
-              color: "#CA8A04",
-            }))}
-          />
+          <BarrasPorMoneda filas={topClientes} color="#CA8A04" />
         </section>
       </div>
 
@@ -457,13 +521,13 @@ export default async function PanelHome() {
                 <span className="text-caption text-text-tertiary w-4 text-center shrink-0">{i + 1}</span>
                 <span className="min-w-0 flex-1 text-body-medium truncate">{p.nombre}</span>
                 <span className="text-caption text-text-tertiary shrink-0">
-                  estimado {fmtMxnCompacto(p.estimado)}
+                  estimado {textoMontos(p.estimado, fmtMonedaCompacto)}
                 </span>
                 <span
                   className="num-tabular text-body-medium shrink-0"
                   style={{ color: "var(--state-success)", minWidth: 80, textAlign: "right" }}
                 >
-                  {fmtMxn(p.cobrado)}
+                  {textoMontos(p.cobrado, fmtMoneda)}
                 </span>
               </li>
             ))}
@@ -483,5 +547,45 @@ export default async function PanelHome() {
         <EnablePushButton />
       </section>
     </>
+  );
+}
+
+// "$12,500 + US$1,200" — omite la moneda que está en cero (y "$0" si ambas).
+function textoMontos(m: MontosPorMoneda, fmt: (n: number, moneda: Moneda) => string): string {
+  const partes: string[] = [];
+  if (m.MXN > 0) partes.push(fmt(m.MXN, "MXN"));
+  if (m.USD > 0) partes.push(fmt(m.USD, "USD"));
+  return partes.length > 0 ? partes.join(" + ") : fmt(0, "MXN");
+}
+
+type FilaProyectoMonto = { proyecto: ProyectoRow | undefined; monto: number; moneda: Moneda };
+
+// Barras MXN y, debajo y aparte, las de USD (escalas independientes).
+function BarrasPorMoneda({
+  filas,
+  color,
+}: {
+  filas: { MXN: FilaProyectoMonto[]; USD: FilaProyectoMonto[] };
+  color: string;
+}) {
+  const aFilas = (arr: FilaProyectoMonto[]) =>
+    arr.map(({ proyecto, monto, moneda }, i) => ({
+      key: `${proyecto?.id ?? i}-${moneda}`,
+      label: `${proyecto?.emoji ? proyecto.emoji + " " : ""}${proyecto?.nombre ?? "—"}`,
+      valor: monto,
+      textoValor: fmtMonedaCompacto(monto, moneda),
+      color,
+    }));
+  const soloUsd = filas.MXN.length === 0 && filas.USD.length > 0;
+  return (
+    <div className="space-y-4">
+      {!soloUsd && <BarrasHorizontales formatear={fmtMxnCompacto} filas={aFilas(filas.MXN)} />}
+      {filas.USD.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-overline text-text-tertiary">En USD</div>
+          <BarrasHorizontales formatear={(n) => fmtMonedaCompacto(n, "USD")} filas={aFilas(filas.USD)} />
+        </div>
+      )}
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { ORDEN_FLUJO_COBRO_PERIODO } from "@/lib/estados/cobros";
 import { rangoRapidoAFechas } from "@/lib/dates";
 import { montoPagado, pendientePeriodo, estadoFactura } from "@/lib/cobros/calculos";
+import { fmtMoneda, normMoneda, type Moneda } from "@/lib/dashboard/calculos";
 import TableroCobros from "./TableroCobros";
 import FiltrosCobros from "./FiltrosCobros";
 import CrearCobroModal from "@/components/forms/CrearCobroModal";
@@ -25,6 +26,7 @@ type Row = {
   factura_pdf_path: string | null;
   factura_xml_path: string | null;
   pagos: { monto: number }[];
+  orden_tablero: number | null;
 };
 
 function relationMissing(message: string | undefined | null): boolean {
@@ -37,7 +39,7 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
   const supa = createSupabaseServiceClient();
 
   const selConPagos =
-    "id, estado, etiqueta, monto, moneda, created_at, factura_pdf_path, factura_xml_path, cobro_id, cobros(origen, titulo, proyecto_id, cotizacion_id), cobros_pagos(monto)";
+    "id, estado, orden_tablero, etiqueta, monto, moneda, created_at, factura_pdf_path, factura_xml_path, cobro_id, cobros(origen, titulo, proyecto_id, cotizacion_id), cobros_pagos(monto)";
   const selSinPagos = selConPagos.replace(", cobros_pagos(monto)", "");
 
   let { data, error }: { data: any; error: any } = await supa
@@ -47,6 +49,19 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
 
   if (error && relationMissing(error.message) && /cobros_pagos/i.test(error.message ?? "")) {
     ({ data, error } = await supa.from("cobros_periodos").select(selSinPagos).order("created_at", { ascending: false }));
+  }
+  // Sin la migración 0028 no existe `orden_tablero`: se cae al orden por fecha.
+  if (error && /orden_tablero/i.test(error.message ?? "")) {
+    ({ data, error } = await supa
+      .from("cobros_periodos")
+      .select(selConPagos.replace(", orden_tablero", ""))
+      .order("created_at", { ascending: false }));
+    if (error && relationMissing(error.message) && /cobros_pagos/i.test(error.message ?? "")) {
+      ({ data, error } = await supa
+        .from("cobros_periodos")
+        .select(selSinPagos.replace(", orden_tablero", ""))
+        .order("created_at", { ascending: false }));
+    }
   }
 
   if (error) {
@@ -74,6 +89,7 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
       factura_pdf_path: r.factura_pdf_path,
       factura_xml_path: r.factura_xml_path,
       pagos: ((r.cobros_pagos ?? []) as any[]).map((p) => ({ monto: Number(p.monto) || 0 })),
+      orden_tablero: r.orden_tablero ?? null,
     };
   });
 
@@ -115,16 +131,31 @@ async function getInfoProyectos(): Promise<{
 // solo lo que ese modal necesita (costo por hora + moneda del proyecto
 // para el cálculo horas × tarifa).
 async function getDatosParaCrear(): Promise<{
-  proyectosActivos: { id: string; nombre: string; emoji: string | null; precio_hora_venta: number | null; moneda_hora: "MXN" | "USD" }[];
+  proyectosActivos: {
+    id: string;
+    nombre: string;
+    emoji: string | null;
+    precio_hora_venta: number | null;
+    soporte_tarifa_hora: number | null;
+    moneda_hora: "MXN" | "USD";
+  }[];
   programadoresActivos: { id: string; nombre: string }[];
 }> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { proyectosActivos: [], programadoresActivos: [] };
   const supa = createSupabaseServiceClient();
   let { data: proy, error: proyErr }: { data: any; error: any } = await supa
     .from("proyectos")
-    .select("id, nombre, emoji, precio_hora_venta, moneda_hora")
+    .select("id, nombre, emoji, precio_hora_venta, soporte_tarifa_hora, moneda_hora")
     .eq("activo", true)
     .order("nombre");
+  // Sin la migración 0023 no existe soporte_tarifa_hora.
+  if (proyErr && /soporte_tarifa_hora/i.test(proyErr.message)) {
+    ({ data: proy, error: proyErr } = await supa
+      .from("proyectos")
+      .select("id, nombre, emoji, precio_hora_venta, moneda_hora")
+      .eq("activo", true)
+      .order("nombre"));
+  }
   if (proyErr && /emoji/i.test(proyErr.message)) {
     ({ data: proy, error: proyErr } = await supa
       .from("proyectos")
@@ -138,18 +169,13 @@ async function getDatosParaCrear(): Promise<{
     .eq("activo", true)
     .order("nombre");
   return {
-    proyectosActivos: ((proy ?? []) as any[]).map((p) => ({ ...p, emoji: p.emoji ?? null })),
+    proyectosActivos: ((proy ?? []) as any[]).map((p) => ({
+      ...p,
+      emoji: p.emoji ?? null,
+      soporte_tarifa_hora: p.soporte_tarifa_hora ?? null,
+    })),
     programadoresActivos: (prog ?? []) as any[],
   };
-}
-
-function fmtMxn(n: number): string {
-  return n.toLocaleString("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
 }
 
 // Variación vs. el mes pasado — siempre comparando el mes calendario en
@@ -213,7 +239,14 @@ export default async function CobrosPage({
     .sort((a, b) => {
       if (orden === "nombre") return a.etiqueta.localeCompare(b.etiqueta, "es", { sensitivity: "base" });
       if (orden === "monto") return b.monto - a.monto;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      // Orden manual del tablero (default); empates y ambientes sin la
+      // migración 0028 caen a más reciente primero.
+      if (orden !== "reciente" && a.orden_tablero != null && b.orden_tablero != null && a.orden_tablero !== b.orden_tablero) {
+        return a.orden_tablero - b.orden_tablero;
+      }
+      const porFecha = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      // Desempate por id: mismo criterio que lib/tableros/orden.ts.
+      return porFecha || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     });
 
   // ── KPIs — respetan los mismos filtros que el tablero (q/estado/proyecto/
@@ -235,17 +268,35 @@ export default async function CobrosPage({
   const itemsMesActual = itemsSinFiltroFecha.filter((it) => enRango(it, desdeMesActual, hastaMesActual));
   const itemsMesPasado = itemsSinFiltroFecha.filter((it) => enRango(it, desdeMesPasado, hastaMesPasado));
 
-  const sumaPendiente = (arr: Row[]) => arr.reduce((acc, it) => acc + pendientePeriodo(it, it.pagos), 0);
-  const sumaCobrado = (arr: Row[]) => arr.reduce((acc, it) => acc + montoPagado(it.pagos), 0);
+  // MXN y USD nunca se suman: cada monto se calcula por moneda del período.
+  // La moneda "principal" es MXN, salvo que lo filtrado sea solo USD.
+  const deMoneda = (arr: Row[], m: Moneda) => arr.filter((it) => normMoneda(it.moneda) === m);
+  const sumaPendiente = (arr: Row[], m: Moneda) =>
+    deMoneda(arr, m).reduce((acc, it) => acc + pendientePeriodo(it, it.pagos), 0);
+  const sumaCobrado = (arr: Row[], m: Moneda) =>
+    deMoneda(arr, m).reduce((acc, it) => acc + montoPagado(it.pagos), 0);
+  const sumaMonto = (arr: Row[], m: Moneda) =>
+    deMoneda(arr, m).reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
 
-  const pendienteTotal = sumaPendiente(items);
-  const deltaPendiente = calcularDelta(sumaPendiente(itemsMesActual), sumaPendiente(itemsMesPasado));
+  const hayMxn = deMoneda(items, "MXN").length > 0;
+  const hayUsd = deMoneda(items, "USD").length > 0;
+  const principal: Moneda = !hayMxn && hayUsd ? "USD" : "MXN";
+  const secundaria: Moneda | null = principal === "MXN" && hayUsd ? "USD" : null;
 
-  const cobradoTotal = sumaCobrado(items);
-  const deltaCobrado = calcularDelta(sumaCobrado(itemsMesActual), sumaCobrado(itemsMesPasado));
+  const pendienteTotal = sumaPendiente(items, principal);
+  const deltaPendiente = calcularDelta(
+    sumaPendiente(itemsMesActual, principal),
+    sumaPendiente(itemsMesPasado, principal)
+  );
 
-  const montoTotalFiltrado = items.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
-  const tasaCobro = montoTotalFiltrado > 0 ? (cobradoTotal / montoTotalFiltrado) * 100 : 0;
+  const cobradoTotal = sumaCobrado(items, principal);
+  const deltaCobrado = calcularDelta(sumaCobrado(itemsMesActual, principal), sumaCobrado(itemsMesPasado, principal));
+
+  const tasa = (m: Moneda) => {
+    const total = sumaMonto(items, m);
+    return total > 0 ? (sumaCobrado(items, m) / total) * 100 : 0;
+  };
+  const tasaCobro = tasa(principal);
 
   const sinFacturaCompleta = items.filter((it) => estadoFactura(it) !== "completa").length;
 
@@ -256,11 +307,14 @@ export default async function CobrosPage({
     iconBg: string;
     iconFg: string;
     sub?: string;
+    // Línea secundaria con el monto en la otra moneda ("+ US$1,200").
+    extra?: string;
     delta?: { texto: string; tono: "up" | "down" | "neutral" };
   }[] = [
     {
       label: "Pendiente por cobrar",
-      value: fmtMxn(pendienteTotal),
+      value: fmtMoneda(pendienteTotal, principal),
+      extra: secundaria ? `+ ${fmtMoneda(sumaPendiente(items, secundaria), secundaria)}` : undefined,
       icon: Landmark,
       iconBg: "#FEF3C7",
       iconFg: "#B45309",
@@ -268,7 +322,8 @@ export default async function CobrosPage({
     },
     {
       label: "Total cobrado",
-      value: fmtMxn(cobradoTotal),
+      value: fmtMoneda(cobradoTotal, principal),
+      extra: secundaria ? `+ ${fmtMoneda(sumaCobrado(items, secundaria), secundaria)}` : undefined,
       icon: CheckCircle2,
       iconBg: "#DCFCE7",
       iconFg: "#15803D",
@@ -280,7 +335,9 @@ export default async function CobrosPage({
       icon: Percent,
       iconBg: "#DBEAFE",
       iconFg: "#1D4ED8",
-      sub: "cobrado / monto total filtrado",
+      sub: secundaria
+        ? `cobrado / monto total · en ${secundaria}: ${tasa(secundaria).toFixed(0)}%`
+        : "cobrado / monto total filtrado",
     },
     {
       label: "Sin factura completa",
@@ -308,7 +365,7 @@ export default async function CobrosPage({
       </header>
 
       {!migracionPendiente && todos.length > 0 && (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
+        <div className="escalonado grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3.5">
           {kpis.map((k) => (
             <div key={k.label} className="card card-hover">
               <div className="flex items-center gap-2">
@@ -328,6 +385,11 @@ export default async function CobrosPage({
               >
                 {k.value}
               </div>
+              {k.extra && (
+                <div className="num-tabular" style={{ fontSize: 15, fontWeight: 600, marginTop: 4, color: "var(--text-secondary)" }}>
+                  {k.extra}
+                </div>
+              )}
               {(k.delta || k.sub) && (
                 <div
                   className="text-caption"
@@ -375,6 +437,7 @@ export default async function CobrosPage({
               coloresProyecto={coloresProyecto}
               emojisProyecto={emojisProyecto}
               nombresProyecto={nombresProyecto}
+              reordenable={!orden}
             />
           )}
         </>

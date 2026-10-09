@@ -12,6 +12,7 @@ import {
   Check,
 } from "lucide-react";
 import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
+import { toast } from "@/lib/toast";
 
 type ClickUpProyecto = { id: string; name: string };
 type ClickUpUsuario = { id: string; username: string; email?: string };
@@ -173,6 +174,8 @@ export default function GridDesdeCotizacion({
     setCreando(true);
 
     // Recorre las tareas pendientes secuencialmente para no spammear ClickUp.
+    let creados = 0;
+    let fallidos = 0;
     for (let i = 0; i < tareas.length; i++) {
       const t = tareas[i];
       if (t.resultado?.ok) continue; // ya creado en intento previo
@@ -201,18 +204,23 @@ export default function GridDesdeCotizacion({
         });
         const j = await res.json();
         if (!res.ok && res.status !== 207) {
+          fallidos++;
           actualizarTarea(i, { resultado: { ok: false, error: j.error || "Error" } });
         } else {
+          creados++;
           actualizarTarea(i, {
             resultado: { ok: true, url: j.clickup_url },
           });
         }
       } catch {
+        fallidos++;
         actualizarTarea(i, { resultado: { ok: false, error: "Error de red" } });
       }
     }
 
     setCreando(false);
+    if (fallidos === 0) toast(creados === 1 ? "Ticket creado" : `${creados} tickets creados`);
+    else toast(`${creados} creados, ${fallidos} con error — revisa la lista`, { tipo: "error" });
     router.refresh();
   };
 

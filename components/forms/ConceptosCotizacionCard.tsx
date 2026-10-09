@@ -7,6 +7,7 @@ import ConceptosEditor, {
   totalConceptos,
   type Concepto,
 } from "@/components/forms/ConceptosEditor";
+import { toast } from "@/lib/toast";
 
 type Props = {
   cotizacionId: string;
@@ -78,9 +79,8 @@ export default function ConceptosCotizacionCard({
         setMsg({ tipo: "err", texto: json.error || "No se pudo guardar" });
         return;
       }
-      setMsg({ tipo: "ok", texto: "Conceptos actualizados" });
-      setTimeout(() => setMsg(null), 2500);
       setEditing(false);
+      toast("Conceptos actualizados");
       router.refresh();
     } catch {
       setMsg({ tipo: "err", texto: "Error de red" });

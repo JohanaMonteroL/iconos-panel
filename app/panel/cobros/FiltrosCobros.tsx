@@ -149,7 +149,8 @@ export default function FiltrosCobros({ proyectos, actuales }: Props) {
             value={actuales.orden ?? ""}
             onChange={(e) => update("orden", e.target.value || null)}
           >
-            <option value="">Más reciente</option>
+            <option value="">Manual (tablero)</option>
+            <option value="reciente">Más reciente</option>
             <option value="nombre">Nombre (A-Z)</option>
             <option value="monto">Monto (mayor a menor)</option>
           </select>

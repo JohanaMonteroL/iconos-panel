@@ -6,6 +6,7 @@ import { Ban, CheckCircle2 } from "lucide-react";
 import CostoHoraField, { type Moneda } from "../CostoHoraField";
 import ColorPicker from "../ColorPicker";
 import EmojiPicker from "../EmojiPicker";
+import { toast } from "@/lib/toast";
 
 export type ProyectoData = {
   id: string;
@@ -70,6 +71,7 @@ function Campo({
         return;
       }
       setEditing(false);
+      toast("Proyecto actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -198,6 +200,7 @@ function CostoHoraCampo({
         return;
       }
       setEditing(false);
+      toast("Proyecto actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -272,6 +275,7 @@ function ColorCampo({ proyectoId, color }: { proyectoId: string; color: string }
         setError(json.error || "No se pudo guardar");
         return;
       }
+      toast("Proyecto actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -313,6 +317,7 @@ function EmojiCampo({ proyectoId, emoji }: { proyectoId: string; emoji: string }
         setError(json.error || "No se pudo guardar");
         return;
       }
+      toast("Proyecto actualizado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -424,6 +429,7 @@ export function EstadoCard({ proyecto }: { proyecto: ProyectoData }) {
         setError(json.error || "No se pudo actualizar el estado");
         return;
       }
+      toast("Estado del proyecto actualizado");
       router.refresh();
     } catch {
       setError("Error de red");

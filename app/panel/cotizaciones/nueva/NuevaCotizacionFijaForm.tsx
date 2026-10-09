@@ -8,6 +8,7 @@ import ConceptosEditor, {
   type Concepto,
 } from "@/components/forms/ConceptosEditor";
 import ProyectoSearch from "@/components/forms/ProyectoSearch";
+import { toast } from "@/lib/toast";
 
 type Proyecto = { id: string; nombre: string; emoji?: string };
 
@@ -136,10 +137,12 @@ export default function NuevaCotizacionFijaForm({
         setWarnings(ws);
         // Le damos unos segundos para que vea los warnings antes de redirigir.
         setTimeout(() => {
+          toast("Cotización creada");
           router.push(`/panel/cotizaciones/${json.id}`);
           router.refresh();
         }, 2500);
       } else {
+        toast("Cotización creada");
         router.push(`/panel/cotizaciones/${json.id}`);
         router.refresh();
       }

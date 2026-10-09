@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { SubTipoTicket, TipoTicket } from "@/lib/tickets/format";
+import { toast } from "@/lib/toast";
 
 type ClickUpProyecto = { id: string; name: string };
 type ClickUpUsuario = { id: string; username: string; email?: string };
@@ -235,6 +236,7 @@ export default function WizardTicket() {
       }
 
       // Éxito → regresa a la cotización de origen, o al inicio si fue standalone.
+      toast("Ticket creado");
       router.push(
         cotizacionData ? `/panel/cotizaciones/${cotizacionData.cotizacion.id}` : "/panel"
       );

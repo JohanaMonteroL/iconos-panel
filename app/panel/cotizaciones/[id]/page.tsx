@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { resolverProyectoId } from "@/lib/proyectos/resolverProyectoId";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import InlineHeading from "@/components/ui/InlineHeading";
@@ -244,6 +245,10 @@ export default async function CotizacionDetallePage({
   if (!result) notFound();
   const { cotizacion: it, acciones, conceptos, pdfUrl } = result;
 
+  const proyectoIdEnlace = process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? await resolverProyectoId(createSupabaseServiceClient(), it.proyecto_clickup_id, it.proyecto_nombre)
+    : null;
+
   const precio = it.programadores?.precio_hora ?? 0;
   const horasEnvio = it.horas_envio ?? Math.round(((it.horas_min + it.horas_max) / 2) * 10) / 10;
   const esFijo = it.tipo_precio === "fijo";
@@ -325,7 +330,20 @@ export default async function CotizacionDetallePage({
             <p className="text-caption text-text-secondary">
               {it.programadores?.nombre ?? "—"}
               {it.proyecto_nombre && (
-                <> · <span className="text-text-primary">{it.proyecto_nombre}</span></>
+                <>
+                  {" · "}
+                  {proyectoIdEnlace ? (
+                    <Link
+                      href={`/panel/proyectos/${proyectoIdEnlace}`}
+                      title="Ver detalle del proyecto"
+                      className="text-text-primary font-medium underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                    >
+                      {it.proyecto_nombre}
+                    </Link>
+                  ) : (
+                    <span className="text-text-primary">{it.proyecto_nombre}</span>
+                  )}
+                </>
               )}
               {" · creada "}{fmtFecha(it.created_at)}
               {" · por "}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 type Props = {
@@ -11,6 +11,9 @@ type Props = {
   footer?: React.ReactNode;
   size?: "sm" | "md" | "lg";
 };
+
+// Debe coincidir con la duración de modal-*-out en globals.css.
+const SALIDA_MS = 160;
 
 const SIZES = {
   sm: "max-w-md",
@@ -27,6 +30,25 @@ export default function Modal({
   size = "md",
 }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Se queda montado SALIDA_MS después de cerrar para animar la salida.
+  const [montado, setMontado] = useState(open);
+  const [saliendo, setSaliendo] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setMontado(true);
+      setSaliendo(false);
+      return;
+    }
+    if (!montado) return;
+    setSaliendo(true);
+    const t = setTimeout(() => {
+      setMontado(false);
+      setSaliendo(false);
+    }, SALIDA_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Mantener una ref estable al onClose para no re-ejecutar el efecto
   // cada vez que el padre re-renderiza (causaba que el modal robara el
@@ -51,16 +73,16 @@ export default function Modal({
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!montado) return null;
 
   return (
     <div
-      className="modal-backdrop-anim fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className={`modal-backdrop-anim fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 ${saliendo ? "saliendo" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
-      onClick={onClose}
-      style={{ background: "rgba(0,0,0,0.45)" }}
+      onClick={saliendo ? undefined : onClose}
+      style={{ background: "rgba(0,0,0,0.45)", pointerEvents: saliendo ? "none" : undefined }}
     >
       <div
         ref={dialogRef}

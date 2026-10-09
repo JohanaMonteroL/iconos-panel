@@ -8,6 +8,7 @@ import ColorPicker from "../ColorPicker";
 import EmojiPicker from "../EmojiPicker";
 import { COLOR_PROYECTO_DEFAULT } from "@/lib/proyectos/colores";
 import { EMOJI_PROYECTO_DEFAULT } from "@/lib/proyectos/emojis";
+import { toast } from "@/lib/toast";
 
 type ContactoDraft = { key: string; correo: string; nombre: string };
 
@@ -76,6 +77,7 @@ export default function NuevoProyectoForm() {
         setError(json.error || "No se pudo crear el proyecto");
         return;
       }
+      toast("Proyecto creado");
       router.push(`/panel/proyectos/${json.id}`);
       router.refresh();
     } catch {

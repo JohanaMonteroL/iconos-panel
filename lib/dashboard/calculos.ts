@@ -39,6 +39,10 @@ export function ultimosMeses(n: number, ahora: Date = new Date()): MesBucket[] {
 
 /** "YYYY-MM" de una fecha ISO, en la zona horaria del negocio. */
 export function claveMes(fechaISO: string): string {
+  // Una fecha sin hora ("2026-09-01", p. ej. cobros_pagos.fecha) ya es una
+  // fecha local: si se convirtiera, JS la toma como medianoche UTC y en
+  // Tijuana cae el día anterior (un pago del día 1 contaba en el mes previo).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fechaISO)) return fechaISO.slice(0, 7);
   const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: ZONA,
     year: "numeric",
@@ -47,6 +51,29 @@ export function claveMes(fechaISO: string): string {
   const anio = partes.find((p) => p.type === "year")?.value;
   const mes = partes.find((p) => p.type === "month")?.value;
   return `${anio}-${mes}`;
+}
+
+export type Moneda = "MXN" | "USD";
+export type MontosPorMoneda = { MXN: number; USD: number };
+
+/** Normaliza una moneda de la base (null/otro → MXN, que es el default). */
+export function normMoneda(m: string | null | undefined): Moneda {
+  return m === "USD" ? "USD" : "MXN";
+}
+
+export function montosVacios(): MontosPorMoneda {
+  return { MXN: 0, USD: 0 };
+}
+
+/** "$12,500" en MXN, "US$1,200" en USD — para no confundir las dos. */
+export function fmtMoneda(n: number, moneda: Moneda): string {
+  if (moneda === "MXN") return fmtMxn(n);
+  return `US$${n.toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+export function fmtMonedaCompacto(n: number, moneda: Moneda): string {
+  const mxn = fmtMxnCompacto(n);
+  return moneda === "MXN" ? mxn : `US${mxn}`;
 }
 
 export function fmtMxnCompacto(n: number): string {
@@ -69,4 +96,115 @@ export function fmtMxn(n: number): string {
 export function variacionPct(actual: number, anterior: number): number | null {
   if (anterior === 0) return actual === 0 ? null : null;
   return ((actual - anterior) / anterior) * 100;
+}
+
+export type CambioEstadoCotizacion = {
+  cotizacion_id: string;
+  estado: string;
+  estado_anterior: string | null;
+  created_at: string;
+};
+
+/**
+ * Cuántas cotizaciones estaban en `estado` (p. ej. "en_desarrollo") al
+ * cierre de cada mes. Es un conteo de "existencias", no de las creadas en el
+ * mes: una cotización creada en agosto que sigue en desarrollo en octubre
+ * cuenta en agosto, septiembre y octubre.
+ *
+ * - Mes actual: el estado de hoy (`cotizaciones[].estado`).
+ * - Meses pasados: se reconstruye con el log de cambios de estado
+ *   (acciones_cotizacion "estado_*", que registran todas las rutas que
+ *   cambian el estado). Antes del primer cambio registrado se usa su
+ *   `estado_anterior`; sin ningún cambio, el estado actual.
+ *
+ * `cotizaciones` puede no traer las archivadas: las que solo aparecen en el
+ * log se cuentan desde la fecha de su primer cambio.
+ */
+export function cotizacionesEnEstadoPorMes(
+  meses: MesBucket[],
+  cotizaciones: { id: string; estado: string; created_at: string }[],
+  cambios: CambioEstadoCotizacion[],
+  estado: string
+): Map<string, number> {
+  const resultado = new Map(meses.map((m) => [m.key, 0]));
+  if (meses.length === 0) return resultado;
+  const mesActual = meses[meses.length - 1].key;
+
+  const cambiosPorId = new Map<string, (CambioEstadoCotizacion & { key: string })[]>();
+  for (const c of cambios) {
+    const arr = cambiosPorId.get(c.cotizacion_id) ?? [];
+    arr.push({ ...c, key: claveMes(c.created_at) });
+    cambiosPorId.set(c.cotizacion_id, arr);
+  }
+  cambiosPorId.forEach((arr) => arr.sort((a, b) => a.created_at.localeCompare(b.created_at)));
+
+  const cotPorId = new Map(cotizaciones.map((c) => [c.id, c]));
+  const ids = new Set<string>([...Array.from(cotPorId.keys()), ...Array.from(cambiosPorId.keys())]);
+
+  ids.forEach((id) => {
+    const cot = cotPorId.get(id);
+    const log = cambiosPorId.get(id) ?? [];
+    const creadaKey = cot ? claveMes(cot.created_at) : log[0].key;
+
+    for (const m of meses) {
+      if (m.key < creadaKey) continue;
+      let estadoAlCierre: string | null | undefined;
+      if (m.key === mesActual && cot) {
+        estadoAlCierre = cot.estado;
+      } else {
+        const ultimo = log.filter((c) => c.key <= m.key).pop();
+        estadoAlCierre = ultimo ? ultimo.estado : log.length > 0 ? log[0].estado_anterior : cot?.estado;
+      }
+      if (estadoAlCierre === estado) resultado.set(m.key, (resultado.get(m.key) ?? 0) + 1);
+    }
+  });
+
+  return resultado;
+}
+
+/**
+ * Lo pendiente por cobrar al cierre de cada mes: por cada período que ya
+ * existía, su monto menos los pagos con fecha hasta ese mes (nunca
+ * negativo). Como "en desarrollo", es un saldo y no un flujo: un período de
+ * agosto que sigue sin pagarse cuenta en agosto, septiembre y octubre.
+ * En el mes actual cuentan todos los pagos registrados (= lo que se debe hoy).
+ *
+ * Los montos se separan por moneda del período (MXN y USD no se suman).
+ * `periodos` = cuántos períodos tenían saldo pendiente.
+ */
+export function pendientePorCobrarPorMes(
+  meses: MesBucket[],
+  periodos: { id: string; monto: number; moneda?: string | null; created_at: string }[],
+  pagos: { periodo_id: string; monto: number; fecha: string }[]
+): Map<string, { montos: MontosPorMoneda; periodos: number }> {
+  const resultado = new Map(meses.map((m) => [m.key, { montos: montosVacios(), periodos: 0 }]));
+  if (meses.length === 0) return resultado;
+  const mesActual = meses[meses.length - 1].key;
+
+  const pagosPorPeriodo = new Map<string, { monto: number; key: string }[]>();
+  for (const pg of pagos) {
+    const arr = pagosPorPeriodo.get(pg.periodo_id) ?? [];
+    arr.push({ monto: pg.monto, key: claveMes(pg.fecha) });
+    pagosPorPeriodo.set(pg.periodo_id, arr);
+  }
+
+  for (const per of periodos) {
+    const creadoKey = claveMes(per.created_at);
+    const moneda = normMoneda(per.moneda);
+    const pagosPer = pagosPorPeriodo.get(per.id) ?? [];
+    for (const m of meses) {
+      if (m.key < creadoKey) continue;
+      const pagado = pagosPer
+        .filter((pg) => m.key === mesActual || pg.key <= m.key)
+        .reduce((acc, pg) => acc + pg.monto, 0);
+      const pendiente = per.monto - pagado;
+      if (pendiente > 0.005) {
+        const b = resultado.get(m.key)!;
+        b.montos[moneda] += pendiente;
+        b.periodos += 1;
+      }
+    }
+  }
+
+  return resultado;
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 export default function NuevoProgramadorForm() {
   const router = useRouter();
@@ -43,6 +44,7 @@ export default function NuevoProgramadorForm() {
       }
       reset();
       setOpen(false);
+      toast("Programador agregado");
       router.refresh();
     } catch {
       setError("Error de red");

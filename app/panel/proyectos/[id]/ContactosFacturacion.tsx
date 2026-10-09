@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Plus, X } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 export type ContactoFacturacion = {
   id: string;
@@ -44,6 +45,7 @@ export default function ContactosFacturacion({
       setContactos((prev) => [...prev, json.item]);
       setCorreo("");
       setNombre("");
+      toast("Correo agregado");
       router.refresh();
     } catch {
       setError("Error de red");
@@ -67,6 +69,7 @@ export default function ContactosFacturacion({
         setError(json.error || "No se pudo quitar el correo");
         return;
       }
+      toast("Correo quitado");
       router.refresh();
     } catch {
       setContactos(previos);

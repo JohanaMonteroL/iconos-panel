@@ -1,17 +1,20 @@
 "use client";
 
 // Tablero kanban con drag & drop: arrastrar una tarjeta a otra columna
-// llama a /api/cobros/periodos/[id]/cambiar-estado — mismo patrón exacto
-// que TableroCotizaciones.tsx (que sigue manejando el tablero de
-// Cotizaciones, sin tocar).
+// llama a /api/cobros/periodos/[id]/cambiar-estado, y soltarla más arriba
+// o más abajo guarda su posición en el carril (/reordenar). La lógica de
+// arrastre se comparte con TableroCotizaciones.tsx en
+// lib/tableros/useTableroKanban.ts.
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useTableroKanban } from "@/lib/tableros/useTableroKanban";
+import LineaInsercion from "@/components/ui/LineaInsercion";
 import { labelEstadoPeriodo, colorHexEstadoPeriodo, labelOrigenCobro } from "@/lib/estados/cobros";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { textoContrastante } from "@/lib/proyectos/colores";
-import { estadoFactura } from "@/lib/cobros/calculos";
+import { estadoFactura, montoPagado } from "@/lib/cobros/calculos";
+import BarraCobro from "@/components/ui/BarraCobro";
+import { fmtMoneda, normMoneda } from "@/lib/dashboard/calculos";
 import { FileCheck2, FileWarning, ExternalLink } from "lucide-react";
 
 type Row = {
@@ -28,15 +31,11 @@ type Row = {
   cotizacion_id: string | null;
   factura_pdf_path: string | null;
   factura_xml_path: string | null;
+  pagos?: { monto: number }[];
 };
 
 function fmtMonto(n: number, moneda: string): string {
-  return n.toLocaleString("es-MX", {
-    style: "currency",
-    currency: moneda === "USD" ? "USD" : "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
+  return fmtMoneda(n, normMoneda(moneda));
 }
 
 export default function TableroCobros({
@@ -45,69 +44,32 @@ export default function TableroCobros({
   coloresProyecto = {},
   emojisProyecto = {},
   nombresProyecto = {},
+  reordenable = true,
 }: {
   columnas: string[];
   itemsIniciales: Row[];
   coloresProyecto?: Record<string, string>;
   emojisProyecto?: Record<string, string>;
   nombresProyecto?: Record<string, string>;
+  // false cuando hay un "Ordenar por" activo: el orden manual no aplica.
+  reordenable?: boolean;
 }) {
-  const router = useRouter();
-  const [items, setItems] = useState(itemsIniciales);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overEstado, setOverEstado] = useState<string | null>(null);
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
-
-  const porEstado = useMemo(() => {
-    const map = new Map<string, Row[]>();
-    for (const e of columnas) map.set(e, []);
-    for (const it of items) {
-      if (!map.has(it.estado)) map.set(it.estado, []);
-      map.get(it.estado)!.push(it);
-    }
-    return map;
-  }, [items, columnas]);
-
-  async function moverA(id: string, nuevoEstado: string) {
-    const actual = items.find((it) => it.id === id);
-    if (!actual || actual.estado === nuevoEstado) return;
-
-    setError(null);
-    const estadoAnterior = actual.estado;
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: nuevoEstado } : it)));
-    setPendingIds((prev) => new Set(prev).add(id));
-
-    try {
-      const res = await fetch(`/api/cobros/periodos/${id}/cambiar-estado`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estado: nuevoEstado }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: estadoAnterior } : it)));
-        setError(data?.error || "No se pudo cambiar el estado.");
-        return;
-      }
-      router.refresh();
-    } catch {
-      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, estado: estadoAnterior } : it)));
-      setError("No se pudo cambiar el estado (sin conexión).");
-    } finally {
-      setPendingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  }
+  const { porEstado, error, setError, carrilActivo, propsCarril, propsTarjeta, lineaEn, carrilVacioActivo } = useTableroKanban({
+    columnas,
+    itemsIniciales,
+    rutaApi: (id) => `/api/cobros/periodos/${id}`,
+    reordenable,
+    mensajeMovido: (estado, r, it) =>
+      r?.pagoAutomatico
+        ? `Movido a ${labelEstadoPeriodo(estado)} · pago de ${fmtMonto(r.pagoAutomatico, it.moneda)} registrado`
+        : `Movido a ${labelEstadoPeriodo(estado)}`,
+  });
 
   return (
     <div className="space-y-3">
       {error && (
         <div
-          className="rounded-[9px] border px-3 py-2 text-caption"
+          className="banner-anim rounded-[9px] border px-3 py-2 text-caption"
           style={{ borderColor: "#FEE2E2", background: "#FEF2F2", color: "#DC2626" }}
         >
           {error}{" "}
@@ -123,34 +85,36 @@ export default function TableroCobros({
       )}
 
       <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3.5" style={{ minWidth: "max-content" }}>
+        {/* Los carriles se reparten todo el ancho (flex 1) sin bajar de 268px;
+            en pantallas angostas el tablero hace scroll horizontal. */}
+        <div className="escalonado flex gap-3.5">
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
-            const totalColumna = cards.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
-            const isOver = overEstado === estado;
+            // Total por moneda: MXN y USD no se suman entre sí.
+            const totalMoneda = (m: "MXN" | "USD") =>
+              cards
+                .filter((it) => (it.moneda === "USD" ? "USD" : "MXN") === m)
+                .reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
+            const totalMxn = totalMoneda("MXN");
+            const totalUsd = totalMoneda("USD");
+            const isOver = carrilActivo === estado;
             return (
               <div
                 key={estado}
-                className="shrink-0 rounded-[14px] border p-[11px]"
+                className="rounded-[14px] border p-[11px]"
                 style={{
-                  width: 268,
+                  flex: "1 1 0",
+                  minWidth: 268,
                   background: isOver ? "var(--bg-overlay)" : "var(--bg-surface)",
                   borderColor: isOver ? "var(--accent)" : "var(--border-subtle)",
                   transition: "background 120ms ease, border-color 120ms ease",
                 }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (overEstado !== estado) setOverEstado(estado);
-                }}
-                onDragLeave={() => setOverEstado((cur) => (cur === estado ? null : cur))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setOverEstado(null);
-                  const id = e.dataTransfer.getData("text/plain");
-                  if (id) moverA(id, estado);
-                }}
+                {...propsCarril(estado)}
               >
-                <div className="flex items-center gap-2 px-[5px] pb-[11px]">
+                <div
+                  className="flex items-center gap-2 px-[5px]"
+                  style={{ paddingBottom: totalMxn > 0 && totalUsd > 0 ? 6 : 11 }}
+                >
                   <span
                     style={{
                       width: 8,
@@ -164,18 +128,31 @@ export default function TableroCobros({
                     {labelEstadoPeriodo(estado)}
                   </span>
                   <span className="text-caption text-text-tertiary num-tabular">{cards.length}</span>
-                  {totalColumna > 0 && (
-                    <span className="badge badge-neutral num-tabular">{fmtMonto(totalColumna, "MXN")}</span>
+                  {/* Con una sola moneda el total va en la misma línea; con
+                      las dos, abajo, para no cortar el nombre del carril. */}
+                  {!(totalMxn > 0 && totalUsd > 0) && (totalMxn > 0 || totalUsd > 0) && (
+                    <span className="badge badge-neutral num-tabular">
+                      {totalUsd > 0 ? fmtMoneda(totalUsd, "USD") : fmtMonto(totalMxn, "MXN")}
+                    </span>
                   )}
                 </div>
+                {totalMxn > 0 && totalUsd > 0 && (
+                  <div className="flex items-center gap-1.5 px-[5px] pb-[11px] pl-[21px]">
+                    <span className="badge badge-neutral num-tabular">{fmtMonto(totalMxn, "MXN")}</span>
+                    <span className="badge badge-neutral num-tabular">{fmtMoneda(totalUsd, "USD")}</span>
+                  </div>
+                )}
 
                 <div className="flex flex-col gap-[9px]">
                   {cards.length === 0 ? (
                     <div
-                      className="rounded-[12px] p-4 text-caption text-text-tertiary text-center"
-                      style={{ border: "1px dashed var(--border-default)" }}
+                      className="rounded-[12px] p-4 text-caption text-center"
+                      style={{
+                        border: carrilVacioActivo(estado) ? "2px dashed var(--accent)" : "1px dashed var(--border-default)",
+                        color: carrilVacioActivo(estado) ? "var(--accent)" : "var(--text-tertiary)",
+                      }}
                     >
-                      Sin períodos
+                      {carrilVacioActivo(estado) ? "Soltar aquí" : "Sin períodos"}
                     </div>
                   ) : (
                     cards.map((it) => (
@@ -185,17 +162,8 @@ export default function TableroCobros({
                         colorProyecto={it.proyecto_id ? coloresProyecto[it.proyecto_id] : undefined}
                         emojiProyecto={it.proyecto_id ? emojisProyecto[it.proyecto_id] : undefined}
                         nombreProyecto={it.proyecto_id ? nombresProyecto[it.proyecto_id] : undefined}
-                        dragging={dragId === it.id}
-                        pending={pendingIds.has(it.id)}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", it.id);
-                          e.dataTransfer.effectAllowed = "move";
-                          setDragId(it.id);
-                        }}
-                        onDragEnd={() => {
-                          setDragId(null);
-                          setOverEstado(null);
-                        }}
+                        {...propsTarjeta(it.id)}
+                        linea={lineaEn(estado, it.id)}
                       />
                     ))
                   )}
@@ -216,8 +184,11 @@ function TarjetaPeriodo({
   nombreProyecto,
   dragging,
   pending,
+  soltada,
+  linea,
   onDragStart,
   onDragEnd,
+  ...rest
 }: {
   it: Row;
   colorProyecto?: string;
@@ -225,6 +196,9 @@ function TarjetaPeriodo({
   nombreProyecto?: string;
   dragging: boolean;
   pending: boolean;
+  soltada: boolean;
+  linea: "arriba" | "abajo" | null;
+  "data-tarjeta-id": string;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
@@ -233,18 +207,20 @@ function TarjetaPeriodo({
   return (
     <div
       draggable
+      data-tarjeta-id={rest["data-tarjeta-id"]}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="kanban-card relative rounded-[12px] border p-3"
+      className={`kanban-card relative rounded-[12px] border p-3 ${dragging ? "kanban-card-arrastrando" : ""} ${soltada ? "kanban-card-soltada" : ""}`}
       style={{
         background: "var(--bg-elevated)",
         borderColor: "var(--border-default)",
         boxShadow: "var(--shadow-sm)",
         cursor: pending ? "wait" : "grab",
-        opacity: dragging || pending ? 0.5 : 1,
+        opacity: pending && !soltada ? 0.6 : undefined,
         transition: "box-shadow 180ms ease, transform 180ms ease, opacity 120ms ease",
       }}
     >
+      {linea && <LineaInsercion posicion={linea} />}
       <Link href={`/panel/cobros/${it.id}`} className="block space-y-0" draggable={false}>
         <div className="flex items-start justify-between gap-2">
           <span className="text-body-medium break-words flex-1 min-w-0" style={{ fontSize: 15, lineHeight: 1.35 }}>
@@ -289,6 +265,10 @@ function TarjetaPeriodo({
           <span className="num-tabular" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>
             {fmtMonto(Number(it.monto) || 0, it.moneda)}
           </span>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <BarraCobro pagado={montoPagado(it.pagos ?? [])} total={Number(it.monto) || 0} moneda={it.moneda} />
         </div>
 
         <div
