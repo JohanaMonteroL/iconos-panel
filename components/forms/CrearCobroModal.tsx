@@ -1,7 +1,7 @@
 "use client";
 
 // Alta manual de un Cobro — sin pasar por una cotización. Desarrollo crea
-// el Cobro + su primer Período ("Pago único"); Soporte agrega un Período al
+// el Cobro + su primer Período (con el nombre capturado); Soporte agrega un Período al
 // cobro de soporte del proyecto (ver POST /api/cobros). En ambos casos
 // manda a Johana directo a la ficha del período, donde ya puede dividir en
 // parcialidades, subir factura o registrar pagos.

@@ -238,9 +238,15 @@ function TarjetaPeriodo({
           </span>
         </div>
 
-        <p className="text-caption text-text-tertiary truncate" style={{ margin: "2px 0 8px" }}>
-          {it.titulo}
-        </p>
+        {/* El nombre del cobro solo si es distinto del período (en cobros
+            creados a mano el período lleva el mismo nombre). */}
+        {it.titulo && it.titulo.trim() !== it.etiqueta.trim() ? (
+          <p className="text-caption text-text-tertiary truncate" style={{ margin: "2px 0 8px" }}>
+            {it.titulo}
+          </p>
+        ) : (
+          <div style={{ height: 8 }} />
+        )}
 
         {nombreProyecto && (
           <div style={{ margin: "4px 0 10px" }}>

@@ -1,7 +1,7 @@
 // POST /api/cobros — alta manual de un Cobro (sin cotización de por medio).
 //
 // origen "desarrollo" (default): crea el Cobro (sin cotizacion_id) y su
-// primer Período ("Pago único"), listo_para_cobrar — desde ahí ya se puede
+// primer Período con el nombre capturado, listo_para_cobrar — desde ahí ya se puede
 // dividir en parcialidades, subir factura, registrar pagos, etc. igual que
 // cualquier otro Cobro (mismas tablas, mismo flujo).
 //
@@ -187,7 +187,9 @@ export async function POST(req: NextRequest) {
     .insert({
       cobro_id: nuevoCobro.id,
       estado: "listo_para_cobrar",
-      etiqueta: "Pago único",
+      // El período lleva el nombre que capturó Johana (antes "Pago único").
+      // Si después se divide en parcialidades, éstas se renombran solas.
+      etiqueta: titulo,
       monto,
       moneda,
     })
