@@ -1,14 +1,12 @@
 // Barra de progreso de cobro de un período: cuánto se ha pagado del monto.
 // Se usa en la tarjeta del tablero de Cobros y en el detalle del período.
+// Montos con fmtMoneda ("$" MXN / "US$" USD, igual que el resto del panel).
 // Color: gris sin pagos, acento con abonos parciales, verde al 100%.
 
+import { fmtMoneda, normMoneda } from "@/lib/dashboard/calculos";
+
 function fmt(n: number, moneda: string): string {
-  return n.toLocaleString("es-MX", {
-    style: "currency",
-    currency: moneda === "USD" ? "USD" : "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
+  return fmtMoneda(n, normMoneda(moneda));
 }
 
 function porcentajeCobrado(pagado: number, total: number): number {

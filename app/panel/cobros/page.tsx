@@ -4,6 +4,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { ORDEN_FLUJO_COBRO_PERIODO } from "@/lib/estados/cobros";
 import { rangoRapidoAFechas } from "@/lib/dates";
 import { montoPagado, pendientePeriodo, estadoFactura } from "@/lib/cobros/calculos";
+import { fmtMoneda, normMoneda, type Moneda } from "@/lib/dashboard/calculos";
 import TableroCobros from "./TableroCobros";
 import FiltrosCobros from "./FiltrosCobros";
 import CrearCobroModal from "@/components/forms/CrearCobroModal";
@@ -177,15 +178,6 @@ async function getDatosParaCrear(): Promise<{
   };
 }
 
-function fmtMxn(n: number): string {
-  return n.toLocaleString("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-}
-
 // Variación vs. el mes pasado — siempre comparando el mes calendario en
 // curso contra el mes calendario anterior (independiente del filtro de
 // fecha que la usuaria haya elegido en la página), para que el badge de
@@ -276,17 +268,35 @@ export default async function CobrosPage({
   const itemsMesActual = itemsSinFiltroFecha.filter((it) => enRango(it, desdeMesActual, hastaMesActual));
   const itemsMesPasado = itemsSinFiltroFecha.filter((it) => enRango(it, desdeMesPasado, hastaMesPasado));
 
-  const sumaPendiente = (arr: Row[]) => arr.reduce((acc, it) => acc + pendientePeriodo(it, it.pagos), 0);
-  const sumaCobrado = (arr: Row[]) => arr.reduce((acc, it) => acc + montoPagado(it.pagos), 0);
+  // MXN y USD nunca se suman: cada monto se calcula por moneda del período.
+  // La moneda "principal" es MXN, salvo que lo filtrado sea solo USD.
+  const deMoneda = (arr: Row[], m: Moneda) => arr.filter((it) => normMoneda(it.moneda) === m);
+  const sumaPendiente = (arr: Row[], m: Moneda) =>
+    deMoneda(arr, m).reduce((acc, it) => acc + pendientePeriodo(it, it.pagos), 0);
+  const sumaCobrado = (arr: Row[], m: Moneda) =>
+    deMoneda(arr, m).reduce((acc, it) => acc + montoPagado(it.pagos), 0);
+  const sumaMonto = (arr: Row[], m: Moneda) =>
+    deMoneda(arr, m).reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
 
-  const pendienteTotal = sumaPendiente(items);
-  const deltaPendiente = calcularDelta(sumaPendiente(itemsMesActual), sumaPendiente(itemsMesPasado));
+  const hayMxn = deMoneda(items, "MXN").length > 0;
+  const hayUsd = deMoneda(items, "USD").length > 0;
+  const principal: Moneda = !hayMxn && hayUsd ? "USD" : "MXN";
+  const secundaria: Moneda | null = principal === "MXN" && hayUsd ? "USD" : null;
 
-  const cobradoTotal = sumaCobrado(items);
-  const deltaCobrado = calcularDelta(sumaCobrado(itemsMesActual), sumaCobrado(itemsMesPasado));
+  const pendienteTotal = sumaPendiente(items, principal);
+  const deltaPendiente = calcularDelta(
+    sumaPendiente(itemsMesActual, principal),
+    sumaPendiente(itemsMesPasado, principal)
+  );
 
-  const montoTotalFiltrado = items.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
-  const tasaCobro = montoTotalFiltrado > 0 ? (cobradoTotal / montoTotalFiltrado) * 100 : 0;
+  const cobradoTotal = sumaCobrado(items, principal);
+  const deltaCobrado = calcularDelta(sumaCobrado(itemsMesActual, principal), sumaCobrado(itemsMesPasado, principal));
+
+  const tasa = (m: Moneda) => {
+    const total = sumaMonto(items, m);
+    return total > 0 ? (sumaCobrado(items, m) / total) * 100 : 0;
+  };
+  const tasaCobro = tasa(principal);
 
   const sinFacturaCompleta = items.filter((it) => estadoFactura(it) !== "completa").length;
 
@@ -297,11 +307,14 @@ export default async function CobrosPage({
     iconBg: string;
     iconFg: string;
     sub?: string;
+    // Línea secundaria con el monto en la otra moneda ("+ US$1,200").
+    extra?: string;
     delta?: { texto: string; tono: "up" | "down" | "neutral" };
   }[] = [
     {
       label: "Pendiente por cobrar",
-      value: fmtMxn(pendienteTotal),
+      value: fmtMoneda(pendienteTotal, principal),
+      extra: secundaria ? `+ ${fmtMoneda(sumaPendiente(items, secundaria), secundaria)}` : undefined,
       icon: Landmark,
       iconBg: "#FEF3C7",
       iconFg: "#B45309",
@@ -309,7 +322,8 @@ export default async function CobrosPage({
     },
     {
       label: "Total cobrado",
-      value: fmtMxn(cobradoTotal),
+      value: fmtMoneda(cobradoTotal, principal),
+      extra: secundaria ? `+ ${fmtMoneda(sumaCobrado(items, secundaria), secundaria)}` : undefined,
       icon: CheckCircle2,
       iconBg: "#DCFCE7",
       iconFg: "#15803D",
@@ -321,7 +335,9 @@ export default async function CobrosPage({
       icon: Percent,
       iconBg: "#DBEAFE",
       iconFg: "#1D4ED8",
-      sub: "cobrado / monto total filtrado",
+      sub: secundaria
+        ? `cobrado / monto total · en ${secundaria}: ${tasa(secundaria).toFixed(0)}%`
+        : "cobrado / monto total filtrado",
     },
     {
       label: "Sin factura completa",
@@ -369,6 +385,11 @@ export default async function CobrosPage({
               >
                 {k.value}
               </div>
+              {k.extra && (
+                <div className="num-tabular" style={{ fontSize: 15, fontWeight: 600, marginTop: 4, color: "var(--text-secondary)" }}>
+                  {k.extra}
+                </div>
+              )}
               {(k.delta || k.sub) && (
                 <div
                   className="text-caption"

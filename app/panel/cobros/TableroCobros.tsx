@@ -14,6 +14,7 @@ import { formatFechaCorta as fmtFecha } from "@/lib/dates";
 import { textoContrastante } from "@/lib/proyectos/colores";
 import { estadoFactura, montoPagado } from "@/lib/cobros/calculos";
 import BarraCobro from "@/components/ui/BarraCobro";
+import { fmtMoneda, normMoneda } from "@/lib/dashboard/calculos";
 import { FileCheck2, FileWarning, ExternalLink } from "lucide-react";
 
 type Row = {
@@ -34,12 +35,7 @@ type Row = {
 };
 
 function fmtMonto(n: number, moneda: string): string {
-  return n.toLocaleString("es-MX", {
-    style: "currency",
-    currency: moneda === "USD" ? "USD" : "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
+  return fmtMoneda(n, normMoneda(moneda));
 }
 
 export default function TableroCobros({
@@ -92,7 +88,13 @@ export default function TableroCobros({
         <div className="escalonado flex gap-3.5" style={{ minWidth: "max-content" }}>
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
-            const totalColumna = cards.reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
+            // Total por moneda: MXN y USD no se suman entre sí.
+            const totalMoneda = (m: "MXN" | "USD") =>
+              cards
+                .filter((it) => (it.moneda === "USD" ? "USD" : "MXN") === m)
+                .reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
+            const totalMxn = totalMoneda("MXN");
+            const totalUsd = totalMoneda("USD");
             const isOver = carrilActivo === estado;
             return (
               <div
@@ -106,7 +108,10 @@ export default function TableroCobros({
                 }}
                 {...propsCarril(estado)}
               >
-                <div className="flex items-center gap-2 px-[5px] pb-[11px]">
+                <div
+                  className="flex items-center gap-2 px-[5px]"
+                  style={{ paddingBottom: totalMxn > 0 && totalUsd > 0 ? 6 : 11 }}
+                >
                   <span
                     style={{
                       width: 8,
@@ -120,10 +125,20 @@ export default function TableroCobros({
                     {labelEstadoPeriodo(estado)}
                   </span>
                   <span className="text-caption text-text-tertiary num-tabular">{cards.length}</span>
-                  {totalColumna > 0 && (
-                    <span className="badge badge-neutral num-tabular">{fmtMonto(totalColumna, "MXN")}</span>
+                  {/* Con una sola moneda el total va en la misma línea; con
+                      las dos, abajo, para no cortar el nombre del carril. */}
+                  {!(totalMxn > 0 && totalUsd > 0) && (totalMxn > 0 || totalUsd > 0) && (
+                    <span className="badge badge-neutral num-tabular">
+                      {totalUsd > 0 ? fmtMoneda(totalUsd, "USD") : fmtMonto(totalMxn, "MXN")}
+                    </span>
                   )}
                 </div>
+                {totalMxn > 0 && totalUsd > 0 && (
+                  <div className="flex items-center gap-1.5 px-[5px] pb-[11px] pl-[21px]">
+                    <span className="badge badge-neutral num-tabular">{fmtMonto(totalMxn, "MXN")}</span>
+                    <span className="badge badge-neutral num-tabular">{fmtMoneda(totalUsd, "USD")}</span>
+                  </div>
+                )}
 
                 <div className="flex flex-col gap-[9px]">
                   {cards.length === 0 ? (
