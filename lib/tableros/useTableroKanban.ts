@@ -196,6 +196,13 @@ export function useTableroKanban<T extends Item>({
     return null;
   }
 
+  // true si se está arrastrando sobre un carril sin otras tarjetas: el
+  // placeholder "Sin ..." se resalta como zona donde caerá.
+  function carrilVacioActivo(estado: string): boolean {
+    if (!dragId || destino?.estado !== estado) return false;
+    return (porEstado.get(estado) ?? []).every((it) => it.id === dragId);
+  }
+
   return {
     items,
     porEstado,
@@ -205,5 +212,6 @@ export function useTableroKanban<T extends Item>({
     propsCarril,
     propsTarjeta,
     lineaEn,
+    carrilVacioActivo,
   };
 }

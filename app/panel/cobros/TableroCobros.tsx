@@ -56,7 +56,7 @@ export default function TableroCobros({
   // false cuando hay un "Ordenar por" activo: el orden manual no aplica.
   reordenable?: boolean;
 }) {
-  const { porEstado, error, setError, carrilActivo, propsCarril, propsTarjeta, lineaEn } = useTableroKanban({
+  const { porEstado, error, setError, carrilActivo, propsCarril, propsTarjeta, lineaEn, carrilVacioActivo } = useTableroKanban({
     columnas,
     itemsIniciales,
     rutaApi: (id) => `/api/cobros/periodos/${id}`,
@@ -122,10 +122,13 @@ export default function TableroCobros({
                 <div className="flex flex-col gap-[9px]">
                   {cards.length === 0 ? (
                     <div
-                      className="rounded-[12px] p-4 text-caption text-text-tertiary text-center"
-                      style={{ border: "1px dashed var(--border-default)" }}
+                      className="rounded-[12px] p-4 text-caption text-center"
+                      style={{
+                        border: carrilVacioActivo(estado) ? "2px dashed var(--accent)" : "1px dashed var(--border-default)",
+                        color: carrilVacioActivo(estado) ? "var(--accent)" : "var(--text-tertiary)",
+                      }}
                     >
-                      Sin períodos
+                      {carrilVacioActivo(estado) ? "Soltar aquí" : "Sin períodos"}
                     </div>
                   ) : (
                     cards.map((it) => (
