@@ -85,7 +85,9 @@ export default function TableroCobros({
       )}
 
       <div className="overflow-x-auto pb-2">
-        <div className="escalonado flex gap-3.5" style={{ minWidth: "max-content" }}>
+        {/* Los carriles se reparten todo el ancho (flex 1) sin bajar de 268px;
+            en pantallas angostas el tablero hace scroll horizontal. */}
+        <div className="escalonado flex gap-3.5">
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];
             // Total por moneda: MXN y USD no se suman entre sí.
@@ -99,9 +101,10 @@ export default function TableroCobros({
             return (
               <div
                 key={estado}
-                className="shrink-0 rounded-[14px] border p-[11px]"
+                className="rounded-[14px] border p-[11px]"
                 style={{
-                  width: 268,
+                  flex: "1 1 0",
+                  minWidth: 268,
                   background: isOver ? "var(--bg-overlay)" : "var(--bg-surface)",
                   borderColor: isOver ? "var(--accent)" : "var(--border-subtle)",
                   transition: "background 120ms ease, border-color 120ms ease",
