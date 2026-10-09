@@ -1,7 +1,8 @@
 // Línea que marca dónde caerá la tarjeta al soltarla en un tablero kanban.
 // Va posicionada en absoluto dentro de la tarjeta vecina (padre `relative`)
 // para no mover el layout del carril mientras se arrastra: centrada en el
-// hueco de 9px entre tarjetas, con un punto en cada extremo.
+// hueco de 9px entre tarjetas, con un punto en cada extremo. Color sólido
+// --accent, el mismo morado del indicador del menú (.nav-item-active).
 
 export default function LineaInsercion({ posicion }: { posicion: "arriba" | "abajo" }) {
   const punto: React.CSSProperties = {
@@ -10,8 +11,7 @@ export default function LineaInsercion({ posicion }: { posicion: "arriba" | "aba
     width: 10,
     height: 10,
     borderRadius: "50%",
-    border: "2px solid var(--accent)",
-    background: "var(--bg-surface)",
+    background: "var(--accent)",
   };
   return (
     <div
@@ -25,7 +25,6 @@ export default function LineaInsercion({ posicion }: { posicion: "arriba" | "aba
         height: 4,
         borderRadius: 2,
         background: "var(--accent)",
-        boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)",
         pointerEvents: "none",
         zIndex: 2,
       }}
