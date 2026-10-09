@@ -14,6 +14,14 @@ export function montoPagado(pagos: PagoCalc[]): number {
   return pagos.reduce((acc, p) => acc + Number(p.monto || 0), 0);
 }
 
+/**
+ * Nota con la que se marca el pago que se registra solo al mover un período
+ * a "facturado" (por lo que faltaba pagar). Sirve para identificarlo y
+ * borrarlo si el período sale de "facturado". Ver
+ * app/api/cobros/periodos/[id]/cambiar-estado/route.ts.
+ */
+export const NOTA_PAGO_AUTOMATICO = "Registrado automáticamente al mover a Facturado";
+
 /** Lo que falta por pagar de un período (nunca negativo). */
 export function pendientePeriodo(periodo: PeriodoCalc, pagos: PagoCalc[]): number {
   const pendiente = Number(periodo.monto || 0) - montoPagado(pagos);

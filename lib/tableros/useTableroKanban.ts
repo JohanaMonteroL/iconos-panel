@@ -8,7 +8,7 @@
 //
 // Actualiza la UI de inmediato y revierte si la API rechaza el cambio.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import { useRouter } from "next/navigation";
 
@@ -36,6 +36,14 @@ export function useTableroKanban<T extends Item>({
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
+  // Tras router.refresh() el server manda datos nuevos (p. ej. el pago
+  // automático al pasar a Facturado): se adoptan si no hay un movimiento en
+  // curso, para no pisar el estado optimista.
+  useEffect(() => {
+    if (pendingIds.size === 0) setItems(itemsIniciales);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsIniciales]);
+
   const porEstado = useMemo(() => {
     const map = new Map<string, T[]>();
     for (const e of columnas) map.set(e, []);
@@ -58,6 +66,9 @@ export function useTableroKanban<T extends Item>({
     return index;
   }
 
+  // null si salió bien; si no, el mensaje de error. Un `aviso` en una
+  // respuesta OK (el cambio se guardó pero algo secundario falló) se
+  // muestra igual en el banner.
   async function post(url: string, body: unknown): Promise<string | null> {
     try {
       const res = await fetch(url, {
@@ -65,8 +76,11 @@ export function useTableroKanban<T extends Item>({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) return null;
       const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (data?.aviso) setError(data.aviso);
+        return null;
+      }
       return data?.error || "No se pudo guardar el cambio.";
     } catch {
       return "No se pudo guardar el cambio (sin conexión).";
