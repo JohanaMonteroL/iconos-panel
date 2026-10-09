@@ -25,7 +25,7 @@ type Row = {
   factura_pdf_path: string | null;
   factura_xml_path: string | null;
   pagos: { monto: number }[];
-  orden: number | null;
+  orden_tablero: number | null;
 };
 
 function relationMissing(message: string | undefined | null): boolean {
@@ -38,7 +38,7 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
   const supa = createSupabaseServiceClient();
 
   const selConPagos =
-    "id, estado, orden, etiqueta, monto, moneda, created_at, factura_pdf_path, factura_xml_path, cobro_id, cobros(origen, titulo, proyecto_id, cotizacion_id), cobros_pagos(monto)";
+    "id, estado, orden_tablero, etiqueta, monto, moneda, created_at, factura_pdf_path, factura_xml_path, cobro_id, cobros(origen, titulo, proyecto_id, cotizacion_id), cobros_pagos(monto)";
   const selSinPagos = selConPagos.replace(", cobros_pagos(monto)", "");
 
   let { data, error }: { data: any; error: any } = await supa
@@ -49,16 +49,16 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
   if (error && relationMissing(error.message) && /cobros_pagos/i.test(error.message ?? "")) {
     ({ data, error } = await supa.from("cobros_periodos").select(selSinPagos).order("created_at", { ascending: false }));
   }
-  // Sin la migración 0028 no existe `orden`: se cae al orden por fecha.
-  if (error && /\borden\b/i.test(error.message ?? "")) {
+  // Sin la migración 0028 no existe `orden_tablero`: se cae al orden por fecha.
+  if (error && /orden_tablero/i.test(error.message ?? "")) {
     ({ data, error } = await supa
       .from("cobros_periodos")
-      .select(selConPagos.replace(", orden", ""))
+      .select(selConPagos.replace(", orden_tablero", ""))
       .order("created_at", { ascending: false }));
     if (error && relationMissing(error.message) && /cobros_pagos/i.test(error.message ?? "")) {
       ({ data, error } = await supa
         .from("cobros_periodos")
-        .select(selSinPagos.replace(", orden", ""))
+        .select(selSinPagos.replace(", orden_tablero", ""))
         .order("created_at", { ascending: false }));
     }
   }
@@ -88,7 +88,7 @@ async function getPeriodos(): Promise<{ items: Row[]; migracionPendiente: boolea
       factura_pdf_path: r.factura_pdf_path,
       factura_xml_path: r.factura_xml_path,
       pagos: ((r.cobros_pagos ?? []) as any[]).map((p) => ({ monto: Number(p.monto) || 0 })),
-      orden: r.orden ?? null,
+      orden_tablero: r.orden_tablero ?? null,
     };
   });
 
@@ -230,8 +230,8 @@ export default async function CobrosPage({
       if (orden === "monto") return b.monto - a.monto;
       // Orden manual del tablero (default); empates y ambientes sin la
       // migración 0028 caen a más reciente primero.
-      if (orden !== "reciente" && a.orden != null && b.orden != null && a.orden !== b.orden) {
-        return a.orden - b.orden;
+      if (orden !== "reciente" && a.orden_tablero != null && b.orden_tablero != null && a.orden_tablero !== b.orden_tablero) {
+        return a.orden_tablero - b.orden_tablero;
       }
       const porFecha = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       // Desempate por id: mismo criterio que lib/tableros/orden.ts.

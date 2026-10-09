@@ -3,16 +3,19 @@
 //
 // El cliente manda las vecinas que quedan arriba (`antesId`) y abajo
 // (`despuesId`) de la tarjeta ya en su carril final, y aquí se calcula el
-// nuevo `orden`. Normalmente es el punto medio de las vecinas (1 UPDATE);
+// nuevo `orden_tablero`. Normalmente es el punto medio de las vecinas (1 UPDATE);
 // si no hay hueco (empates heredados del backfill o tras muchas
 // bisecciones en el mismo sitio) se renumera el carril completo.
+//
+// Columna `orden_tablero` (no `orden`: en cobros_periodos `orden` es la
+// secuencia del período dentro de su cobro).
 
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
 type Supa = ReturnType<typeof createSupabaseServiceClient>;
 export type TablaTablero = "cotizaciones" | "cobros_periodos";
 
-type Fila = { id: string; estado: string; orden: number };
+type Fila = { id: string; estado: string; orden_tablero: number };
 
 export class ErrorOrden extends Error {
   constructor(message: string, public status: number) {
@@ -35,7 +38,7 @@ export async function reordenarEnCarril(
   if (id === antesId || id === despuesId) throw new ErrorOrden("Vecinas inválidas", 422);
 
   const ids = [id, antesId, despuesId].filter((x): x is string => !!x);
-  const { data, error } = await supa.from(tabla).select("id, estado, orden").in("id", ids);
+  const { data, error } = await supa.from(tabla).select("id, estado, orden_tablero").in("id", ids);
   if (error) throw new ErrorOrden(error.message, 500);
 
   const filas = new Map(((data ?? []) as Fila[]).map((f) => [f.id, f]));
@@ -52,18 +55,18 @@ export async function reordenarEnCarril(
 
   let nuevo: number | null = null;
   if (antes && despues) {
-    const medio = (antes.orden + despues.orden) / 2;
-    if (antes.orden < medio && medio < despues.orden) nuevo = medio;
+    const medio = (antes.orden_tablero + despues.orden_tablero) / 2;
+    if (antes.orden_tablero < medio && medio < despues.orden_tablero) nuevo = medio;
   } else if (antes) {
-    nuevo = antes.orden + 1;
+    nuevo = antes.orden_tablero + 1;
   } else if (despues) {
-    nuevo = despues.orden - 1;
+    nuevo = despues.orden_tablero - 1;
   } else {
     return; // carril vacío: cualquier orden sirve
   }
 
   if (nuevo !== null) {
-    const { error: updErr } = await supa.from(tabla).update({ orden: nuevo }).eq("id", id);
+    const { error: updErr } = await supa.from(tabla).update({ orden_tablero: nuevo }).eq("id", id);
     if (updErr) throw new ErrorOrden(updErr.message, 500);
     return;
   }
@@ -71,19 +74,21 @@ export async function reordenarEnCarril(
   await renumerarCarril(supa, tabla, actual.estado, id, antesId!);
 }
 
-// Reescribe `orden` de todo el carril con pasos de 1, dejando `id` justo
+// Reescribe `orden_tablero` de todo el carril con pasos de 1, dejando `id` justo
 // debajo de `antesId`. Solo actualiza las filas cuyo valor cambia.
 async function renumerarCarril(supa: Supa, tabla: TablaTablero, estado: string, id: string, antesId: string) {
   const { data, error } = await supa
     .from(tabla)
-    .select("id, orden")
+    .select("id, orden_tablero")
     .eq("estado", estado)
-    .order("orden", { ascending: true })
+    .order("orden_tablero", { ascending: true })
     .order("created_at", { ascending: false })
     .order("id", { ascending: true });
   if (error) throw new ErrorOrden(error.message, 500);
 
-  const filas = ((data ?? []) as { id: string; orden: number }[]).filter((f) => f.id !== id);
+  const filas = ((data ?? []) as { id: string; orden_tablero: number }[])
+    .map((f) => ({ id: f.id, orden: f.orden_tablero }))
+    .filter((f) => f.id !== id);
   const pos = filas.findIndex((f) => f.id === antesId);
   filas.splice(pos + 1, 0, { id, orden: NaN });
 
@@ -93,7 +98,7 @@ async function renumerarCarril(supa: Supa, tabla: TablaTablero, estado: string, 
     .filter((f) => f.orden !== f.previo);
 
   const resultados = await Promise.all(
-    cambios.map((c) => supa.from(tabla).update({ orden: c.orden }).eq("id", c.id))
+    cambios.map((c) => supa.from(tabla).update({ orden_tablero: c.orden }).eq("id", c.id))
   );
   const fallo = resultados.find((r) => r.error);
   if (fallo?.error) throw new ErrorOrden(fallo.error.message, 500);
