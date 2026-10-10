@@ -5,6 +5,12 @@
 // cobro de soporte del proyecto (ver POST /api/cobros). En ambos casos
 // manda a Johana directo a la ficha del período, donde ya puede dividir en
 // parcialidades, subir factura o registrar pagos.
+//
+// Al crear: el modal se cierra, el tablero se refresca (la tarjeta nueva
+// entra animada) y un toast ofrece "Ver detalle". Antes navegaba al detalle
+// con el modal abierto y el botón otra vez habilitado: si esa carga tardaba
+// parecía que no había pasado nada, y al cerrar el modal el tablero seguía
+// sin el cobro (o se podía crear dos veces).
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -12,6 +18,7 @@ import { Plus, DollarSign, Clock, Code2, LifeBuoy } from "lucide-react";
 import { tarifaSoporte } from "@/lib/cobros/calculos";
 import Modal from "@/components/ui/Modal";
 import CostoHoraField, { type Moneda } from "@/app/panel/proyectos/CostoHoraField";
+import { toast } from "@/lib/toast";
 
 type Proyecto = {
   id: string;
@@ -80,6 +87,10 @@ export default function CrearCobroModal({
 
   const cerrar = () => {
     if (sending) return;
+    limpiarYCerrar();
+  };
+
+  const limpiarYCerrar = () => {
     setAbierto(false);
     setOrigen("desarrollo");
     setTitulo("");
@@ -133,7 +144,13 @@ export default function CrearCobroModal({
         setErrors(map);
         return;
       }
-      router.push(`/panel/cobros/${json.periodoId}`);
+      setSending(false);
+      limpiarYCerrar();
+      toast(json.agregadoACobroExistente ? "Período agregado al cobro de Soporte" : "Cobro creado", {
+        accion: { texto: "Ver detalle", href: `/panel/cobros/${json.periodoId}` },
+      });
+      router.refresh();
+      return;
     } catch {
       setErrors({ __form: "Error de red. Intenta de nuevo." });
     } finally {

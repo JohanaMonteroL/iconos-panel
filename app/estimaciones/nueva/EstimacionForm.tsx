@@ -553,6 +553,9 @@ export default function EstimacionForm({
     }
 
     setSending(true);
+    // Ya creada, el botón sigue deshabilitado hasta llegar al detalle (un
+    // segundo clic mientras carga creaba una cotización duplicada).
+    let navegando = false;
     try {
       const res = await fetch("/api/estimaciones", {
         method: "POST",
@@ -576,11 +579,12 @@ export default function EstimacionForm({
         setErrors(map);
         return;
       }
+      navegando = true;
       router.push(`/panel/cotizaciones/${json.id}`);
     } catch {
       setErrors({ __form: "Error de red. Intenta de nuevo." });
     } finally {
-      setSending(false);
+      if (!navegando) setSending(false);
     }
   };
 
@@ -652,6 +656,7 @@ export default function EstimacionForm({
 
   const confirmarEnviarAprobacion = async () => {
     setCreando("aprobacion");
+    let navegando = false;
     try {
       const id = await crearCotizacionAdmin();
       if (!id) {
@@ -677,9 +682,10 @@ export default function EstimacionForm({
         });
       }
       setModalAprobacionAbierto(false);
+      navegando = true;
       router.push(`/panel/cotizaciones/${id}`);
     } finally {
-      setCreando(null);
+      if (!navegando) setCreando(null);
     }
   };
 

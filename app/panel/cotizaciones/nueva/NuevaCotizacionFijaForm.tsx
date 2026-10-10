@@ -100,6 +100,7 @@ export default function NuevaCotizacionFijaForm({
     setError(null);
     setWarnings([]);
     setEnviando(true);
+    let navegando = false;
     try {
       const proyectoSel = proyectos.find((p) => p.id === proyectoId);
       const res = await fetch("/api/cotizaciones/extraordinaria", {
@@ -132,6 +133,9 @@ export default function NuevaCotizacionFijaForm({
 
       const ws: string[] = [];
       if (json.slack_warning) ws.push(`Slack: ${json.slack_warning}`);
+      // Ya se creó: el botón se queda en "enviando" hasta llegar al detalle
+      // (si se re-habilitaba, un segundo clic creaba una cotización duplicada).
+      navegando = true;
 
       if (ws.length > 0) {
         setWarnings(ws);
@@ -149,7 +153,7 @@ export default function NuevaCotizacionFijaForm({
     } catch {
       setError("Error de red");
     } finally {
-      setEnviando(false);
+      if (!navegando) setEnviando(false);
     }
   };
 
