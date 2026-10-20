@@ -66,7 +66,17 @@ export function useTableroKanban<T extends Item>({
     if (!previas || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     document.querySelectorAll<HTMLElement>("[data-tarjeta-id]").forEach((el) => {
       const antes = previas.get(el.dataset.tarjetaId!);
-      if (!antes) return;
+      if (!antes) {
+        // Tarjeta nueva (p. ej. recién creada): entra con un pequeño rebote.
+        el.animate(
+          [
+            { opacity: 0, transform: "translateY(-8px) scale(0.96)" },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: 420, easing: "cubic-bezier(0.34, 1.4, 0.64, 1)" }
+        );
+        return;
+      }
       const ahora = el.getBoundingClientRect();
       const dx = antes.left - ahora.left;
       const dy = antes.top - ahora.top;

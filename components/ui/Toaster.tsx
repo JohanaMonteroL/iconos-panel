@@ -5,6 +5,7 @@
 // solas (o al hacer clic). Máximo 3 a la vez.
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertCircle, Info } from "lucide-react";
 import { suscribirToasts, type Toast } from "@/lib/toast";
 
@@ -39,11 +40,11 @@ export default function Toaster() {
       style={{ right: 16, bottom: 16, left: 16 }}
     >
       {toasts.map((t) => (
-        <button
+        <div
           key={t.id}
-          type="button"
+          role="status"
           onClick={() => cerrar(t.id)}
-          className={`toast-anim pointer-events-auto relative overflow-hidden flex items-center gap-2.5 text-left ${t.saliendo ? "saliendo" : ""}`}
+          className={`toast-anim pointer-events-auto relative overflow-hidden flex items-center gap-2.5 text-left cursor-pointer ${t.saliendo ? "saliendo" : ""}`}
           style={{
             maxWidth: 380,
             padding: "11px 14px",
@@ -71,11 +72,24 @@ export default function Toaster() {
             )}
           </span>
           <span>{t.mensaje}</span>
+          {t.accion && (
+            <Link
+              href={t.accion.href}
+              onClick={(e) => {
+                e.stopPropagation();
+                cerrar(t.id);
+              }}
+              className="shrink-0 font-semibold hover:underline"
+              style={{ color: "var(--accent)", marginLeft: 4 }}
+            >
+              {t.accion.texto} →
+            </Link>
+          )}
           <span
             className="toast-tiempo absolute left-0 bottom-0 h-[2px] w-full"
             style={{ background: COLOR[t.tipo], opacity: 0.5, animationDuration: `${t.duracion}ms` }}
           />
-        </button>
+        </div>
       ))}
     </div>
   );

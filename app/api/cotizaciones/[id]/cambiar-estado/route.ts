@@ -137,7 +137,7 @@ export async function POST(
   }
 
   // Efecto secundario: crear el Cobro (origen desarrollo) + su primer
-  // Período ("Pago único") en Cobros. Idempotente — si ya existe un cobro
+  // Período (con el nombre de la cotización) en Cobros. Idempotente — si ya existe un cobro
   // para esta cotización, no crea otro. Si las tablas de Cobros todavía no
   // existen (migración 0022 pendiente), solo se avisa por consola y se
   // deja seguir el cambio de estado normal: el backfill de la migración
@@ -173,7 +173,9 @@ export async function POST(
           const { error: insPeriodoErr } = await supa.from("cobros_periodos").insert({
             cobro_id: nuevoCobro.id,
             estado: "listo_para_cobrar",
-            etiqueta: "Pago único",
+            // Mismo nombre que la cotización (antes "Pago único"); si se
+            // divide en parcialidades, éstas se renombran solas.
+            etiqueta: cot.nombre?.trim() || "Pago único",
             monto,
             moneda,
           });
