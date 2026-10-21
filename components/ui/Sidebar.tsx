@@ -122,8 +122,15 @@ export default function Sidebar({
         >
           <Menu size={18} strokeWidth={1.5} />
         </button>
-        <Link href="/panel" className="text-body-medium font-semibold flex-1">
-          ICONOS Panel
+        <Link href="/panel" className="flex items-center gap-2 flex-1 min-w-0">
+          <img
+            src="/icons/icon-512.png"
+            alt=""
+            width={24}
+            height={24}
+            style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0 }}
+          />
+          <span className="text-body-medium font-semibold truncate">ICONOS Panel</span>
         </Link>
       </header>
 
@@ -142,7 +149,16 @@ export default function Sidebar({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <span className="text-heading-2 font-semibold">ICONOS Panel</span>
+              <span className="flex items-center gap-2 text-heading-2 font-semibold">
+                <img
+                  src="/icons/icon-512.png"
+                  alt=""
+                  width={26}
+                  height={26}
+                  style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0 }}
+                />
+                ICONOS Panel
+              </span>
               <button
                 onClick={() => setOpen(false)}
                 className="btn-icon btn-ghost"
@@ -186,21 +202,14 @@ export default function Sidebar({
             paddingRight: collapsed ? 0 : undefined,
           }}
         >
-          <Link
-            href="/panel"
-            className="grid place-items-center flex-shrink-0"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 11,
-              background: "var(--action-primary-bg)",
-              color: "var(--action-primary-text)",
-              fontWeight: 700,
-              fontSize: 14,
-              letterSpacing: "-0.5px",
-            }}
-          >
-            IC
+          <Link href="/panel" className="flex-shrink-0" style={{ width: 36, height: 36 }}>
+            <img
+              src="/icons/icon-512.png"
+              alt="ICONOS"
+              width={36}
+              height={36}
+              style={{ width: 36, height: 36, borderRadius: 11, display: "block" }}
+            />
           </Link>
           {!collapsed && (
             <div className="flex-1 min-w-0">
