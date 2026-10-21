@@ -199,8 +199,8 @@ export default async function ProyectoDetallePage({
     n.toLocaleString("es-MX", {
       style: "currency",
       currency: "MXN",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     });
 
   const kpis: { label: string; value: string; icon: typeof FileText; iconBg: string; iconFg: string; sub?: string }[] = [

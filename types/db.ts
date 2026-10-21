@@ -145,3 +145,53 @@ export type PushSubscriptionRow = {
   user_label: string | null;
   created_at: string;
 };
+
+// Pagos a proveedores — catálogo de pagos salientes a proveedores externos
+// (tabla `pagos_proveedores`, ver 0029 — nombrada así para no chocar con la
+// tabla `pagos` legada que ya existe en la base, ajena a este código). Ficha
+// de referencia (datos para copiar al ejecutar el pago), no un tablero de
+// flujo. Dos formas de control conviven: `ultimo_pago_marcado` (ver 0030) es
+// la marca rápida de "pagado" para el período actual (se resetea sola según
+// `periodicidad`, ver lib/pagos/periodo.ts); `PagoRegistro` (tabla
+// `pagos_proveedores_registro`, ver 0031) es la bitácora opcional de pagos
+// ya realizados; `pasos` (jsonb, ver 0032) es la checklist propia de "cómo
+// hacer este pago" (abrir banca en línea, capturar referencia, etc.).
+export type Periodicidad = "unica_vez" | "mensual" | "bimestral" | "trimestral" | "semestral" | "anual";
+export type FormaPago = "automatica" | "manual";
+export type TipoPago = "transferencia" | "tarjeta" | "deposito" | "otro";
+export type ComprobanteTipo = "factura" | "recibo" | "no_aplica";
+
+export type PasoPago = { id: string; texto: string; hecho: boolean };
+
+export type Pago = {
+  id: string;
+  nombre_pago: string;
+  empresa_contacto: string | null;
+  periodicidad: Periodicidad;
+  monto: number;
+  iva: number;
+  total_a_pagar: number;
+  forma_pago: FormaPago;
+  tipo_pago: TipoPago | null;
+  banco_o_cuenta: string | null;
+  titular: string | null;
+  correo_comprobante: string | null;
+  comprobante_tipo: ComprobanteTipo;
+  referencia: string | null;
+  notas: string | null;
+  ultimo_pago_marcado: string | null;
+  pasos: PasoPago[];
+  activo: boolean;
+  orden: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PagoRegistro = {
+  id: string;
+  pago_id: string;
+  fecha: string;
+  monto: number;
+  notas: string | null;
+  created_at: string;
+};

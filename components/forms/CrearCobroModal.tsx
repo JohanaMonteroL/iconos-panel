@@ -35,11 +35,11 @@ function fmtMoneda(n: number, moneda: string): string {
     return new Intl.NumberFormat("es-MX", {
       style: "currency",
       currency: moneda || "MXN",
-      minimumFractionDigits: 0,
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(n);
   } catch {
-    return `$${n.toLocaleString("es-MX")} ${moneda}`;
+    return `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moneda}`;
   }
 }
 

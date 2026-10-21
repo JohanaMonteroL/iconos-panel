@@ -19,8 +19,8 @@ function fmtMxn(n: number): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
     currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 

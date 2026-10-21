@@ -8,6 +8,7 @@
 
 import Link from "next/link";
 import { useTableroKanban } from "@/lib/tableros/useTableroKanban";
+import { useArrastrarParaDesplazar } from "@/lib/tableros/useArrastrarParaDesplazar";
 import LineaInsercion from "@/components/ui/LineaInsercion";
 import { labelEstado, colorHexEstado } from "@/lib/estados";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
@@ -35,8 +36,8 @@ function fmtMxn(n: number): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
     currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -81,6 +82,7 @@ export default function TableroCotizaciones({
   // false cuando hay un "Ordenar por" activo: el orden manual no aplica.
   reordenable?: boolean;
 }) {
+  const arrastre = useArrastrarParaDesplazar<HTMLDivElement>();
   const { porEstado, error, setError, carrilActivo, propsCarril, propsTarjeta, lineaEn, carrilVacioActivo } = useTableroKanban({
     columnas,
     itemsIniciales,
@@ -112,7 +114,11 @@ export default function TableroCotizaciones({
         </div>
       )}
 
-      <div className="overflow-x-auto pb-2">
+      <div
+        ref={arrastre.ref}
+        className={`overflow-x-auto pb-2 ${arrastre.className}`}
+        onMouseDown={arrastre.onMouseDown}
+      >
         <div className="escalonado flex gap-3.5" style={{ minWidth: "max-content" }}>
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];

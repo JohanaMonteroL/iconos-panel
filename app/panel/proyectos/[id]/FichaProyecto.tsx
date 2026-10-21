@@ -239,7 +239,9 @@ function CostoHoraCampo({
           onClick={() => setEditing(true)}
         >
           <span className={precioHoraVenta ? "text-body num-tabular" : "text-body text-text-tertiary"}>
-            {precioHoraVenta ? `${precioHoraVenta.toLocaleString("es-MX")} ${monedaHora}/h` : "Sin capturar"}
+            {precioHoraVenta
+              ? `${precioHoraVenta.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${monedaHora}/h`
+              : "Sin capturar"}
           </span>
           <span className="text-caption" style={{ color: "var(--text-tertiary)" }}>
             Editar

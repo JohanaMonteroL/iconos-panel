@@ -66,11 +66,13 @@ export default function NuevaCotizacionFijaForm({
       const resumenConceptos = conceptosValidos
         .map(
           (c) =>
-            `${c.cantidad}× ${c.concepto} ($${Number(c.precio_unitario).toLocaleString("es-MX")} c/u)`
+            `${c.cantidad}× ${c.concepto} ($${Number(c.precio_unitario).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} c/u)`
         )
         .join(" · ");
       const ctx = `Cotización: ${nombre || "(sin nombre)"} · Total: $${
-        montoNum > 0 ? montoNum.toLocaleString("es-MX") : "(sin monto)"
+        montoNum > 0
+          ? montoNum.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : "(sin monto)"
       } MXN${resumenConceptos ? ` · Conceptos: ${resumenConceptos}` : ""}`;
 
       const res = await fetch("/api/cotizaciones/formatear-texto", {

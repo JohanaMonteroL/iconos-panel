@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { formatFechaLarga, hoyISO } from "@/lib/dates";
 import Modal from "@/components/ui/Modal";
+import MoneyInput from "@/components/ui/MoneyInput";
 import { toast } from "@/lib/toast";
 
 type Pago = {
@@ -530,15 +531,7 @@ function PagosTab({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="field-label">Monto *</label>
-            <input
-              className="input num-tabular"
-              type="number"
-              min="0"
-              step="0.01"
-              value={monto}
-              onChange={(e) => setMonto(e.target.value)}
-              placeholder="0.00"
-            />
+            <MoneyInput value={monto} onChange={setMonto} prefix={moneda === "USD" ? "US$" : "$"} />
           </div>
           <div>
             <label className="field-label">Fecha *</label>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DollarSign, Save } from "lucide-react";
 import { toast } from "@/lib/toast";
+import MoneyInput from "@/components/ui/MoneyInput";
 
 type Props = {
   cotizacionId: string;
@@ -60,8 +61,8 @@ export default function MontoFijoEditor({ cotizacionId, montoActual }: Props) {
       ? montoActual.toLocaleString("es-MX", {
           style: "currency",
           currency: "MXN",
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0,
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
         })
       : "—";
 
@@ -96,17 +97,14 @@ export default function MontoFijoEditor({ cotizacionId, montoActual }: Props) {
           ClickUp.
         </p>
         <div className="flex items-center gap-2 flex-wrap">
-          <input
-            className="input num-tabular"
-            type="number"
-            min={0}
-            step={1}
-            inputMode="decimal"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="0"
-            style={{ maxWidth: 200 }}
-          />
+          <div style={{ maxWidth: 200 }}>
+            <MoneyInput
+              className="input num-tabular"
+              value={value}
+              onChange={setValue}
+              placeholder="$0.00"
+            />
+          </div>
           <span className="text-body text-text-secondary">MXN</span>
           <button
             type="button"

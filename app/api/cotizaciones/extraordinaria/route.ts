@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
   try {
     await sendPushToAll({
       title: "Cotización rápida creada",
-      body: `${body.nombre.trim()} — $${montoTotal.toLocaleString("es-MX")} MXN`,
+      body: `${body.nombre.trim()} — $${montoTotal.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`,
       url: `/panel/cotizaciones/${cot.id}`,
       tag: `cotizacion-${cot.id}`,
     });

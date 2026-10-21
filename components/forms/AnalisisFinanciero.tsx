@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DollarSign, Eye, EyeOff, Save, TrendingUp } from "lucide-react";
+import MoneyInput from "@/components/ui/MoneyInput";
 
 type Props = {
   // Endpoint para guardar el precio_venta_hora
@@ -19,8 +20,8 @@ function fmtMoney(n: number): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
     currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -185,17 +186,14 @@ export default function AnalisisFinanciero({
           <div>
             <label className="field-label">Precio de venta por hora *</label>
             <div className="flex gap-2">
-              <input
+              <MoneyInput
                 className="input num-tabular"
-                type="number"
-                min={0}
-                inputMode="numeric"
                 value={precioVenta}
-                onChange={(e) => {
-                  setPrecioVenta(e.target.value);
-                  setDirty(Number(e.target.value) !== (lastSaved ?? 0));
+                onChange={(v) => {
+                  setPrecioVenta(v);
+                  setDirty(Number(v) !== (lastSaved ?? 0));
                 }}
-                placeholder="Ej. 500"
+                placeholder="$0.00"
               />
               <button
                 type="button"

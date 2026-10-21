@@ -8,6 +8,7 @@
 
 import Link from "next/link";
 import { useTableroKanban } from "@/lib/tableros/useTableroKanban";
+import { useArrastrarParaDesplazar } from "@/lib/tableros/useArrastrarParaDesplazar";
 import LineaInsercion from "@/components/ui/LineaInsercion";
 import { labelEstadoPeriodo, colorHexEstadoPeriodo, labelOrigenCobro } from "@/lib/estados/cobros";
 import { formatFechaCorta as fmtFecha } from "@/lib/dates";
@@ -54,6 +55,7 @@ export default function TableroCobros({
   // false cuando hay un "Ordenar por" activo: el orden manual no aplica.
   reordenable?: boolean;
 }) {
+  const arrastre = useArrastrarParaDesplazar<HTMLDivElement>();
   const { porEstado, error, setError, carrilActivo, propsCarril, propsTarjeta, lineaEn, carrilVacioActivo } = useTableroKanban({
     columnas,
     itemsIniciales,
@@ -84,9 +86,14 @@ export default function TableroCobros({
         </div>
       )}
 
-      <div className="overflow-x-auto pb-2">
+      <div
+        ref={arrastre.ref}
+        className={`overflow-x-auto pb-2 ${arrastre.className}`}
+        onMouseDown={arrastre.onMouseDown}
+      >
         {/* Los carriles se reparten todo el ancho (flex 1) sin bajar de 268px;
-            en pantallas angostas el tablero hace scroll horizontal. */}
+            en pantallas angostas el tablero hace scroll horizontal — o se
+            recorre manteniendo Espacio y arrastrando (useArrastrarParaDesplazar). */}
         <div className="escalonado flex gap-3.5">
           {columnas.map((estado) => {
             const cards = porEstado.get(estado) ?? [];

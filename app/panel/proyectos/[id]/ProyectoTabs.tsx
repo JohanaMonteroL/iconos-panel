@@ -41,8 +41,8 @@ function fmtMonto(n: number, moneda: string = "MXN"): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
     currency: moneda === "USD" ? "USD" : "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 

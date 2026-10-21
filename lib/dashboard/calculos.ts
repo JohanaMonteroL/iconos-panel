@@ -65,10 +65,10 @@ export function montosVacios(): MontosPorMoneda {
   return { MXN: 0, USD: 0 };
 }
 
-/** "$12,500" en MXN, "US$1,200" en USD — para no confundir las dos. */
+/** "$12,500.00" en MXN, "US$1,200.00" en USD — para no confundir las dos. */
 export function fmtMoneda(n: number, moneda: Moneda): string {
   if (moneda === "MXN") return fmtMxn(n);
-  return `US$${n.toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return `US$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function fmtMonedaCompacto(n: number, moneda: Moneda): string {
@@ -87,8 +87,8 @@ export function fmtMxn(n: number): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
     currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
