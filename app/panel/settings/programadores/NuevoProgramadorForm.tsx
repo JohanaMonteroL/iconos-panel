@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { toast } from "@/lib/toast";
+import MoneyInput from "@/components/ui/MoneyInput";
 
 export default function NuevoProgramadorForm() {
   const router = useRouter();
@@ -112,15 +113,7 @@ export default function NuevoProgramadorForm() {
         </div>
         <div>
           <label className="field-label">Precio por hora (MXN) *</label>
-          <input
-            className="input num-tabular"
-            type="number"
-            min={0}
-            step="0.01"
-            value={precio}
-            onChange={(e) => setPrecio(e.target.value)}
-            placeholder="200"
-          />
+          <MoneyInput value={precio} onChange={setPrecio} placeholder="$200.00" />
         </div>
       </div>
       {error && (

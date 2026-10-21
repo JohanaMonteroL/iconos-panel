@@ -23,7 +23,7 @@ type Row = {
 
 function fmtCostoHora(n: number | null, moneda: string): string {
   if (!n) return "—";
-  return `${n.toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${moneda}/h`;
+  return `${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moneda}/h`;
 }
 
 async function getProyectos(filtros: { q: string | null; todos: boolean }): Promise<Row[]> {

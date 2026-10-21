@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
+import MoneyInput from "@/components/ui/MoneyInput";
 
 export type SoporteData = {
   id: string;
@@ -163,45 +164,38 @@ function TarifaCampo({
   };
 
   const placeholder = fallback
-    ? `Usa el Precio de Desarrollo (${fallback.toLocaleString("es-MX")} ${moneda}/h)`
+    ? `Usa el Precio de Desarrollo (${fallback.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moneda}/h)`
     : "Sin capturar — usará el Precio de Desarrollo";
+
+  const cancelar = () => {
+    setEditing(false);
+    setValor(tarifa != null ? String(tarifa) : "");
+    setError(null);
+  };
 
   return (
     <div>
       <label className="field-label">Precio de Soporte (por hora, opcional)</label>
       {editing ? (
         <div className="flex items-center gap-2">
-          <input
-            className="input num-tabular"
-            type="number"
-            min="0"
-            step="0.01"
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            placeholder={placeholder}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter") guardar();
-              if (e.key === "Escape") {
-                setEditing(false);
-                setValor(tarifa != null ? String(tarifa) : "");
-                setError(null);
-              }
-            }}
-          />
+          <div className="flex-1">
+            <MoneyInput
+              value={valor}
+              onChange={setValor}
+              placeholder={placeholder}
+              prefix={moneda === "USD" ? "US$" : "$"}
+              className="input num-tabular w-full"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") guardar();
+                if (e.key === "Escape") cancelar();
+              }}
+            />
+          </div>
           <button type="button" className="btn-secondary btn-sm" onClick={guardar} disabled={saving}>
             {saving ? "…" : "Guardar"}
           </button>
-          <button
-            type="button"
-            className="btn-ghost btn-sm"
-            disabled={saving}
-            onClick={() => {
-              setEditing(false);
-              setValor(tarifa != null ? String(tarifa) : "");
-              setError(null);
-            }}
-          >
+          <button type="button" className="btn-ghost btn-sm" disabled={saving} onClick={cancelar}>
             Cancelar
           </button>
         </div>
@@ -212,7 +206,9 @@ function TarifaCampo({
           onClick={() => setEditing(true)}
         >
           <span className={tarifa ? "text-body num-tabular" : "text-body text-text-tertiary"}>
-            {tarifa ? `${tarifa.toLocaleString("es-MX")} ${moneda}/h` : placeholder}
+            {tarifa
+              ? `${tarifa.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moneda}/h`
+              : placeholder}
           </span>
           <span className="text-caption" style={{ color: "var(--text-tertiary)" }}>
             Editar

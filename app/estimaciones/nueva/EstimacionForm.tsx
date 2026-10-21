@@ -158,11 +158,11 @@ function fmtMoneda(n: number, moneda: string): string {
     return new Intl.NumberFormat("es-MX", {
       style: "currency",
       currency: moneda || "MXN",
-      minimumFractionDigits: 0,
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(n);
   } catch {
-    return `$${n.toLocaleString("es-MX")} ${moneda}`;
+    return `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moneda}`;
   }
 }
 
@@ -1462,7 +1462,7 @@ export default function EstimacionForm({
             iaTipo="correo"
             iaContexto={
               esFijo
-                ? `Cotización: ${existente.nombre} · Monto total: $${(existente.montoFijo ?? 0).toLocaleString("es-MX")} MXN`
+                ? `Cotización: ${existente.nombre} · Monto total: $${(existente.montoFijo ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`
                 : `Cotización: ${existente.nombre} · Horas: ${existente.horasMin}–${existente.horasMax}h`
             }
           />
@@ -1471,7 +1471,7 @@ export default function EstimacionForm({
             slackText={existente.slackText}
             iaContexto={
               esFijo
-                ? `Cotización: ${existente.nombre} · Monto: $${(existente.montoFijo ?? 0).toLocaleString("es-MX")} MXN · Atendido por: ${existente.programadorNombre ?? "—"}`
+                ? `Cotización: ${existente.nombre} · Monto: $${(existente.montoFijo ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN · Atendido por: ${existente.programadorNombre ?? "—"}`
                 : `Cotización: ${existente.nombre} · Horas enviadas: ${existente.horasEnvio ?? horasEnvioPert}h · Programador: ${existente.programadorNombre ?? "—"}`
             }
           />
@@ -1735,8 +1735,8 @@ export default function EstimacionForm({
               {(existente.montoFijo ?? 0).toLocaleString("es-MX", {
                 style: "currency",
                 currency: "MXN",
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
               })}{" "}
               MXN
             </div>

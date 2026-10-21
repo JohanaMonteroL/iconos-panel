@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Trash2, Check, CheckCircle2, Plus, Pencil, Scissors } from "lucide-react";
 import ConfirmAccionModal from "@/components/ui/ConfirmAccionModal";
 import Modal from "@/components/ui/Modal";
+import MoneyInput from "@/components/ui/MoneyInput";
 import {
   ORDEN_FLUJO_COBRO_PERIODO,
   labelEstadoPeriodo,
@@ -323,14 +324,7 @@ function EditarPeriodoModal({
         <div className="grid grid-cols-2 gap-2.5">
           <div>
             <label className="field-label">Monto *</label>
-            <input
-              className="input num-tabular"
-              type="number"
-              min="0"
-              step="0.01"
-              value={monto}
-              onChange={(e) => setMonto(e.target.value)}
-            />
+            <MoneyInput value={monto} onChange={setMonto} prefix={moneda === "USD" ? "US$" : "$"} />
           </div>
           <div>
             <label className="field-label">Moneda</label>
@@ -442,15 +436,7 @@ export function AgregarPeriodoForm({
         </div>
         <div>
           <label className="field-label">Monto *</label>
-          <input
-            className="input num-tabular"
-            type="number"
-            min="0"
-            step="0.01"
-            value={monto}
-            onChange={(e) => setMonto(e.target.value)}
-            placeholder="0.00"
-          />
+          <MoneyInput value={monto} onChange={setMonto} prefix={moneda === "USD" ? "US$" : "$"} />
         </div>
       </div>
       {error && (
@@ -609,15 +595,10 @@ export function DividirParcialidadesForm({
               <span className="text-caption text-text-secondary" style={{ width: 110, flexShrink: 0 }}>
                 Parcialidad {i + 1}
               </span>
-              <input
-                className="input num-tabular"
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
                 value={m}
-                onChange={(e) =>
-                  setMontos((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
-                }
+                onChange={(v) => setMontos((prev) => prev.map((val, idx) => (idx === i ? v : val)))}
+                prefix={moneda === "USD" ? "US$" : "$"}
               />
             </div>
           ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, Trash2 } from "lucide-react";
+import MoneyInput from "@/components/ui/MoneyInput";
 
 export type Concepto = {
   id?: string;
@@ -19,8 +20,8 @@ function fmtMxn(n: number): string {
   return n.toLocaleString("es-MX", {
     style: "currency",
     currency: "MXN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -116,19 +117,14 @@ export default function ConceptosEditor({
                   </div>
                   <div>
                     <label className="field-label">Precio unitario</label>
-                    <input
+                    <MoneyInput
                       className="input num-tabular text-right"
-                      type="number"
-                      min={0}
-                      step={1}
-                      inputMode="decimal"
-                      value={c.precio_unitario}
-                      onChange={(e) =>
+                      value={String(c.precio_unitario)}
+                      onChange={(v) =>
                         update(i, {
-                          precio_unitario: Number(e.target.value) || 0,
+                          precio_unitario: Number(v) || 0,
                         })
                       }
-                      disabled={disabled}
                     />
                   </div>
                   <div className="text-right">

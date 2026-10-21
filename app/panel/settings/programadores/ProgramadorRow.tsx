@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Edit3, Save, X, ToggleLeft, ToggleRight, KeyRound, Copy } from "lucide-react";
 import { toast } from "@/lib/toast";
+import MoneyInput from "@/components/ui/MoneyInput";
 
 export type Programador = {
   id: string;
@@ -166,14 +167,7 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
           </div>
           <div>
             <label className="field-label">Precio por hora (MXN)</label>
-            <input
-              className="input num-tabular"
-              type="number"
-              min={0}
-              step="0.01"
-              value={precio}
-              onChange={(e) => setPrecio(e.target.value)}
-            />
+            <MoneyInput value={precio} onChange={setPrecio} />
           </div>
         </div>
         {error && (
@@ -219,7 +213,7 @@ export default function ProgramadorRow({ p }: { p: Programador }) {
         </div>
         <div className="text-caption text-text-tertiary flex flex-wrap gap-x-3 gap-y-1 mt-1">
           <span className="num-tabular">
-            ${p.precio_hora.toLocaleString("es-MX")} / hr
+            ${p.precio_hora.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / hr
           </span>
           {p.correo && <span>📧 {p.correo}</span>}
           {p.slack_id && <span>Slack: {p.slack_id}</span>}
